@@ -1,0 +1,61 @@
+# -----------------------------
+# Python cache & compiled files
+# -----------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# -----------------------------
+# Virtual environment
+# -----------------------------
+venv/
+env/
+ENV/
+
+# -----------------------------
+# Sensitive / config files
+# -----------------------------
+.env
+/backend/firebase-service-account.json
+
+# -----------------------------
+# Logs
+# -----------------------------
+*.log
+
+# -----------------------------
+# Database files
+# -----------------------------
+*.sqlite3
+*.db
+
+# -----------------------------
+# Flask instance folder (if used)
+# -----------------------------
+instance/
+
+# -----------------------------
+# IDE / Editor files
+# -----------------------------
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# -----------------------------
+# OS generated files
+# -----------------------------
+.DS_Store
+Thumbs.db
+
+# -----------------------------
+# Node / frontend dependencies (optional)
+# -----------------------------
+node_modules/
+
+# -----------------------------
+# Coverage / test reports
+# -----------------------------
+.coverage
+htmlcov/
+.pytest_cache/

@@ -1,0 +1,247 @@
+:root {
+    --sidebar-width: 280px;
+    --primary-color: #2F4156;
+    --secondary-color: #567C8D;
+    --background-light: #f5f5f5;
+    --font-color-light: #fff;
+    --font-color-secondary: #d1d5db;
+    --font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    --border-radius: 8px;
+}
+
+/* ===============================
+   RESET & BASE STYLING
+================================= */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: var(--font-family);
+}
+
+body {
+    background: var(--background-light);
+    min-height: 100vh;
+    color: #1f2933;
+}
+
+/* ===============================
+   LAYOUT
+================================= */
+.layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* ===============================
+   SIDEBAR
+================================= */
+.sidebar {
+    width: var(--sidebar-width);
+    background-color: var(--primary-color);
+    color: var(--font-color-light);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 20px 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    z-index: 1000;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 2px 0 12px rgba(0,0,0,0.1);
+    transition: all 0.3s ease;
+}
+
+/* Sidebar Header */
+.sidebar-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.sidebar-header h2 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+/* Navigation */
+.nav {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 10px;
+}
+
+/* Remove underline for all nav links */
+.nav-link,
+.nav-sublink {
+    text-decoration: none;
+}
+
+.nav-link {
+    display: block;
+    padding: 12px 16px;
+    border-radius: var(--border-radius);
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--font-color-light);
+    transition: all 0.2s ease;
+}
+
+.nav-link:hover,
+.nav-link.active {
+    background-color: var(--secondary-color);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+/* ===============================
+   COLLAPSIBLE SUBMENU (modern)
+================================= */
+.nav-group summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-radius: var(--border-radius);
+    font-weight: 500;
+    transition: all 0.2s ease;
+    appearance: none;               /* remove default OS styles */
+}
+
+.nav-group summary::-webkit-details-marker {
+    display: none;                  /* Chrome/Safari default arrow */
+}
+
+.nav-group summary::marker {
+    content: none;                  /* Firefox default arrow */
+}
+
+/* Custom arrow */
+.nav-group summary::after {
+    content: '▼';
+    font-size: 0.7em;
+    transition: transform 0.3s ease;
+    color: var(--font-color-light);
+}
+
+details[open] summary::after {
+    transform: rotate(-180deg);
+}
+
+/* Submenu */
+.nav-submenu {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 15px;
+    margin-top: 4px;
+}
+
+details[open] .nav-submenu {
+    display: flex;
+}
+
+.nav-sublink {
+    padding: 10px 14px;
+    border-radius: var(--border-radius);
+    font-weight: 400;
+    font-size: 0.9rem;
+    color: var(--font-color-secondary);
+    transition: all 0.2s ease;
+}
+
+.nav-sublink:hover,
+.nav-sublink.active {
+    background-color: var(--secondary-color);
+    color: var(--font-color-light);
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+    text-align: center;
+    margin-top: auto;
+    padding: 10px;
+}
+
+.logout-btn {
+    display: inline-block;
+    padding: 10px 18px;
+    border-radius: var(--border-radius);
+    background-color: #e11d48;
+    color: var(--font-color-light);
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+    background-color: #be123c;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+/* ===============================
+   MAIN CONTENT BASE LAYOUT
+================================= */
+.content {
+    margin-left: var(--sidebar-width);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 30px;
+    transition: margin-left 0.3s ease;
+}
+
+/* ===============================
+   SCROLLBARS
+================================= */
+.sidebar::-webkit-scrollbar,
+.content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.sidebar::-webkit-scrollbar-thumb,
+.content::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover,
+.content::-webkit-scrollbar-thumb:hover {
+    background: #a0a0a0;
+}
+
+/* ===============================
+   RESPONSIVE (Tablet / Mobile)
+================================= */
+@media (max-width: 1024px) {
+    .sidebar {
+        position: absolute;
+        left: -100%;
+        top: 0;
+        height: 100%;
+    }
+
+    .sidebar.open {
+        left: 0;
+    }
+
+    .content {
+        margin-left: 0;
+        padding: 20px;
+    }
+
+    .hamburger {
+        display: block;
+        font-size: 1.5rem;
+        color: var(--font-color-light);
+        cursor: pointer;
+        position: fixed;
+        top: 15px;
+        left: 15px;
+        z-index: 1100;
+    }
+}
