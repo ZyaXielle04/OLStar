@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Admin Dashboard</title>
+
+  <!-- External CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <script defer src="{{ url_for('static', filename='js/base.js') }}"></script>
+</head>
+<body>
+
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>Admin Panel</h2>
+      </div>
+
+      <nav class="nav">
+        <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+        <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+
+        <!-- Bookings (Expandable) -->
+        <details class="nav-group">
+          <summary class="nav-link">Bookings</summary>
+          <div class="nav-submenu">
+            <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-sublink">Schedules</a>
+            <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-sublink">Track Drivers</a>
+            <a href="{{ url_for('pages.bookings_transactions') }}" class="nav-sublink">Transaction History</a>
+          </div>
+        </details>
+
+        <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="content">
+
+      <header class="page-header">
+        <h1>Dashboard</h1>
+        <p class="subtitle">Welcome back. You are logged in as an administrator.</p>
+      </header>
+
+      <!-- Stats Cards -->
+      <section class="cards">
+        <article class="card">
+          <h3 class="card-title">Total Users</h3>
+          <div class="card-value">—</div>
+        </article>
+
+        <article class="card">
+          <h3 class="card-title">Active Sessions</h3>
+          <div class="card-value">—</div>
+        </article>
+
+        <article class="card">
+          <h3 class="card-title">Bookings Today</h3>
+          <div class="card-value">—</div>
+        </article>
+
+        <article class="card">
+          <h3 class="card-title">System Status</h3>
+          <div class="card-value status-ok">OK</div>
+        </article>
+      </section>
+
+    </main>
+
+  </div>
+
+</body>
+</html>
