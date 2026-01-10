@@ -45,12 +45,11 @@ app.config.update(
 # -----------------------
 csrf = CSRFProtect(app)
 
-# Global rate limiter
 limiter = Limiter(
-    app=app,
     key_func=get_remote_address,
     default_limits=["100 per hour"]
 )
+limiter.init_app(app)
 
 # -----------------------
 # Firebase Admin SDK initialization
@@ -63,7 +62,6 @@ if not cred_path or not os.path.isfile(cred_path):
 if not db_url:
     raise RuntimeError("FIREBASE_DATABASE_URL must be set in environment")
 
-# Only initialize if no app exists
 if not _apps:
     cred = credentials.Certificate(cred_path)
     initialize_app(cred, {"databaseURL": db_url})
@@ -72,8 +70,8 @@ if not _apps:
 # Import Blueprints & Decorators
 # -----------------------
 from auth import auth_bp, limiter as auth_limiter
-from routes import pages_bp
-from decorators import login_required, admin_required  # optional use in routes.py
+from routes import pages_bp, admin_users_api
+from decorators import login_required, admin_required
 
 # Apply limiter to auth blueprint
 auth_limiter.init_app(app)
@@ -83,6 +81,7 @@ auth_limiter.init_app(app)
 # -----------------------
 app.register_blueprint(pages_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(admin_users_api)
 
 # -----------------------
 # Inject CSRF token for JS
@@ -99,7 +98,7 @@ def set_csrf_cookie(response):
         token,
         secure=(FLASK_ENV == "production"),
         samesite="Lax",
-        httponly=False  # must be False for JS to read
+        httponly=False
     )
     return response
 

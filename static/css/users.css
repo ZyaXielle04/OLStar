@@ -1,0 +1,382 @@
+/* ===============================
+   GLOBAL VARIABLES
+================================= */
+:root {
+    --primary-color: #2F4156;   /* Navy – main headers/buttons */
+    --secondary-color: #567C8D; /* Teal – hover/active buttons */
+    --border-radius: 0.5rem;
+}
+
+/* ===============================
+   PAGE HEADER
+================================= */
+.page-header {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 40px;
+    padding: 20px;
+    border-bottom: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+    border-radius: var(--border-radius);
+}
+
+.page-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.page-header h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    line-height: 1.2;
+}
+
+.page-header .subtitle {
+    font-size: 1rem;
+    font-weight: 400;
+    color: #6b7280;
+}
+
+.page-header .btn {
+    align-self: flex-start;
+    background-color: var(--secondary-color);
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: var(--border-radius);
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.page-header .btn:hover {
+    background-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Align header horizontally on medium+ screens */
+@media (min-width: 768px) {
+    .page-header {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .page-header-text {
+        gap: 6px;
+    }
+
+    .page-header .btn {
+        align-self: auto;
+    }
+}
+
+/* ===============================
+   ADD USER BUTTON
+================================= */
+#btnOpenCreateModal {
+    background-color: var(--secondary-color);
+    color: #ffffff;
+    padding: 10px 20px;
+    border: none;
+    border-radius: var(--border-radius);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#btnOpenCreateModal:hover {
+    background-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* ===============================
+   USERS GRID
+================================= */
+.users-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+    margin-bottom: 40px;
+}
+
+/* ===============================
+   USER CARD
+================================= */
+.user-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background-color: #ffffff;
+    border-radius: var(--border-radius);
+    padding: 22px 18px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.user-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* ===============================
+   USER HEADER
+================================= */
+.user-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.user-name {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+/* ===============================
+   ROLE BADGES
+================================= */
+.user-role {
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #ffffff;
+}
+
+.user-role.admin {
+    background-color: #1d4ed8;
+}
+
+.user-role.user {
+    background-color: #16a34a;
+}
+
+.user-role.driver {
+    background-color: #ca8a04;
+}
+
+/* ===============================
+   USER DETAILS
+================================= */
+.user-details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: #374151;
+}
+
+.user-details p {
+    margin: 0;
+}
+
+/* ===============================
+   USER STATUS
+================================= */
+.user-status {
+    font-weight: 500;
+}
+
+.status-active {
+    color: #16a34a;
+}
+
+.status-inactive {
+    color: #dc2626;
+}
+
+/* ===============================
+   USER ACTIONS
+================================= */
+.user-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: auto;
+}
+
+.user-actions .btn {
+    flex: 1;
+    text-align: center;
+    padding: 8px 12px;
+    border-radius: var(--border-radius);
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background-color: var(--secondary-color);
+    color: #ffffff;
+}
+
+.user-actions .btn:hover {
+    background-color: var(--primary-color);
+}
+
+.user-actions .btn-danger {
+    background-color: #e11d48;
+}
+
+.user-actions .btn-danger:hover {
+    background-color: #be123c;
+}
+
+/* ===============================
+   USER MODAL (CREATE / EDIT)
+================================= */
+#userModal {
+    display: none;
+    position: fixed;
+    z-index: 1100;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    background-color: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(2px);
+}
+
+#userModal .modal-content {
+    position: relative;
+    background-color: #ffffff;
+    margin: 5% auto;
+    padding: 28px 24px;
+    width: 90%;
+    max-width: 480px;
+    border-radius: var(--border-radius);
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.25);
+    animation: fadeIn 0.35s ease forwards;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+#userModal .modal-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    text-align: center;
+    margin-bottom: 12px;
+}
+
+#userModal .close {
+    position: absolute;
+    top: 12px;
+    right: 18px;
+    font-size: 1.6rem;
+    font-weight: bold;
+    color: #374151;
+    cursor: pointer;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+#userModal .close:hover {
+    color: #e11d48;
+    transform: rotate(90deg);
+}
+
+/* -------------------------------
+   FORM STYLING
+--------------------------------- */
+#userForm {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+#userForm input {
+    padding: 12px 14px;
+    border-radius: var(--border-radius);
+    border: 1px solid #d1d5db;
+    font-size: 0.95rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#userForm input:focus {
+    outline: none;
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 3px rgba(86, 124, 141, 0.15);
+}
+
+#userForm button[type="submit"] {
+    background-color: var(--secondary-color);
+    color: #ffffff;
+    padding: 12px 18px;
+    border: none;
+    border-radius: var(--border-radius);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#userForm button[type="submit"]:hover {
+    background-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* -------------------------------
+   MOBILE ADJUSTMENTS
+--------------------------------- */
+@media (max-width: 480px) {
+    #userModal .modal-content {
+        padding: 20px 18px;
+    }
+
+    #userForm input,
+    #userForm button[type="submit"] {
+        font-size: 0.9rem;
+        padding: 10px 12px;
+    }
+
+    #userModal .modal-title {
+        font-size: 1.3rem;
+    }
+}
+
+/* -------------------------------
+   ANIMATION
+--------------------------------- */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===============================
+   RESPONSIVE ADJUSTMENTS
+================================= */
+@media (max-width: 480px) {
+    .users-grid {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
+
+    .user-actions {
+        flex-direction: column;
+    }
+
+    .user-actions .btn {
+        flex: auto;
+    }
+
+    .page-header {
+        padding: 15px;
+    }
+
+    .page-header h1 {
+        font-size: 1.75rem;
+    }
+}
