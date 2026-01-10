@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+
+  <title>OLStar | Bookings - Schedules</title>
+
+  <!-- External CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/schedules.css') }}">
+</head>
+<body>
+
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>Admin Panel</h2>
+      </div>
+
+      <nav class="nav">
+        <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+        <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+
+        <details class="nav-group" open>
+          <summary class="nav-link active">Bookings</summary>
+          <div class="nav-submenu">
+            <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-sublink active">Schedules</a>
+            <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-sublink">Track Drivers</a>
+            <a href="{{ url_for('pages.bookings_transactions') }}" class="nav-sublink">Transaction History</a>
+          </div>
+        </details>
+
+        <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="content">
+
+      <header class="page-header">
+        <button id="btnToggleSidebar" class="hamburger">☰</button>
+        <h1>Schedules</h1>
+        <p class="subtitle">View and manage all booking schedules</p>
+
+        <!-- Action Buttons -->
+        <div class="actions">
+          <label for="fileInput" class="btn">Upload XLS/XLSX</label>
+          <button class="btn" id="addManualBtn">Add Schedule Manually</button>
+        </div>
+      </header>
+
+      
+
+      <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none;" />
+
+      <!-- Bookings Cards Container -->
+      <section class="cards" id="bookingsContainer">
+        <p id="loadingText" style="text-align:center; color:#6b7280; font-style:italic;">
+          Loading bookings...
+        </p>
+      </section>
+
+      <div id="manualModal" class="modal">
+        <div class="modal-content">
+
+          <div class="modal-header">
+            <h2>Add New Schedule</h2>
+            <span id="closeModal" class="close">&times;</span>
+          </div>
+
+          <form id="manualForm">
+
+            <!-- Trip Details -->
+            <div class="form-section">
+              <h3>Trip Details</h3>
+              <div class="form-grid">
+                <input name="clientName" placeholder="Client Name *" required />
+                <input name="contactNumber" placeholder="Contact Number" />
+                <input name="driverName" placeholder="Driver Name" />
+
+                <input name="pickup" placeholder="Pickup Location *" required />
+                <input name="dropOff" placeholder="Dropoff Location *" required />
+
+                <input type="date" name="date" required />
+                <input type="text" name="time" placeholder="Time (e.g. 11:35AM)" required />
+
+                <input name="pax" placeholder="PAX" />
+                <input name="flightNumber" placeholder="Flight Number" />
+              </div>
+            </div>
+
+            <!-- Financial & Company -->
+            <div class="form-section">
+              <h3>Financial & Company</h3>
+              <div class="form-grid">
+                <input name="amount" placeholder="Amount" />
+                <input name="driverRate" placeholder="Driver Rate" />
+
+                <input name="company" placeholder="Company" />
+                <input name="bookingType" placeholder="Booking Type" />
+                <input name="unitType" placeholder="Unit Type" />
+              </div>
+            </div>
+
+            <!-- Driver & Vehicle -->
+            <div class="form-section">
+              <h3>Driver & Vehicle</h3>
+              <div class="form-grid">
+                <input name="cellPhone" placeholder="Driver Phone" />
+                <input name="transportUnit" placeholder="Transport Unit" />
+                <input name="color" placeholder="Vehicle Color" />
+                <input name="plateNumber" placeholder="Plate Number" />
+                <input name="luggage" placeholder="Luggage" />
+              </div>
+            </div>
+
+            <!-- Notes -->
+            <div class="form-section">
+              <h3>Notes</h3>
+              <textarea name="note" placeholder="Additional notes..."></textarea>
+            </div>
+
+            <div class="modal-actions">
+              <button type="button" class="btn-secondary" onclick="manualModal.style.display='none'">
+                Cancel
+              </button>
+              <button type="submit" class="btn-primary">
+                Save Schedule
+              </button>
+            </div>
+
+          </form>
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Firebase & JS -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="{{ url_for('static', filename='js/firebase-config.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/base.js') }}"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="{{ url_for('static', filename='js/schedules.js') }}"></script>
+
+</body>
+</html>
