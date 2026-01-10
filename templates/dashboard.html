@@ -5,11 +5,10 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Admin Dashboard</title>
+  <title>OLStar | Admin Dashboard</title>
 
   <!-- External CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
-  <script defer src="{{ url_for('static', filename='js/base.js') }}"></script>
 </head>
 <body>
 
@@ -22,7 +21,7 @@
       </div>
 
       <nav class="nav">
-        <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+        <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link active">Dashboard</a>
         <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
 
         <!-- Bookings (Expandable) -->
@@ -47,6 +46,7 @@
     <main class="content">
 
       <header class="page-header">
+        <button id="btnToggleSidebar" class="hamburger">☰</button>
         <h1>Dashboard</h1>
         <p class="subtitle">Welcome back. You are logged in as an administrator.</p>
       </header>
@@ -77,6 +77,8 @@
     </main>
 
   </div>
+
+  <script src="{{ url_for('static', filename='js/base.js') }}"></script>
 
 </body>
 </html>

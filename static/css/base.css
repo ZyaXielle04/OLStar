@@ -245,3 +245,61 @@ details[open] .nav-submenu {
         z-index: 1100;
     }
 }
+
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 260px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.content {
+  flex: 1;
+  padding: 1.5rem;
+}
+
+
+/* Hamburger button */
+.hamburger {
+  display: none;
+  font-size: 1.5rem;
+  background: var(--background-light);
+  width: 30px;
+  height: 03px;
+  border-radius: 50px;
+  border: none;
+  cursor: pointer;
+  color: var(--primary-color);
+}
+
+/* Mobile layout */
+@media (max-width: 1024px) {
+  .hamburger {
+    display: block;
+  }
+
+  .layout {
+    position: relative;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: -260px;
+    height: 100vh;
+    z-index: 1000;
+    transition: left 0.3s ease;
+  }
+
+  .sidebar.open {
+    left: 0;
+  }
+
+  .content {
+    padding: 1rem;
+  }
+}
