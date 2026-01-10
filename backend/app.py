@@ -1,11 +1,11 @@
-# /OLStar/backend/app.py
+# /backend/app.py
 import os
-from flask import Flask
+from flask import Flask, request
 from dotenv import load_dotenv
 from flask_wtf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from firebase_admin import credentials, initialize_app, _apps
+from firebase_admin import credentials, initialize_app, _apps, db
 from datetime import timedelta
 
 # -----------------------
@@ -26,8 +26,8 @@ app = Flask(
 # -----------------------
 # Secret key (REQUIRED)
 # -----------------------
-app.secret_key = os.getenv("FLASK_SECRET_KEY")
-if not app.secret_key:
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY")
+if not app.config["SECRET_KEY"]:
     raise RuntimeError("FLASK_SECRET_KEY must be set in environment")
 
 # -----------------------
@@ -37,14 +37,22 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=(FLASK_ENV == "production"),
-    PERMANENT_SESSION_LIFETIME=timedelta(hours=1)
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=1),
 )
 
 # -----------------------
-# Flask security tools
+# CSRF Configuration (IMPORTANT)
 # -----------------------
+app.config.update(
+    WTF_CSRF_CHECK_DEFAULT=False,     # We'll validate manually for APIs
+    WTF_CSRF_TIME_LIMIT=None,         # Prevent token expiration issues
+)
+
 csrf = CSRFProtect(app)
 
+# -----------------------
+# Rate Limiting
+# -----------------------
 limiter = Limiter(
     key_func=get_remote_address,
     default_limits=["100 per hour"]
@@ -60,20 +68,20 @@ db_url = os.getenv("FIREBASE_DATABASE_URL")
 if not cred_path or not os.path.isfile(cred_path):
     raise RuntimeError("Invalid or missing GOOGLE_APPLICATION_CREDENTIALS")
 if not db_url:
-    raise RuntimeError("FIREBASE_DATABASE_URL must be set in environment")
+    raise RuntimeError("FIREBASE_DATABASE_URL must be set")
 
 if not _apps:
     cred = credentials.Certificate(cred_path)
     initialize_app(cred, {"databaseURL": db_url})
 
 # -----------------------
-# Import Blueprints & Decorators
+# Import Blueprints
 # -----------------------
 from auth import auth_bp, limiter as auth_limiter
-from routes import pages_bp, admin_users_api
-from decorators import login_required, admin_required
+from routes.pages import pages_bp
+from routes.admin_users import admin_users_api
+from routes.schedules import schedules_api
 
-# Apply limiter to auth blueprint
 auth_limiter.init_app(app)
 
 # -----------------------
@@ -82,20 +90,18 @@ auth_limiter.init_app(app)
 app.register_blueprint(pages_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_users_api)
+app.register_blueprint(schedules_api)
 
 # -----------------------
-# Inject CSRF token for JS
+# Inject CSRF token cookie for JS
 # -----------------------
 @app.after_request
 def set_csrf_cookie(response):
     from flask_wtf.csrf import generate_csrf
-    try:
-        token = generate_csrf()
-    except Exception:
-        token = ""
+
     response.set_cookie(
         "XSRF-TOKEN",
-        token,
+        generate_csrf(),
         secure=(FLASK_ENV == "production"),
         samesite="Lax",
         httponly=False
@@ -103,14 +109,21 @@ def set_csrf_cookie(response):
     return response
 
 # -----------------------
-# Default error handlers
+# Health check (optional)
+# -----------------------
+@app.route("/health")
+def health():
+    return {"status": "ok"}, 200
+
+# -----------------------
+# Error handlers
 # -----------------------
 @app.errorhandler(404)
-def page_not_found(e):
-    return "404 - Page Not Found", 404
+def not_found(e):
+    return "404 - Not Found", 404
 
 @app.errorhandler(500)
-def internal_server_error(e):
+def server_error(e):
     return "500 - Internal Server Error", 500
 
 # -----------------------
