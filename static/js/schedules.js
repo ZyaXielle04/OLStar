@@ -37,33 +37,25 @@ document.addEventListener("DOMContentLoaded", () => {
         return /^[A-Z]\s/.test(name) ? name.slice(2).trim() : name.trim();
     }
 
-    function excelToDisplayDate(value) {
-        if (!value) return null;
+    function excelToISODate(value) {
+        if (!value) return "";
         let d;
         if (typeof value === "number") {
             const p = XLSX.SSF.parse_date_code(value);
             d = new Date(p.y, p.m - 1, p.d);
         } else {
             d = new Date(value);
-            if (isNaN(d)) return null;
+            if (isNaN(d)) return "";
         }
-        return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+        const month = (d.getMonth() + 1).toString().padStart(2, "0");
+        const day = d.getDate().toString().padStart(2, "0");
+        const year = d.getFullYear();
+        return `${year}-${month}-${day}`;
     }
 
     function isoToDisplayDate(isoDate) {
         if (!isoDate) return "";
         const d = new Date(isoDate);
-        return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    }
-
-    function getTodayDisplayDate() {
-        const d = new Date();
-        return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    }
-
-    function getTomorrowDisplayDate() {
-        const d = new Date();
-        d.setDate(d.getDate() + 1);
         return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
     }
 
@@ -94,10 +86,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return match ? match[1] : "";
     }
 
-    async function sendSchedulesToBackend(data) {
+    async function sendSchedulesToBackend(data, method = "POST", transactionID = null) {
         try {
-            const res = await fetch("/api/schedules", {
-                method: "POST",
+            const url = transactionID ? `/api/schedules/${transactionID}` : "/api/schedules";
+            const res = await fetch(url, {
+                method,
                 headers: {
                     "Content-Type": "application/json",
                     "X-CSRFToken": getCSRFToken()
@@ -127,16 +120,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------------- Global Schedules ----------------
     let allSchedules = [];
+    let editingTransactionID = null;
 
-    async function fetchSchedules(selectedDate = null) {
+    async function fetchSchedules(selectedISO = null) {
         try {
             const res = await fetch("/api/schedules");
             if (!res.ok) throw new Error(await res.text());
             const data = await res.json();
             allSchedules = data.schedules || [];
 
-            const filterDate = selectedDate || isoToDisplayDate(new Date().toISOString().split("T")[0]);
-            const filtered = allSchedules.filter(s => s.date === filterDate);
+            const filterISO = selectedISO || dateFilter.value || new Date().toISOString().split("T")[0];
+            dateFilter.value = filterISO; // ensure filter shows correct date
+            const filtered = allSchedules.filter(s => s.date === filterISO);
             renderSchedules(filtered);
         } catch (err) {
             console.error("Failed to fetch schedules:", err);
@@ -147,8 +142,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (dateFilter) {
         dateFilter.value = new Date().toISOString().split("T")[0];
         dateFilter.addEventListener("change", () => {
-            const selectedDisplayDate = isoToDisplayDate(dateFilter.value);
-            const filtered = allSchedules.filter(s => s.date === selectedDisplayDate);
+            const selectedISO = dateFilter.value;
+            const filtered = allSchedules.filter(s => s.date === selectedISO);
             renderSchedules(filtered);
         });
     }
@@ -158,7 +153,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const event = document.createElement("div");
         event.classList.add("calendar-event");
 
-        // Status text mapping
         const statusMap = {
             "Pending": "#1 The Driver is to depart",
             "Confirmed": "#2 Driver has departed",
@@ -172,13 +166,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const statusClass = rawStatus.toLowerCase().replace(/\s+/g, "-");
         const statusLabel = statusMap[rawStatus] || rawStatus;
 
-        // Minimal info view
         event.innerHTML = `
             <div class="event-header">
                 <div class="event-time">${data.time || ""}</div>
-                <span class="status ${statusClass}">
-                    ${statusLabel}
-                </span>
+                <span class="status ${statusClass}">${statusLabel}</span>
+                <div class="event-date">${isoToDisplayDate(data.date)}</div>
             </div>
 
             <div class="event-info">
@@ -204,7 +196,6 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
         `;
 
-        // View More toggle
         const btnView = event.querySelector(".btn-view-more");
         const details = event.querySelector(".event-details");
         btnView.addEventListener("click", () => {
@@ -217,6 +208,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const btnEdit = event.querySelector(".btn-edit");
         btnEdit.addEventListener("click", () => {
             modal.style.display = "block";
+            editingTransactionID = data.transactionID;
             for (let [key, value] of Object.entries(data)) {
                 const input = manualForm.querySelector(`[name="${key}"]`);
                 if (input) input.value = value;
@@ -264,25 +256,26 @@ document.addEventListener("DOMContentLoaded", () => {
         reader.onload = async ev => {
             const workbook = XLSX.read(new Uint8Array(ev.target.result), { type: "array" });
             const sheetName = "BOOKING";
-
             if (!workbook.SheetNames.includes(sheetName)) {
                 showToast("Sheet BOOKING not found", "error");
                 return;
             }
 
             const sheet = workbook.Sheets[sheetName];
-            const tomorrowDisplay = getTomorrowDisplayDate();
+            const tomorrowISO = new Date();
+            tomorrowISO.setDate(tomorrowISO.getDate() + 1);
+            const tomorrowStr = tomorrowISO.toISOString().split("T")[0];
             const range = XLSX.utils.decode_range(sheet["!ref"]);
             const schedules = [];
 
             for (let row = range.s.r + 1; row <= range.e.r; row++) {
                 const dateValue = sheet[`A${row + 1}`]?.v;
-                const dateDisplay = excelToDisplayDate(dateValue);
-                if (dateDisplay !== tomorrowDisplay) continue;
+                const dateISO = excelToISODate(dateValue);
+                if (dateISO !== tomorrowStr) continue;
 
                 schedules.push({
                     transactionID: generateTransactionID(),
-                    date: dateDisplay,
+                    date: dateISO,
                     time: sheet[`B${row + 1}`]?.v || "",
                     clientName: sheet[`C${row + 1}`]?.v || "",
                     contactNumber: sheet[`D${row + 1}`]?.v || "",
@@ -297,11 +290,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     driverRate: sheet[`M${row + 1}`]?.v || "",
                     company: sheet[`N${row + 1}`]?.v || "",
                     bookingType: sheet[`O${row + 1}`]?.v || "",
-                    // ---- normalized cellPhone ----
                     cellPhone: (() => {
                         const raw = sheet[`P${row + 1}`]?.v || "";
-                        const digits = raw.replace(/\D/g, "");       // remove non-digit chars
-                        const match = digits.match(/09\d{9}/);      // find 11-digit number starting with 09
+                        const digits = raw.replace(/\D/g, "");
+                        const match = digits.match(/09\d{9}/);
                         return match ? match[0] : "";
                     })(),
                     transportUnit: sheet[`Q${row + 1}`]?.v || "",
@@ -326,7 +318,7 @@ document.addEventListener("DOMContentLoaded", () => {
         reader.readAsArrayBuffer(file);
     });
 
-    // ---------------- Manual Add ----------------
+    // ---------------- Manual Add / Edit ----------------
     addManualBtn.onclick = () => modal.style.display = "block";
     closeModalBtn.onclick = () => modal.style.display = "none";
     window.onclick = e => { if (e.target === modal) modal.style.display = "none"; };
@@ -334,14 +326,15 @@ document.addEventListener("DOMContentLoaded", () => {
     manualForm.onsubmit = async e => {
         e.preventDefault();
         const f = new FormData(manualForm);
-        const data = [{
-            transactionID: generateTransactionID(),
+        const dateISO = f.get("date");
+
+        const data = {
             clientName: f.get("clientName"),
             contactNumber: f.get("contactNumber"),
             driverName: f.get("driverName"),
             pickup: f.get("pickup"),
             dropOff: f.get("dropOff"),
-            date: f.get("date"),
+            date: dateISO,
             time: f.get("time"),
             pax: f.get("pax"),
             flightNumber: f.get("flightNumber"),
@@ -357,12 +350,20 @@ document.addEventListener("DOMContentLoaded", () => {
             plateNumber: f.get("plateNumber"),
             luggage: f.get("luggage"),
             status: "Pending"
-        }];
-        if (await sendSchedulesToBackend(data)) {
-            await fetchSchedules();
+        };
+
+        const method = editingTransactionID ? "PUT" : "POST";
+
+        if (await sendSchedulesToBackend(data, method, editingTransactionID)) {
+            // Update the filter to new date if editing
+            const filterDate = dateISO;
+            dateFilter.value = filterDate;
+
+            await fetchSchedules(filterDate);
             modal.style.display = "none";
             manualForm.reset();
-            showToast("Schedule added successfully!", "success");
+            showToast(editingTransactionID ? "Schedule updated!" : "Schedule added!", "success");
+            editingTransactionID = null;
         }
     };
 
