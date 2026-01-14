@@ -63,6 +63,13 @@ document.addEventListener("DOMContentLoaded", () => {
   function renderUsers(users) {
     usersGrid.innerHTML = "";
 
+    // Sort users: active first, inactive after
+    users.sort((a, b) => {
+      const aActive = a.active === true ? 1 : 0;
+      const bActive = b.active === true ? 1 : 0;
+      return bActive - aActive; // active=true comes first
+    });
+
     users.forEach(user => {
       const firstName = user.firstName || "";
       const middleName = user.middleName ? ` ${user.middleName}` : "";
@@ -75,7 +82,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const card = document.createElement("article");
       card.classList.add("card", "user-card");
-      card.style.backgroundColor = disabled ? "#ffd0d0" : "#d0f0ff"; // light blue if enabled, white if disabled
+      card.style.backgroundColor = disabled ? "#ffd0d0" : "#d0f0ff"; // red if disabled, blue if enabled
 
       card.innerHTML = `
         <div class="user-header">
@@ -83,10 +90,9 @@ document.addEventListener("DOMContentLoaded", () => {
           <span class="user-role ${role.toLowerCase()}">${role}</span>
         </div>
         <div class="user-details">
-          <p>${role.toUpperCase()}</p>
           <p>Phone: ${phone}</p>
           <p class="${activeRTDB ? "status-active" : "status-inactive"}">
-            ${activeRTDB ? "Active" : "Inactive"}
+            ${activeRTDB ? "On Duty" : "Idle"}
           </p>
         </div>
         <div class="user-actions">
@@ -101,6 +107,7 @@ document.addEventListener("DOMContentLoaded", () => {
       usersGrid.appendChild(card);
     });
 
+    // Re-attach event listeners
     document.querySelectorAll(".toggle-btn").forEach(btn => btn.addEventListener("click", toggleStatus));
     document.querySelectorAll(".delete-btn").forEach(btn => btn.addEventListener("click", deleteUser));
     document.querySelectorAll(".edit-btn").forEach(btn => btn.addEventListener("click", openEditUserModal));
