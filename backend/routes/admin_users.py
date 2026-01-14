@@ -66,14 +66,39 @@ def get_users():
         users_snapshot = users_ref.get() or {}
         role_filter = request.args.get("role")
 
+        uids = list(users_snapshot.keys())
         users_list = []
+
+        # Batch fetch Auth users in chunks of 100
+        batches = [uids[i:i + 100] for i in range(0, len(uids), 100)]
+        disabled_map = {}
+        for batch in batches:
+            auth_users = auth.get_users([auth.UidIdentifier(uid) for uid in batch])
+            for user_record in auth_users.users:
+                disabled_map[user_record.uid] = user_record.disabled
+
+        # Build user objects
         for uid, info in users_snapshot.items():
             if role_filter and info.get("role") != role_filter:
                 continue
-            users_list.append({"uid": uid, **info})
+
+            user_obj = {
+                "uid": uid,
+                "firstName": info.get("firstName", ""),
+                "middleName": info.get("middleName", ""),
+                "lastName": info.get("lastName", ""),
+                "email": info.get("email", ""),
+                "phone": info.get("phone", ""),
+                "role": info.get("role", "user"),
+                "active": info.get("active", False),  # your RTDB active
+                "disabled": disabled_map.get(uid, False)  # actual Firebase Auth status
+            }
+            users_list.append(user_obj)
 
         return jsonify({"users": users_list}), 200
+
     except Exception as e:
+        print("Error fetching users:", e)
         return jsonify({"error": str(e)}), 500
 
 # -----------------------
@@ -127,7 +152,6 @@ def toggle_user_status(uid):
     try:
         # Only update Firebase Auth disabled property
         auth.update_user(uid, disabled=not enable)
-
         return jsonify({"message": f"User account {'enabled' if enable else 'disabled'} successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -152,4 +176,3 @@ def edit_password(uid):
         return jsonify({"message": "Password updated successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
