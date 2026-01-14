@@ -9,9 +9,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // SweetAlert2 Toast config
   const toast = Swal.mixin({
     toast: true,
-    position: 'bottom-end',   // bottom right
+    position: 'bottom-end',
     showConfirmButton: false,
-    timer: 3000,              // 3 seconds
+    timer: 3000,
     timerProgressBar: true,
     didOpen: (toast) => {
       toast.addEventListener('mouseenter', Swal.stopTimer)
@@ -70,10 +70,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const fullName = `${firstName}${middleName} ${lastName}`.trim();
       const phone = user.phone || "";
       const role = user.role || "user";
-      const active = user.active === true;
+      const disabled = user.disabled === true; // Firebase Auth status
+      const activeRTDB = user.active === true;  // RTDB active field
 
       const card = document.createElement("article");
       card.classList.add("card", "user-card");
+      card.style.backgroundColor = disabled ? "#ffd0d0" : "#d0f0ff"; // light blue if enabled, white if disabled
+
       card.innerHTML = `
         <div class="user-header">
           <h3 class="user-name">${fullName}</h3>
@@ -82,14 +85,14 @@ document.addEventListener("DOMContentLoaded", () => {
         <div class="user-details">
           <p>${role.toUpperCase()}</p>
           <p>Phone: ${phone}</p>
-          <p class="${active ? "status-active" : "status-inactive"}">
-            ${active ? "Active" : "Inactive"}
+          <p class="${activeRTDB ? "status-active" : "status-inactive"}">
+            ${activeRTDB ? "Active" : "Inactive"}
           </p>
         </div>
         <div class="user-actions">
           <button class="btn btn-sm edit-btn" data-uid="${user.uid}">Edit</button>
           <button class="btn btn-sm toggle-btn" data-uid="${user.uid}">
-            ${active ? "Disable" : "Enable"}
+            ${disabled ? "Enable" : "Disable"}
           </button>
           <button class="btn btn-sm password-btn" data-uid="${user.uid}">Change Password</button>
           <button class="btn btn-sm btn-danger delete-btn" data-uid="${user.uid}">Delete</button>
@@ -115,7 +118,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "Content-Type": "application/json",
         "X-CSRFToken": getCookie("XSRF-TOKEN")
       },
-      body: JSON.stringify({ active: enable })
+      body: JSON.stringify({ active: enable }) // backend toggles Firebase Auth disabled
     });
 
     if (!ok) return toast.fire({ icon: 'error', title: data.error || `Failed to ${enable ? "enable" : "disable"} user` });
