@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const addManualBtn = document.getElementById("addManualBtn");
     const closeModalBtn = document.getElementById("closeModal");
     const manualForm = document.getElementById("manualForm");
+    const dateFilter = document.getElementById("dateFilter");
 
     // ---------------- SweetAlert2 Toast ----------------
     function showToast(message, icon = "success") {
@@ -49,6 +50,12 @@ document.addEventListener("DOMContentLoaded", () => {
         return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
     }
 
+    function isoToDisplayDate(isoDate) {
+        if (!isoDate) return "";
+        const d = new Date(isoDate);
+        return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    }
+
     function getTodayDisplayDate() {
         const d = new Date();
         return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -60,7 +67,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
     }
 
-    // ---------------- TIME PARSER (AM/PM SAFE) ----------------
     function parseTimeToMinutes(timeStr) {
         if (!timeStr) return 0;
         const match = timeStr.match(/(\d{1,2}):(\d{2})(AM|PM)/i);
@@ -73,7 +79,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return hour * 60 + minute;
     }
 
-    // ---------------- SORT SCHEDULES ----------------
     function sortSchedulesByDateTime(schedules) {
         return schedules.sort((a, b) => {
             const dateA = new Date(a.date);
@@ -83,40 +88,12 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // ---------------- Render as Google Calendar Style ----------------
-    function createCalendarEvent(data) {
-        const event = document.createElement("div");
-        event.classList.add("calendar-event");
-        event.innerHTML = `
-            <div class="event-time">${data.time || ""}</div>
-            <div class="event-info">
-                <strong>${data.clientName || ""}</strong>
-                <span class="driver-name">(${data.driverName || ""})</span><br>
-                Pickup: ${data.pickup || ""} → Dropoff: ${data.dropOff || ""}<br>
-                Pax: ${data.pax || ""} | Flight: ${data.flightNumber || ""}<br>
-                Amount: ${data.amount || ""} | Driver Rate: ${data.driverRate || ""}<br>
-                Note: ${data.note || ""}
-            </div>
-        `;
-        return event;
-    }
-
-    function renderSchedules(schedules) {
-        bookingsContainer.innerHTML = "";
-        if (!schedules.length) {
-            bookingsContainer.innerHTML = `<p style="text-align:center;color:#6b7280;font-style:italic;">No schedules for today.</p>`;
-            return;
-        }
-        sortSchedulesByDateTime(schedules).forEach(s => bookingsContainer.appendChild(createCalendarEvent(s)));
-    }
-
     // ---------------- CSRF ----------------
     function getCSRFToken() {
         const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
         return match ? match[1] : "";
     }
 
-    // ---------------- Backend Calls ----------------
     async function sendSchedulesToBackend(data) {
         try {
             const res = await fetch("/api/schedules", {
@@ -136,32 +113,163 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    async function fetchSchedules() {
+    async function deleteScheduleFromBackend(transactionID) {
+        try {
+            const res = await fetch(`/api/schedules/${transactionID}`, { method: "DELETE" });
+            if (!res.ok) throw new Error(await res.text());
+            return true;
+        } catch (err) {
+            console.error("Failed to delete schedule:", err);
+            showToast("Failed to delete schedule.", "error");
+            return false;
+        }
+    }
+
+    // ---------------- Global Schedules ----------------
+    let allSchedules = [];
+
+    async function fetchSchedules(selectedDate = null) {
         try {
             const res = await fetch("/api/schedules");
             if (!res.ok) throw new Error(await res.text());
             const data = await res.json();
-            const today = getTodayDisplayDate();
-            const todaysSchedules = (data.schedules || []).filter(s => s.date === today);
-            renderSchedules(todaysSchedules);
+            allSchedules = data.schedules || [];
+
+            const filterDate = selectedDate || isoToDisplayDate(new Date().toISOString().split("T")[0]);
+            const filtered = allSchedules.filter(s => s.date === filterDate);
+            renderSchedules(filtered);
         } catch (err) {
             console.error("Failed to fetch schedules:", err);
             showToast("Failed to load schedules.", "error");
         }
     }
 
+    if (dateFilter) {
+        dateFilter.value = new Date().toISOString().split("T")[0];
+        dateFilter.addEventListener("change", () => {
+            const selectedDisplayDate = isoToDisplayDate(dateFilter.value);
+            const filtered = allSchedules.filter(s => s.date === selectedDisplayDate);
+            renderSchedules(filtered);
+        });
+    }
+
+    // ---------------- Render Schedule Cards ----------------
+    function createCalendarEvent(data) {
+        const event = document.createElement("div");
+        event.classList.add("calendar-event");
+
+        // Status text mapping
+        const statusMap = {
+            "Pending": "#1 The Driver is to depart",
+            "Confirmed": "#2 Driver has departed",
+            "Arrived": "#3 Driver has arrived",
+            "On Route": "#4 Service Start",
+            "Completed": "#5 Service finished",
+            "Cancelled": "Booking Cancelled"
+        };
+
+        const rawStatus = data.status || "Pending";
+        const statusClass = rawStatus.toLowerCase().replace(/\s+/g, "-");
+        const statusLabel = statusMap[rawStatus] || rawStatus;
+
+        // Minimal info view
+        event.innerHTML = `
+            <div class="event-header">
+                <div class="event-time">${data.time || ""}</div>
+                <span class="status ${statusClass}">
+                    ${statusLabel}
+                </span>
+            </div>
+
+            <div class="event-info">
+                <strong>${data.clientName || ""} | ${data.contactNumber || ""}</strong>
+                (${data.driverName || ""} | ${data.cellPhone || ""})<br>
+                ${data.pickup || ""} → ${data.dropOff || ""}
+
+                <div class="event-actions">
+                    <button class="btn-view-more">View More</button>
+                    <button class="btn-edit">Edit</button>
+                    <button class="btn-delete">Delete</button>
+                </div>
+            </div>
+
+            <div class="event-details" style="display:none;">
+                <p>Pax: ${data.pax || ""} | Flight: ${data.flightNumber || ""}</p>
+                <p>Amount: ${data.amount || ""} | Driver Rate: ${data.driverRate || ""}</p>
+                <p>Unit Type: ${data.unitType || ""} | Company: ${data.company || ""}</p>
+                <p>Booking Type: ${data.bookingType || ""}</p>
+                <p>Transport Unit: ${data.transportUnit || ""} | Color: ${data.color || ""} | Plate: ${data.plateNumber || ""}</p>
+                <p>Luggage: ${data.luggage || ""}</p>
+                <p>Note: ${data.note || ""}</p>
+            </div>
+        `;
+
+        // View More toggle
+        const btnView = event.querySelector(".btn-view-more");
+        const details = event.querySelector(".event-details");
+        btnView.addEventListener("click", () => {
+            const isHidden = details.style.display === "none";
+            details.style.display = isHidden ? "block" : "none";
+            btnView.textContent = isHidden ? "View Less" : "View More";
+        });
+
+        // Edit schedule
+        const btnEdit = event.querySelector(".btn-edit");
+        btnEdit.addEventListener("click", () => {
+            modal.style.display = "block";
+            for (let [key, value] of Object.entries(data)) {
+                const input = manualForm.querySelector(`[name="${key}"]`);
+                if (input) input.value = value;
+            }
+        });
+
+        // Delete schedule
+        const btnDelete = event.querySelector(".btn-delete");
+        btnDelete.addEventListener("click", async () => {
+            const confirm = await Swal.fire({
+                title: "Are you sure?",
+                text: "This will delete the schedule permanently.",
+                icon: "warning",
+                showCancelButton: true,
+                confirmButtonText: "Yes, delete it!",
+                cancelButtonText: "Cancel"
+            });
+
+            if (confirm.isConfirmed) {
+                if (await deleteScheduleFromBackend(data.transactionID)) {
+                    event.remove();
+                    showToast("Schedule deleted.", "success");
+                }
+            }
+        });
+
+        return event;
+    }
+
+    function renderSchedules(schedules) {
+        bookingsContainer.innerHTML = "";
+        if (!schedules.length) {
+            bookingsContainer.innerHTML = `<p style="text-align:center;color:#6b7280;font-style:italic;">No schedules for this day.</p>`;
+            return;
+        }
+        sortSchedulesByDateTime(schedules).forEach(s => bookingsContainer.appendChild(createCalendarEvent(s)));
+    }
+
     // ---------------- XLSX Upload ----------------
     fileInput.addEventListener("change", async e => {
         const file = e.target.files[0];
         if (!file) return;
+
         const reader = new FileReader();
         reader.onload = async ev => {
             const workbook = XLSX.read(new Uint8Array(ev.target.result), { type: "array" });
-            const sheetName = "DECEMBER";
+            const sheetName = "BOOKING";
+
             if (!workbook.SheetNames.includes(sheetName)) {
-                showToast("Sheet DECEMBER not found", "error");
+                showToast("Sheet BOOKING not found", "error");
                 return;
             }
+
             const sheet = workbook.Sheets[sheetName];
             const tomorrowDisplay = getTomorrowDisplayDate();
             const range = XLSX.utils.decode_range(sheet["!ref"]);
@@ -171,6 +279,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const dateValue = sheet[`A${row + 1}`]?.v;
                 const dateDisplay = excelToDisplayDate(dateValue);
                 if (dateDisplay !== tomorrowDisplay) continue;
+
                 schedules.push({
                     transactionID: generateTransactionID(),
                     date: dateDisplay,
@@ -188,7 +297,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     driverRate: sheet[`M${row + 1}`]?.v || "",
                     company: sheet[`N${row + 1}`]?.v || "",
                     bookingType: sheet[`O${row + 1}`]?.v || "",
-                    cellPhone: sheet[`P${row + 1}`]?.v || "",
+                    // ---- normalized cellPhone ----
+                    cellPhone: (() => {
+                        const raw = sheet[`P${row + 1}`]?.v || "";
+                        const digits = raw.replace(/\D/g, "");       // remove non-digit chars
+                        const match = digits.match(/09\d{9}/);      // find 11-digit number starting with 09
+                        return match ? match[0] : "";
+                    })(),
                     transportUnit: sheet[`Q${row + 1}`]?.v || "",
                     color: sheet[`R${row + 1}`]?.v || "",
                     plateNumber: sheet[`S${row + 1}`]?.v || "",
@@ -207,6 +322,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 showToast("Tomorrow’s schedules saved successfully!", "success");
             }
         };
+
         reader.readAsArrayBuffer(file);
     });
 
