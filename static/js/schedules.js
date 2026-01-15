@@ -170,7 +170,6 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="event-header">
                 <div class="event-time">${data.time || ""}</div>
                 <span class="status ${statusClass}">${statusLabel}</span>
-                <div class="event-date">${isoToDisplayDate(data.date)}</div>
             </div>
 
             <div class="event-info">
@@ -186,13 +185,52 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
 
             <div class="event-details" style="display:none;">
-                <p>Pax: ${data.pax || ""} | Flight: ${data.flightNumber || ""}</p>
-                <p>Amount: ${data.amount || ""} | Driver Rate: ${data.driverRate || ""}</p>
-                <p>Unit Type: ${data.unitType || ""} | Company: ${data.company || ""}</p>
-                <p>Booking Type: ${data.bookingType || ""}</p>
-                <p>Transport Unit: ${data.transportUnit || ""} | Color: ${data.color || ""} | Plate: ${data.plateNumber || ""}</p>
-                <p>Luggage: ${data.luggage || ""}</p>
-                <p>Note: ${data.note || ""}</p>
+                <div class="details-grid">
+                    <div class="detail">
+                        <span class="label">Pax</span>
+                        <span class="value">${data.pax || "-"}</span>
+                    </div>
+                    <div class="detail">
+                        <span class="label">Flight</span>
+                        <span class="value">${data.flightNumber || "-"}</span>
+                    </div>
+                    <div class="detail">
+                        <span class="label">Booking Type</span>
+                        <span class="value">${data.bookingType || "-"}</span>
+                    </div>
+
+                    <div class="detail">
+                        <span class="label">Amount</span>
+                        <span class="value">${data.amount || "-"}</span>
+                    </div>
+                    <div class="detail">
+                        <span class="label">Driver Rate</span>
+                        <span class="value">${data.driverRate || "-"}</span>
+                    </div>
+
+                    <div class="detail">
+                        <span class="label">Vehicle</span>
+                        <span class="value">${data.transportUnit || "-"}</span>
+                    </div>
+                    <div class="detail">
+                        <span class="label">Color</span>
+                        <span class="value">${data.color || "-"}</span>
+                    </div>
+                    <div class="detail">
+                        <span class="label">Plate</span>
+                        <span class="value">${data.plateNumber || "-"}</span>
+                    </div>
+
+                    <div class="detail">
+                        <span class="label">Luggage</span>
+                        <span class="value">${data.luggage || "-"}</span>
+                    </div>
+                </div>
+
+                <div class="detail-note">
+                    <span class="label">Note</span>
+                    <p>${data.note || "—"}</p>
+                </div>
             </div>
         `;
 
@@ -252,6 +290,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const file = e.target.files[0];
         if (!file) return;
 
+        const phoneMap = await fetchUsersPhoneMap(); // fetch phone → full name map
+
         const reader = new FileReader();
         reader.onload = async ev => {
             const workbook = XLSX.read(new Uint8Array(ev.target.result), { type: "array" });
@@ -273,6 +313,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 const dateISO = excelToISODate(dateValue);
                 if (dateISO !== tomorrowStr) continue;
 
+                // Get and clean the cellPhone
+                const rawPhone = sheet[`P${row + 1}`]?.v || "";
+                const digits = rawPhone.replace(/\D/g, "");
+                const cellPhone = digits.match(/09\d{9}/)?.[0] || "";
+
+                // Determine the driver name
+                let driverName = cleanDriverName(sheet[`J${row + 1}`]?.v || "");
+                if (cellPhone && phoneMap[cellPhone]) {
+                    driverName = phoneMap[cellPhone]; // replace with full name from /users
+                }
+
                 schedules.push({
                     transactionID: generateTransactionID(),
                     date: dateISO,
@@ -284,18 +335,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     flightNumber: sheet[`G${row + 1}`]?.v || "",
                     pickup: sheet[`H${row + 1}`]?.v || "",
                     dropOff: sheet[`I${row + 1}`]?.v || "",
-                    driverName: cleanDriverName(sheet[`J${row + 1}`]?.v || ""),
+                    driverName,
                     unitType: sheet[`K${row + 1}`]?.v || "",
                     amount: sheet[`L${row + 1}`]?.v || "",
                     driverRate: sheet[`M${row + 1}`]?.v || "",
                     company: sheet[`N${row + 1}`]?.v || "",
                     bookingType: sheet[`O${row + 1}`]?.v || "",
-                    cellPhone: (() => {
-                        const raw = sheet[`P${row + 1}`]?.v || "";
-                        const digits = raw.replace(/\D/g, "");
-                        const match = digits.match(/09\d{9}/);
-                        return match ? match[0] : "";
-                    })(),
+                    cellPhone,
                     transportUnit: sheet[`Q${row + 1}`]?.v || "",
                     color: sheet[`R${row + 1}`]?.v || "",
                     plateNumber: sheet[`S${row + 1}`]?.v || "",
@@ -317,6 +363,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
         reader.readAsArrayBuffer(file);
     });
+
+    async function fetchUsersPhoneMap() {
+        try {
+            const res = await fetch("/api/admin/users");
+            if (!res.ok) throw new Error("Failed to fetch users");
+            const data = await res.json();
+            const phoneMap = {};
+
+            data.users.forEach(u => {
+                const phoneDigits = (u.phone || "").replace(/\D/g, ""); // normalize phone
+                if (phoneDigits) {
+                    phoneMap[phoneDigits] = `${u.firstName} ${u.middleName} ${u.lastName}`.replace(/\s+/g, " ").trim();
+                }
+            });
+
+            return phoneMap;
+        } catch (err) {
+            console.error(err);
+            return {};
+        }
+    }
 
     // ---------------- Manual Add / Edit ----------------
     addManualBtn.onclick = () => modal.style.display = "block";
