@@ -165,15 +165,16 @@
             <div class="form-section">
               <h3>Driver & Vehicle</h3>
               <div class="form-grid">
-                
+
                 <div class="form-field">
                   <label>Driver Name</label>
-                  <input name="driverName" />
+                  <input name="driverName" id="driverName" list="driverSuggestions" autocomplete="off" />
+                  <datalist id="driverSuggestions"></datalist>
                 </div>
 
                 <div class="form-field">
                   <label>Driver Phone</label>
-                  <input name="cellPhone" />
+                  <input name="cellPhone" id="cellPhone" />
                 </div>
 
                 <div class="form-field">
@@ -202,12 +203,10 @@
             <!-- Notes -->
             <div class="form-section">
               <h3>Notes</h3>
-
               <div class="form-field">
                 <label>Additional Notes</label>
                 <textarea name="note"></textarea>
               </div>
-
             </div>
 
             <div class="modal-actions">

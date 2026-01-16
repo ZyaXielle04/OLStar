@@ -20,23 +20,23 @@ def admin_dashboard():
 def admin_users():
     return render_template("users.html")
 
-@pages_bp.route("/admin/bookings/schedules")
+@pages_bp.route("/admin/operations/schedules")
 @login_required
 @admin_required
 def bookings_schedules():
-    return render_template("bookings_schedules.html")
+    return render_template("operations_schedules.html")
 
-@pages_bp.route("/admin/bookings/track-drivers")
+@pages_bp.route("/admin/operations/track-drivers")
 @login_required
 @admin_required
 def bookings_track_drivers():
-    return render_template("bookings_track_drivers.html")
+    return render_template("operations_track_drivers.html")
 
-@pages_bp.route("/admin/bookings/transactions")
+@pages_bp.route("/admin/operations/transactions")
 @login_required
 @admin_required
 def bookings_transactions():
-    return render_template("bookings_transactions.html")
+    return render_template("operations_transactions.html")
 
 @pages_bp.route("/admin/settings")
 @login_required
