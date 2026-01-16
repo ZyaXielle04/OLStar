@@ -337,6 +337,12 @@ textarea {
   color: #1e3a8a;
 }
 
+.event-id {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.493);
+}
+
 /* Event Info Section */
 .event-info {
   font-size: 1.15rem; /* reference size */

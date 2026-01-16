@@ -8,6 +8,39 @@ document.addEventListener("DOMContentLoaded", () => {
     const closeModalBtn = document.getElementById("closeModal");
     const manualForm = document.getElementById("manualForm");
     const dateFilter = document.getElementById("dateFilter");
+    const driverInput = document.getElementById("driverName");
+    const cellPhoneInput = document.getElementById("cellPhone");
+    const driverDatalist = document.getElementById("driverSuggestions");
+
+    // Filter users as admin types and populate datalist
+    driverInput.addEventListener("input", () => {
+        const value = driverInput.value.trim().toLowerCase();
+        driverDatalist.innerHTML = "";
+
+        if (!value) return;
+
+        const matches = usersList.filter(u => {
+            const first = (u.firstName || "").toLowerCase();
+            const middle = (u.middleName || "").toLowerCase();
+            const last = (u.lastName || "").toLowerCase();
+
+            return (
+                first.includes(value) ||
+                middle.includes(value) ||
+                last.includes(value)
+            );
+        });
+
+        matches.forEach(u => {
+            const fullName = `${u.firstName} ${u.middleName} ${u.lastName}`
+                .replace(/\s+/g, " ")
+                .trim();
+
+            const option = document.createElement("option");
+            option.value = fullName;
+            driverDatalist.appendChild(option);
+        });
+    });
 
     // ---------------- SweetAlert2 Toast ----------------
     function showToast(message, icon = "success") {
@@ -53,12 +86,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return `${year}-${month}-${day}`;
     }
 
-    function isoToDisplayDate(isoDate) {
-        if (!isoDate) return "";
-        const d = new Date(isoDate);
-        return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    }
-
     function parseTimeToMinutes(timeStr) {
         if (!timeStr) return 0;
         const match = timeStr.match(/(\d{1,2}):(\d{2})(AM|PM)/i);
@@ -78,6 +105,26 @@ document.addEventListener("DOMContentLoaded", () => {
             if (dateA.getTime() !== dateB.getTime()) return dateA - dateB;
             return parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time);
         });
+    }
+
+    // ---------------- Philippine Local Date Utilities ----------------
+    function getLocalISODate(offsetHours = 8) {
+        const now = new Date();
+        const localTime = new Date(now.getTime() + offsetHours * 60 * 60 * 1000);
+        const year = localTime.getFullYear();
+        const month = String(localTime.getMonth() + 1).padStart(2, "0");
+        const day = String(localTime.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+    }
+
+    function getTomorrowLocalISO(offsetHours = 8) {
+        const now = new Date();
+        const localTime = new Date(now.getTime() + offsetHours * 60 * 60 * 1000);
+        localTime.setDate(localTime.getDate() + 1);
+        const year = localTime.getFullYear();
+        const month = String(localTime.getMonth() + 1).padStart(2, "0");
+        const day = String(localTime.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
     }
 
     // ---------------- CSRF ----------------
@@ -121,7 +168,46 @@ document.addEventListener("DOMContentLoaded", () => {
     // ---------------- Global Schedules ----------------
     let allSchedules = [];
     let editingTransactionID = null;
+    let usersList = [];
 
+    // ---------------- Fetch Users for Autocomplete ----------------
+    async function fetchUsers() {
+        try {
+            const res = await fetch("/api/admin/users");
+            if (!res.ok) throw new Error("Failed to fetch users");
+            const data = await res.json();
+            usersList = data.users.map(u => ({
+                fullName: `${u.firstName} ${u.middleName} ${u.lastName}`.replace(/\s+/g, " ").trim(),
+                cellPhone: u.phone || ""
+            }));
+        } catch (err) {
+            console.error(err);
+            usersList = [];
+        }
+    }
+    fetchUsers();
+
+    // ---------------- Autocomplete for Driver Name ----------------
+    driverInput.addEventListener("input", () => {
+        const value = driverInput.value.toLowerCase();
+        driverDatalist.innerHTML = "";
+
+        const matches = usersList.filter(u => u.fullName.toLowerCase().startsWith(value));
+        matches.forEach(u => {
+            const option = document.createElement("option");
+            option.value = u.fullName;
+            driverDatalist.appendChild(option);
+        });
+
+        const exactMatch = usersList.find(u => u.fullName.toLowerCase() === value);
+        if (exactMatch) {
+            cellPhoneInput.value = exactMatch.cellPhone.replace(/\D/g, "");
+        } else {
+            cellPhoneInput.value = "";
+        }
+    });
+
+    // ---------------- Fetch and Render Schedules ----------------
     async function fetchSchedules(selectedISO = null) {
         try {
             const res = await fetch("/api/schedules");
@@ -129,8 +215,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await res.json();
             allSchedules = data.schedules || [];
 
-            const filterISO = selectedISO || dateFilter.value || new Date().toISOString().split("T")[0];
-            dateFilter.value = filterISO; // ensure filter shows correct date
+            const filterISO = selectedISO || dateFilter.value || getLocalISODate();
+            dateFilter.value = filterISO;
             const filtered = allSchedules.filter(s => s.date === filterISO);
             renderSchedules(filtered);
         } catch (err) {
@@ -140,7 +226,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (dateFilter) {
-        dateFilter.value = new Date().toISOString().split("T")[0];
+        dateFilter.value = getLocalISODate();
         dateFilter.addEventListener("change", () => {
             const selectedISO = dateFilter.value;
             const filtered = allSchedules.filter(s => s.date === selectedISO);
@@ -148,11 +234,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // ---------------- Render Schedule Cards ----------------
     function createCalendarEvent(data) {
         const event = document.createElement("div");
         event.classList.add("calendar-event");
-
         const statusMap = {
             "Pending": "#1 The Driver is to depart",
             "Confirmed": "#2 Driver has departed",
@@ -161,7 +245,6 @@ document.addEventListener("DOMContentLoaded", () => {
             "Completed": "#5 Service finished",
             "Cancelled": "Booking Cancelled"
         };
-
         const rawStatus = data.status || "Pending";
         const statusClass = rawStatus.toLowerCase().replace(/\s+/g, "-");
         const statusLabel = statusMap[rawStatus] || rawStatus;
@@ -169,12 +252,13 @@ document.addEventListener("DOMContentLoaded", () => {
         event.innerHTML = `
             <div class="event-header">
                 <div class="event-time">${data.time || ""}</div>
+                <div class="event-id">${data.transactionID || ""}</div>
                 <span class="status ${statusClass}">${statusLabel}</span>
             </div>
 
             <div class="event-info">
                 <strong>${data.clientName || ""} | ${data.contactNumber || ""}</strong>
-                (${data.driverName || ""} | ${data.cellPhone || ""})<br>
+                (${data.current?.driverName || ""} | ${data.current?.cellPhone || ""})<br>
                 ${data.pickup || ""} → ${data.dropOff || ""}
 
                 <div class="event-actions">
@@ -186,51 +270,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
             <div class="event-details" style="display:none;">
                 <div class="details-grid">
-                    <div class="detail">
-                        <span class="label">Pax</span>
-                        <span class="value">${data.pax || "-"}</span>
-                    </div>
-                    <div class="detail">
-                        <span class="label">Flight</span>
-                        <span class="value">${data.flightNumber || "-"}</span>
-                    </div>
-                    <div class="detail">
-                        <span class="label">Booking Type</span>
-                        <span class="value">${data.bookingType || "-"}</span>
-                    </div>
-
-                    <div class="detail">
-                        <span class="label">Amount</span>
-                        <span class="value">${data.amount || "-"}</span>
-                    </div>
-                    <div class="detail">
-                        <span class="label">Driver Rate</span>
-                        <span class="value">${data.driverRate || "-"}</span>
-                    </div>
-
-                    <div class="detail">
-                        <span class="label">Vehicle</span>
-                        <span class="value">${data.transportUnit || "-"}</span>
-                    </div>
-                    <div class="detail">
-                        <span class="label">Color</span>
-                        <span class="value">${data.color || "-"}</span>
-                    </div>
-                    <div class="detail">
-                        <span class="label">Plate</span>
-                        <span class="value">${data.plateNumber || "-"}</span>
-                    </div>
-
-                    <div class="detail">
-                        <span class="label">Luggage</span>
-                        <span class="value">${data.luggage || "-"}</span>
-                    </div>
+                    <div class="detail"><span class="label">Pax</span><span class="value">${data.pax || "-"}</span></div>
+                    <div class="detail"><span class="label">Flight</span><span class="value">${data.flightNumber || "-"}</span></div>
+                    <div class="detail"><span class="label">Booking Type</span><span class="value">${data.bookingType || "-"}</span></div>
+                    <div class="detail"><span class="label">Amount</span><span class="value">${data.amount || "-"}</span></div>
+                    <div class="detail"><span class="label">Driver Rate</span><span class="value">${data.driverRate || "-"}</span></div>
+                    <div class="detail"><span class="label">Vehicle</span><span class="value">${data.transportUnit || "-"}</span></div>
+                    <div class="detail"><span class="label">Color</span><span class="value">${data.color || "-"}</span></div>
+                    <div class="detail"><span class="label">Plate</span><span class="value">${data.plateNumber || "-"}</span></div>
+                    <div class="detail"><span class="label">Luggage</span><span class="value">${data.luggage || "-"}</span></div>
                 </div>
-
-                <div class="detail-note">
-                    <span class="label">Note</span>
-                    <p>${data.note || "—"}</p>
-                </div>
+                <div class="detail-note"><span class="label">Note</span><p>${data.note || "—"}</p></div>
             </div>
         `;
 
@@ -242,7 +292,6 @@ document.addEventListener("DOMContentLoaded", () => {
             btnView.textContent = isHidden ? "View Less" : "View More";
         });
 
-        // Edit schedule
         const btnEdit = event.querySelector(".btn-edit");
         btnEdit.addEventListener("click", () => {
             modal.style.display = "block";
@@ -251,9 +300,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 const input = manualForm.querySelector(`[name="${key}"]`);
                 if (input) input.value = value;
             }
+            if (data.current) {
+                driverInput.value = data.current.driverName || "";
+                cellPhoneInput.value = data.current.cellPhone || "";
+            }
         });
 
-        // Delete schedule
         const btnDelete = event.querySelector(".btn-delete");
         btnDelete.addEventListener("click", async () => {
             const confirm = await Swal.fire({
@@ -290,7 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const file = e.target.files[0];
         if (!file) return;
 
-        const phoneMap = await fetchUsersPhoneMap(); // fetch phone → full name map
+        const phoneMap = await fetchUsersPhoneMap();
 
         const reader = new FileReader();
         reader.onload = async ev => {
@@ -302,9 +354,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             const sheet = workbook.Sheets[sheetName];
-            const tomorrowISO = new Date();
-            tomorrowISO.setDate(tomorrowISO.getDate() + 1);
-            const tomorrowStr = tomorrowISO.toISOString().split("T")[0];
+            const tomorrowStr = getTomorrowLocalISO();
             const range = XLSX.utils.decode_range(sheet["!ref"]);
             const schedules = [];
 
@@ -313,15 +363,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const dateISO = excelToISODate(dateValue);
                 if (dateISO !== tomorrowStr) continue;
 
-                // Get and clean the cellPhone
                 const rawPhone = sheet[`P${row + 1}`]?.v || "";
                 const digits = rawPhone.replace(/\D/g, "");
                 const cellPhone = digits.match(/09\d{9}/)?.[0] || "";
 
-                // Determine the driver name
                 let driverName = cleanDriverName(sheet[`J${row + 1}`]?.v || "");
                 if (cellPhone && phoneMap[cellPhone]) {
-                    driverName = phoneMap[cellPhone]; // replace with full name from /users
+                    driverName = phoneMap[cellPhone];
                 }
 
                 schedules.push({
@@ -335,18 +383,17 @@ document.addEventListener("DOMContentLoaded", () => {
                     flightNumber: sheet[`G${row + 1}`]?.v || "",
                     pickup: sheet[`H${row + 1}`]?.v || "",
                     dropOff: sheet[`I${row + 1}`]?.v || "",
-                    driverName,
                     unitType: sheet[`K${row + 1}`]?.v || "",
                     amount: sheet[`L${row + 1}`]?.v || "",
                     driverRate: sheet[`M${row + 1}`]?.v || "",
                     company: sheet[`N${row + 1}`]?.v || "",
                     bookingType: sheet[`O${row + 1}`]?.v || "",
-                    cellPhone,
                     transportUnit: sheet[`Q${row + 1}`]?.v || "",
                     color: sheet[`R${row + 1}`]?.v || "",
                     plateNumber: sheet[`S${row + 1}`]?.v || "",
                     luggage: sheet[`T${row + 1}`]?.v || "",
-                    status: "Pending"
+                    status: "Pending",
+                    current: { driverName, cellPhone }
                 });
             }
 
@@ -370,39 +417,81 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!res.ok) throw new Error("Failed to fetch users");
             const data = await res.json();
             const phoneMap = {};
-
             data.users.forEach(u => {
-                const phoneDigits = (u.phone || "").replace(/\D/g, ""); // normalize phone
+                const phoneDigits = (u.phone || "").replace(/\D/g, "");
                 if (phoneDigits) {
                     phoneMap[phoneDigits] = `${u.firstName} ${u.middleName} ${u.lastName}`.replace(/\s+/g, " ").trim();
                 }
             });
-
             return phoneMap;
         } catch (err) {
             console.error(err);
             return {};
         }
     }
+    // ----------------- Reset Add Modal -----------------
+    function resetManualForm() {
+        manualForm.reset();
+        editingTransactionID = null;
+        driverInput.value = "";
+        cellPhoneInput.value = "";
+    }
 
     // ---------------- Manual Add / Edit ----------------
-    addManualBtn.onclick = () => modal.style.display = "block";
-    closeModalBtn.onclick = () => modal.style.display = "none";
-    window.onclick = e => { if (e.target === modal) modal.style.display = "none"; };
+    addManualBtn.onclick = () => {
+        resetManualForm();
+        modal.style.display = "block";
+    };
+    closeModalBtn.onclick = () => {
+        modal.style.display = "none";
+        resetManualForm();
+    };
+    window.onclick = e => {
+        if (e.target === modal) {
+            modal.style.display = "none";
+            resetManualForm();
+        }
+    };
 
     manualForm.onsubmit = async e => {
         e.preventDefault();
         const f = new FormData(manualForm);
         const dateISO = f.get("date");
 
-        const data = {
-            clientName: f.get("clientName"),
-            contactNumber: f.get("contactNumber"),
+        const newCurrent = {
             driverName: f.get("driverName"),
-            pickup: f.get("pickup"),
-            dropOff: f.get("dropOff"),
+            cellPhone: f.get("cellPhone")
+        };
+
+        const existingSchedule = editingTransactionID
+            ? allSchedules.find(s => s.transactionID === editingTransactionID)
+            : null;
+
+        let oldHistory = existingSchedule?.old || {};
+
+        if (existingSchedule?.current) {
+            const oldCurrent = existingSchedule.current;
+
+            const driverChanged =
+                oldCurrent.driverName !== newCurrent.driverName ||
+                oldCurrent.cellPhone !== newCurrent.cellPhone;
+
+            if (driverChanged) {
+                const nextIndex = Object.keys(oldHistory).length;
+                oldHistory[nextIndex] = {
+                    driverName: oldCurrent.driverName,
+                    cellPhone: oldCurrent.cellPhone
+                };
+            }
+        }
+
+        const data = {
             date: dateISO,
             time: f.get("time"),
+            clientName: f.get("clientName"),
+            contactNumber: f.get("contactNumber"),
+            pickup: f.get("pickup"),
+            dropOff: f.get("dropOff"),
             pax: f.get("pax"),
             flightNumber: f.get("flightNumber"),
             note: f.get("note"),
@@ -411,26 +500,23 @@ document.addEventListener("DOMContentLoaded", () => {
             driverRate: f.get("driverRate"),
             company: f.get("company"),
             bookingType: f.get("bookingType"),
-            cellPhone: f.get("cellPhone"),
             transportUnit: f.get("transportUnit"),
             color: f.get("color"),
             plateNumber: f.get("plateNumber"),
             luggage: f.get("luggage"),
-            status: "Pending"
+            status: "Pending",
+            current: newCurrent,
+            old: Object.keys(oldHistory).length ? oldHistory : undefined
         };
 
         const method = editingTransactionID ? "PUT" : "POST";
 
         if (await sendSchedulesToBackend(data, method, editingTransactionID)) {
-            // Update the filter to new date if editing
-            const filterDate = dateISO;
-            dateFilter.value = filterDate;
-
-            await fetchSchedules(filterDate);
+            dateFilter.value = dateISO;
+            await fetchSchedules(dateISO);
             modal.style.display = "none";
-            manualForm.reset();
+            resetManualForm();
             showToast(editingTransactionID ? "Schedule updated!" : "Schedule added!", "success");
-            editingTransactionID = null;
         }
     };
 
