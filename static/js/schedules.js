@@ -235,7 +235,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function createCalendarEvent(data) {
-        const event = document.createElement("div");
+        const event = document.createElement("div"); 
         event.classList.add("calendar-event");
         const statusMap = {
             "Pending": "#1 The Driver is to depart",
