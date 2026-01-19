@@ -663,3 +663,86 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+.to {
+  font-size: 2.5rem;
+}
+
+.event-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.event-company {
+  font-size: 1.15rem;
+  color: #0f172a;
+}
+
+.event-vehicle {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Footer layout */
+.event-footer {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+/* Buttons on LEFT */
+.event-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+/* Driver + vehicle on RIGHT */
+.driver-info {
+  text-align: right;
+  justify-self: end;
+  font-size: 0.95rem;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.driver-name {
+  font-size: 1.35em;
+  font-weight: 600;
+  color: #334155;
+}
+
+
+/* Route spacing */
+.event-route {
+  margin-top: 6px;
+}
+
+/* ===============================
+   MOBILE BEHAVIOR
+================================= */
+@media (max-width: 640px) {
+  .event-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .driver-info {
+    order: 1;
+    text-align: left;
+    justify-self: start;
+    margin-bottom: 6px;
+  }
+
+  .event-actions {
+    order: 2;
+    justify-content: flex-start;
+  }
+}
