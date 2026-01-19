@@ -108,22 +108,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ---------------- Philippine Local Date Utilities ----------------
-    function getLocalISODate(offsetHours = 8) {
-        const now = new Date();
-        const localTime = new Date(now.getTime() + offsetHours * 60 * 60 * 1000);
-        const year = localTime.getFullYear();
-        const month = String(localTime.getMonth() + 1).padStart(2, "0");
-        const day = String(localTime.getDate()).padStart(2, "0");
+    function getPHLocalISODate() {
+        const nowPH = new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" });
+        const d = new Date(nowPH);
+
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+
+        console.log("PH Local ISO Date:", `${year}-${month}-${day}`);
+
         return `${year}-${month}-${day}`;
     }
 
-    function getTomorrowLocalISO(offsetHours = 8) {
-        const now = new Date();
-        const localTime = new Date(now.getTime() + offsetHours * 60 * 60 * 1000);
-        localTime.setDate(localTime.getDate() + 1);
-        const year = localTime.getFullYear();
-        const month = String(localTime.getMonth() + 1).padStart(2, "0");
-        const day = String(localTime.getDate()).padStart(2, "0");
+    function getTomorrowPHISO() {
+        const now = new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" });
+        const d = new Date(now);
+        d.setDate(d.getDate() + 1);
+
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+
         return `${year}-${month}-${day}`;
     }
 
@@ -215,7 +221,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await res.json();
             allSchedules = data.schedules || [];
 
-            const filterISO = selectedISO || dateFilter.value || getLocalISODate();
+            const filterISO = selectedISO || dateFilter.value || getPHLocalISODate();
             dateFilter.value = filterISO;
             const filtered = allSchedules.filter(s => s.date === filterISO);
             renderSchedules(filtered);
@@ -226,7 +232,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (dateFilter) {
-        dateFilter.value = getLocalISODate();
+        dateFilter.value = getPHLocalISODate();
         dateFilter.addEventListener("change", () => {
             const selectedISO = dateFilter.value;
             const filtered = allSchedules.filter(s => s.date === selectedISO);
@@ -257,30 +263,48 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
 
             <div class="event-info">
+
+                <!-- Company / Vehicle top row -->
+                <div class="event-top-row">
+                    <div class="event-company">
+                        <strong>Company: ${data.company || "-"}</strong> (${data.unitType})
+                    </div>
+
+                    <div class="event-vehicle">
+                        <strong>
+                            ${data.transportUnit || ""} |
+                            ${data.color || ""} |
+                            ${data.plateNumber || ""}
+                        </strong>
+                    </div>
+                </div>
+
+                <!-- Client -->
                 <strong>${data.clientName || ""} | ${data.contactNumber || ""}</strong>
-                (${data.current?.driverName || ""} | ${data.current?.cellPhone || ""})<br>
-                ${data.pickup || ""} → ${data.dropOff || ""}
 
-                <div class="event-actions">
-                    <button class="btn-view-more">View More</button>
-                    <button class="btn-edit">Edit</button>
-                    <button class="btn-delete">Delete</button>
+                <!-- Route -->
+                <div class="event-route">
+                    ${data.pickup || ""} <span class="to">→</span> ${data.dropOff || ""}
                 </div>
-            </div>
 
-            <div class="event-details" style="display:none;">
-                <div class="details-grid">
-                    <div class="detail"><span class="label">Pax</span><span class="value">${data.pax || "-"}</span></div>
-                    <div class="detail"><span class="label">Flight</span><span class="value">${data.flightNumber || "-"}</span></div>
-                    <div class="detail"><span class="label">Booking Type</span><span class="value">${data.bookingType || "-"}</span></div>
-                    <div class="detail"><span class="label">Amount</span><span class="value">${data.amount || "-"}</span></div>
-                    <div class="detail"><span class="label">Driver Rate</span><span class="value">${data.driverRate || "-"}</span></div>
-                    <div class="detail"><span class="label">Vehicle</span><span class="value">${data.transportUnit || "-"}</span></div>
-                    <div class="detail"><span class="label">Color</span><span class="value">${data.color || "-"}</span></div>
-                    <div class="detail"><span class="label">Plate</span><span class="value">${data.plateNumber || "-"}</span></div>
-                    <div class="detail"><span class="label">Luggage</span><span class="value">${data.luggage || "-"}</span></div>
+                <!-- Footer -->
+                <div class="event-footer">
+
+                    <!-- LEFT: buttons -->
+                    <div class="event-actions">
+                        <button class="btn-view-more">View More</button>
+                        <button class="btn-edit">Edit</button>
+                        <button class="btn-delete">Delete</button>
+                    </div>
+
+                    <!-- RIGHT: driver + vehicle -->
+                    <div class="driver-info">
+                        <div class="driver-name">
+                            ${data.current?.driverName || ""} | ${data.current?.cellPhone || ""}
+                        </div>
+                    </div>
+
                 </div>
-                <div class="detail-note"><span class="label">Note</span><p>${data.note || "—"}</p></div>
             </div>
         `;
 

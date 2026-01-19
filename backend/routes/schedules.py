@@ -42,11 +42,28 @@ def get_schedules():
     try:
         ref = db.reference("schedules")
         data = ref.get() or {}
-        schedules = list(data.values())
-        return jsonify({"success": True, "schedules": schedules}), 200
+
+        schedules = []
+        for transaction_id, schedule in data.items():
+            # Ensure transactionID exists
+            schedule["transactionID"] = transaction_id
+
+            # Ensure current object exists
+            current = schedule.get("current") or {}
+            schedule["current"] = {
+                "driverName": current.get("driverName", ""),
+                "cellPhone": current.get("cellPhone", "")
+            }
+
+            schedules.append(schedule)
+
+        return jsonify({
+            "success": True,
+            "schedules": schedules
+        }), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 # ---------------- UPDATE ----------------
 @schedules_api.route("/api/schedules/<transaction_id>", methods=["PUT"])
@@ -61,16 +78,20 @@ def update_schedule(transaction_id):
     if not token:
         return jsonify({"error": "Missing CSRF token"}), 400
 
-    try:
-        ref = db.reference(f"schedules/{transaction_id}")
-        if not ref.get():
-            return jsonify({"error": "Schedule not found"}), 404
+    ref = db.reference(f"schedules/{transaction_id}")
+    existing = ref.get()
+    if not existing:
+        return jsonify({"error": "Schedule not found"}), 404
 
-        ref.update(data)  # Update only the provided fields
-        return jsonify({"success": True, "transactionID": transaction_id}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # 🔥 FIX: replace current atomically
+    if "current" in data:
+        ref.child("current").set(data["current"])
+        data.pop("current")
 
+    # Update the rest safely
+    ref.update(data)
+
+    return jsonify({"success": True, "transactionID": transaction_id}), 200
 
 # ---------------- DELETE ----------------
 @schedules_api.route("/api/schedules/<transaction_id>", methods=["DELETE"])
