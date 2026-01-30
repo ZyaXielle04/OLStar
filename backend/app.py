@@ -1,11 +1,10 @@
-# /backend/app.py
 import os
-from flask import Flask, request
+from flask import Flask
 from dotenv import load_dotenv
 from flask_wtf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from firebase_admin import credentials, initialize_app, _apps, db
+from firebase_admin import credentials, initialize_app, _apps
 from datetime import timedelta
 
 # -----------------------
@@ -41,23 +40,14 @@ app.config.update(
 )
 
 # -----------------------
-# CSRF Configuration (IMPORTANT)
+# CSRF Configuration
 # -----------------------
 app.config.update(
-    WTF_CSRF_CHECK_DEFAULT=False,     # We'll validate manually for APIs
-    WTF_CSRF_TIME_LIMIT=None,         # Prevent token expiration issues
+    WTF_CSRF_CHECK_DEFAULT=False,  # Disable CSRF globally for APIs
+    WTF_CSRF_TIME_LIMIT=None
 )
 
 csrf = CSRFProtect(app)
-
-# -----------------------
-# Rate Limiting
-# -----------------------
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["150 per hour"]
-)
-limiter.init_app(app)
 
 # -----------------------
 # Firebase Admin SDK initialization
@@ -109,7 +99,7 @@ def set_csrf_cookie(response):
     return response
 
 # -----------------------
-# Health check (optional)
+# Health check
 # -----------------------
 @app.route("/health")
 def health():
@@ -130,8 +120,4 @@ def server_error(e):
 # Run Flask app
 # -----------------------
 if __name__ == "__main__":
-    app.run(
-        debug=(FLASK_ENV == "development"),
-        host="0.0.0.0",
-        port=5000
-    )
+    app.run(debug=(FLASK_ENV == "development"), host="0.0.0.0", port=5000)

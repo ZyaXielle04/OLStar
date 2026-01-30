@@ -226,13 +226,23 @@
 
   </div>
 
-  <!-- Firebase & JS -->
+  <!-- Other scripts -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <script src="{{ url_for('static', filename='js/firebase-config.js') }}"></script>
   <script src="{{ url_for('static', filename='js/base.js') }}"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+  <!-- EmailJS v4 UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <script>
+    emailjs.init({
+      publicKey: "qhnxSknhn12GlsccS",
+    });
+  </script>
+
+  <!-- Your script (NOT module) -->
   <script src="{{ url_for('static', filename='js/schedules.js') }}"></script>
 
 </body>

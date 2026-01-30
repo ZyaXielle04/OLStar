@@ -231,6 +231,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // ---------------- Auto Refresh (Real-time-ish) ----------------
+    let autoRefreshTimer = null;
+
+    function startAutoRefresh(intervalMs = 5000) {
+        if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+
+        autoRefreshTimer = setInterval(() => {
+            const selectedDate = dateFilter?.value || getPHLocalISODate();
+            fetchSchedules(selectedDate);
+        }, intervalMs);
+    }
+
     if (dateFilter) {
         dateFilter.value = getPHLocalISODate();
         dateFilter.addEventListener("change", () => {
@@ -306,6 +318,42 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 </div>
             </div>
+
+            <div class="event-details" style="display:none;">
+                <div class="details-grid">
+                    <div class="detail">
+                        <span class="label">Pax</span>
+                        <span class="value">${data.pax || "-"}</span>
+                    </div>
+                    <div class="detail">
+                        <span class="label">Flight</span>
+                        <span class="value">${data.flightNumber || "-"}</span>
+                    </div>
+                    <div class="detail">
+                        <span class="label">Booking Type</span>
+                        <span class="value">${data.bookingType || "-"}</span>
+                    </div>
+
+                    <div class="detail">
+                        <span class="label">Amount</span>
+                        <span class="value">${data.amount || "-"}</span>
+                    </div>
+                    <div class="detail">
+                        <span class="label">Driver Rate</span>
+                        <span class="value">${data.driverRate || "-"}</span>
+                    </div>
+
+                    <div class="detail">
+                        <span class="label">Luggage</span>
+                        <span class="value">${data.luggage || "-"}</span>
+                    </div>
+                </div>
+
+                <div class="detail-note">
+                    <span class="label">Note</span>
+                    <p>${data.note || "—"}</p>
+                </div>
+            </div>
         `;
 
         const btnView = event.querySelector(".btn-view-more");
@@ -362,25 +410,29 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ---------------- XLSX Upload ----------------
-    fileInput.addEventListener("change", async e => {
+    fileInput.addEventListener("change", async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
         const phoneMap = await fetchUsersPhoneMap();
-
         const reader = new FileReader();
-        reader.onload = async ev => {
+
+        reader.onload = async (ev) => {
             const workbook = XLSX.read(new Uint8Array(ev.target.result), { type: "array" });
             const sheetName = "BOOKING";
+
             if (!workbook.SheetNames.includes(sheetName)) {
                 showToast("Sheet BOOKING not found", "error");
                 return;
             }
 
             const sheet = workbook.Sheets[sheetName];
-            const tomorrowStr = getTomorrowLocalISO();
+            const tomorrowStr = getTomorrowPHISO();
             const range = XLSX.utils.decode_range(sheet["!ref"]);
             const schedules = [];
+
+            // Prepare an array of promises for email sending
+            const emailPromises = [];
 
             for (let row = range.s.r + 1; row <= range.e.r; row++) {
                 const dateValue = sheet[`A${row + 1}`]?.v;
@@ -396,7 +448,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     driverName = phoneMap[cellPhone];
                 }
 
-                schedules.push({
+                const clientEmail = sheet[`E${row + 1}`]?.v?.trim() || "";
+
+                const schedule = {
                     transactionID: generateTransactionID(),
                     date: dateISO,
                     time: sheet[`B${row + 1}`]?.v || "",
@@ -410,15 +464,53 @@ document.addEventListener("DOMContentLoaded", () => {
                     unitType: sheet[`K${row + 1}`]?.v || "",
                     amount: sheet[`L${row + 1}`]?.v || "",
                     driverRate: sheet[`M${row + 1}`]?.v || "",
-                    company: sheet[`N${row + 1}`]?.v || "",
+                    company: sheet[`N${row + 1}`]?.v || "Ol-Star Transport",
                     bookingType: sheet[`O${row + 1}`]?.v || "",
                     transportUnit: sheet[`Q${row + 1}`]?.v || "",
                     color: sheet[`R${row + 1}`]?.v || "",
                     plateNumber: sheet[`S${row + 1}`]?.v || "",
-                    luggage: sheet[`T${row + 1}`]?.v || "",
+                    luggage: sheet[`T${row + 1}`]?.v || 1,
                     status: "Pending",
                     current: { driverName, cellPhone }
-                });
+                };
+
+                schedules.push(schedule);
+
+                // ---------------- Send email via EmailJS ----------------
+                if (clientEmail) {
+                    const emailData = {
+                        to_email: clientEmail,
+                        client_name: schedule.clientName,
+                        company: schedule.company,
+                        date: schedule.date,
+                        time: schedule.time,
+                        pax: schedule.pax,
+                        pickup: schedule.pickup,
+                        dropOff: schedule.dropOff,
+                        driverName: driverName,
+                        cellPhone: cellPhone,
+                        transportUnit: schedule.transportUnit,
+                        unitType: schedule.unitType,
+                        color: schedule.color,
+                        plateNumber: schedule.plateNumber,
+                        bookingType: schedule.bookingType,
+                        luggage: schedule.luggage
+                    };
+
+                    const emailPromise = emailjs.send(
+                        "service_xpol5bw",     // replace with your EmailJS service ID
+                        "template_4qbpeez",    // replace with your EmailJS template ID
+                        emailData
+                    )
+                    .then(response => {
+                        console.log(`Email sent to ${clientEmail}`, response.status, response.text);
+                    })
+                    .catch(err => {
+                        console.error(`Failed to send email to ${clientEmail}`, err);
+                    });
+
+                    emailPromises.push(emailPromise);
+                }
             }
 
             if (!schedules.length) {
@@ -426,9 +518,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
-            if (await sendSchedulesToBackend(schedules)) {
+            // ---------------- Save schedules to Firebase ----------------
+            const saved = await sendSchedulesToBackend(schedules);
+            if (saved) {
                 await fetchSchedules();
                 showToast("Tomorrow’s schedules saved successfully!", "success");
+            }
+
+            // ---------------- Wait for all emails to finish ----------------
+            if (emailPromises.length > 0) {
+                await Promise.all(emailPromises);
+                console.log("All emails processed via EmailJS.");
             }
         };
 
@@ -546,4 +646,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------------- Initial Load ----------------
     fetchSchedules();
+    startAutoRefresh(); // refresh every 500 milliseconds
 });
