@@ -7,4 +7,4 @@ requests>=2.32.2,<3
 markupsafe>=2.1.1
 WTForms==3.0.1
 Werkzeug>=2.3.7,<3
-twilio==8.15.0
+twilio>=9.0.0,<10
