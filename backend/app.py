@@ -60,21 +60,26 @@ firebase_file_env = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")  # local dev
 if not db_url:
     raise RuntimeError("FIREBASE_DATABASE_URL must be set")
 
+import os
+import json
+from firebase_admin import credentials, initialize_app, _apps
+
+db_url = os.getenv("FIREBASE_DATABASE_URL")
+firebase_json_env = os.getenv("FIREBASE_ADMIN_JSON")
+
 if not _apps:
-    if FLASK_ENV == "production":
-        # Production: use JSON from environment variable
+    if os.getenv("FLASK_ENV") == "production":
         if not firebase_json_env:
             raise RuntimeError("FIREBASE_ADMIN_JSON must be set in production")
-        # Write JSON to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as temp_file:
-            temp_file.write(firebase_json_env.encode())
-            cred = credentials.Certificate(temp_file.name)
+        # Load JSON directly from environment
+        cred = credentials.Certificate(json.loads(firebase_json_env))
     else:
         # Local dev: use JSON file
+        firebase_file_env = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         if not firebase_file_env or not os.path.isfile(firebase_file_env):
             raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS must be a valid file path")
         cred = credentials.Certificate(firebase_file_env)
-    
+
     initialize_app(cred, {"databaseURL": db_url})
 
 # -----------------------
