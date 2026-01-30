@@ -1,13 +1,20 @@
 import os
+import sys
+import json
+import tempfile
+from datetime import timedelta
 from flask import Flask, request
 from dotenv import load_dotenv
 from flask_wtf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from firebase_admin import credentials, initialize_app, _apps
-from datetime import timedelta
-import tempfile
-import json
+
+# -----------------------
+# Add /backend and /root to Python path
+# -----------------------
+sys.path.append(os.path.dirname(__file__))  # /backend
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))  # /root, for /routes
 
 # -----------------------
 # Load environment variables
@@ -54,28 +61,24 @@ csrf = CSRFProtect(app)
 # Firebase Admin SDK initialization
 # -----------------------
 db_url = os.getenv("FIREBASE_DATABASE_URL")
-firebase_json_env = os.getenv("FIREBASE_ADMIN_JSON")
+firebase_json_env = os.getenv("FIREBASE_ADMIN_JSON")  # production
 firebase_file_env = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")  # local dev
 
 if not db_url:
     raise RuntimeError("FIREBASE_DATABASE_URL must be set")
 
-import os
-import json
-from firebase_admin import credentials, initialize_app, _apps
-
-db_url = os.getenv("FIREBASE_DATABASE_URL")
-firebase_json_env = os.getenv("FIREBASE_ADMIN_JSON")
-
-if not _apps:
-    if os.getenv("FLASK_ENV") == "production":
+if not _apps:  # Initialize only if Firebase not already initialized
+    if FLASK_ENV == "production":
         if not firebase_json_env:
             raise RuntimeError("FIREBASE_ADMIN_JSON must be set in production")
-        # Load JSON directly from environment
-        cred = credentials.Certificate(json.loads(firebase_json_env))
+        # Load JSON directly from environment variable
+        try:
+            cred_dict = json.loads(firebase_json_env)
+            cred = credentials.Certificate(cred_dict)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load Firebase JSON from env: {e}")
     else:
-        # Local dev: use JSON file
-        firebase_file_env = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        # Local dev: load from JSON file
         if not firebase_file_env or not os.path.isfile(firebase_file_env):
             raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS must be a valid file path")
         cred = credentials.Certificate(firebase_file_env)
@@ -85,11 +88,21 @@ if not _apps:
 # -----------------------
 # Import Blueprints
 # -----------------------
-from auth import auth_bp, limiter as auth_limiter
-from routes.pages import pages_bp
-from routes.admin_users import admin_users_api
-from routes.schedules import schedules_api
+try:
+    from auth import auth_bp, limiter as auth_limiter
+except ModuleNotFoundError:
+    raise RuntimeError("auth.py not found in /backend")
 
+try:
+    from routes.pages import pages_bp
+    from routes.admin_users import admin_users_api
+    from routes.schedules import schedules_api
+except ModuleNotFoundError:
+    raise RuntimeError("routes modules not found in /routes")
+
+# -----------------------
+# Initialize Flask-Limiter for auth
+# -----------------------
 auth_limiter.init_app(app)
 
 # -----------------------
