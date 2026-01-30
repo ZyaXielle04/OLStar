@@ -98,6 +98,24 @@ def set_csrf_cookie(response):
     )
     return response
 
+
+@app.route("/api/receive-message", methods=["POST"])
+def receive_message():
+    from_number = request.form.get("From")
+    body = request.form.get("Body")
+
+    print("Inbound WhatsApp message from:", from_number)
+    print("Body:", body)
+
+    # Example reply (only works if user initiated conversation within 24 hours)
+    client.messages.create(
+        from_=TWILIO_WHATSAPP_NUMBER,
+        to=from_number,
+        body="Thanks! Your driver is on the way 🚖"
+    )
+
+    return "OK", 200
+
 # -----------------------
 # Health check
 # -----------------------
