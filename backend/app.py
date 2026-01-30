@@ -1,11 +1,13 @@
 import os
-from flask import Flask
+from flask import Flask, request
 from dotenv import load_dotenv
 from flask_wtf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from firebase_admin import credentials, initialize_app, _apps
 from datetime import timedelta
+import tempfile
+import json
 
 # -----------------------
 # Load environment variables
@@ -46,22 +48,33 @@ app.config.update(
     WTF_CSRF_CHECK_DEFAULT=False,  # Disable CSRF globally for APIs
     WTF_CSRF_TIME_LIMIT=None
 )
-
 csrf = CSRFProtect(app)
 
 # -----------------------
 # Firebase Admin SDK initialization
 # -----------------------
-cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 db_url = os.getenv("FIREBASE_DATABASE_URL")
+firebase_json_env = os.getenv("FIREBASE_ADMIN_JSON")
+firebase_file_env = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")  # local dev
 
-if not cred_path or not os.path.isfile(cred_path):
-    raise RuntimeError("Invalid or missing GOOGLE_APPLICATION_CREDENTIALS")
 if not db_url:
     raise RuntimeError("FIREBASE_DATABASE_URL must be set")
 
 if not _apps:
-    cred = credentials.Certificate(cred_path)
+    if FLASK_ENV == "production":
+        # Production: use JSON from environment variable
+        if not firebase_json_env:
+            raise RuntimeError("FIREBASE_ADMIN_JSON must be set in production")
+        # Write JSON to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as temp_file:
+            temp_file.write(firebase_json_env.encode())
+            cred = credentials.Certificate(temp_file.name)
+    else:
+        # Local dev: use JSON file
+        if not firebase_file_env or not os.path.isfile(firebase_file_env):
+            raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS must be a valid file path")
+        cred = credentials.Certificate(firebase_file_env)
+    
     initialize_app(cred, {"databaseURL": db_url})
 
 # -----------------------
@@ -88,7 +101,6 @@ app.register_blueprint(schedules_api)
 @app.after_request
 def set_csrf_cookie(response):
     from flask_wtf.csrf import generate_csrf
-
     response.set_cookie(
         "XSRF-TOKEN",
         generate_csrf(),
@@ -98,7 +110,9 @@ def set_csrf_cookie(response):
     )
     return response
 
-
+# -----------------------
+# Example route for WhatsApp messages
+# -----------------------
 @app.route("/api/receive-message", methods=["POST"])
 def receive_message():
     from_number = request.form.get("From")
@@ -107,12 +121,12 @@ def receive_message():
     print("Inbound WhatsApp message from:", from_number)
     print("Body:", body)
 
-    # Example reply (only works if user initiated conversation within 24 hours)
-    client.messages.create(
-        from_=TWILIO_WHATSAPP_NUMBER,
-        to=from_number,
-        body="Thanks! Your driver is on the way 🚖"
-    )
+    # Example reply (needs your Twilio client configured)
+    # client.messages.create(
+    #     from_=TWILIO_WHATSAPP_NUMBER,
+    #     to=from_number,
+    #     body="Thanks! Your driver is on the way 🚖"
+    # )
 
     return "OK", 200
 
