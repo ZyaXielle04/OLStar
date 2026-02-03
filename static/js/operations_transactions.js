@@ -4,6 +4,9 @@ const container = document.getElementById("requestsContainer");
 const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dekdyp7bb/upload";
 const CLOUDINARY_UPLOAD_PRESET = "OLStar";
 
+// Ensure SweetAlert2 is loaded in your HTML
+// <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 fetch("/api/admin/requests")
   .then(res => res.json())
   .then(data => {
@@ -56,6 +59,12 @@ fetch("/api/admin/requests")
       const payBtn = card.querySelector(".btn-pay");
       const denyBtn = card.querySelector(".btn-deny");
 
+      // Disable buttons if not pending
+      if (statusText !== "PENDING") {
+        payBtn.disabled = true;
+        denyBtn.disabled = true;
+      }
+
       // --------- Pay Button ---------
       payBtn.addEventListener("click", async () => {
         const fileInput = document.createElement("input");
@@ -89,7 +98,6 @@ fetch("/api/admin/requests")
               statusEl.textContent = "PAID";
               statusEl.className = "status paid";
 
-              // Add reply image link
               const replyLink = document.createElement("a");
               replyLink.href = imageUrl;
               replyLink.target = "_blank";
@@ -98,21 +106,44 @@ fetch("/api/admin/requests")
 
               payBtn.disabled = true;
               denyBtn.disabled = true;
-              alert("Request marked as paid!");
+
+              Swal.fire({
+                icon: "success",
+                title: "Paid",
+                text: "Request marked as paid and image uploaded!",
+                timer: 2000,
+                showConfirmButton: false
+              });
             } else {
-              alert("Cloudinary upload failed.");
+              Swal.fire({
+                icon: "error",
+                title: "Upload Failed",
+                text: "Cloudinary upload failed."
+              });
             }
           } catch (err) {
             console.error(err);
-            alert("Error uploading image or updating request.");
+            Swal.fire({
+              icon: "error",
+              title: "Error",
+              text: "Error uploading image or updating request."
+            });
           }
         };
       });
 
       // --------- Deny Button ---------
       denyBtn.addEventListener("click", async () => {
-        const confirmDeny = confirm("Are you sure you want to deny this request?");
-        if (!confirmDeny) return;
+        const { isConfirmed } = await Swal.fire({
+          title: "Are you sure?",
+          text: "Do you want to deny this request?",
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "Yes, deny it",
+          cancelButtonText: "Cancel"
+        });
+
+        if (!isConfirmed) return;
 
         try {
           await fetch(`/api/admin/requests/${req.id}`, {
@@ -126,10 +157,21 @@ fetch("/api/admin/requests")
 
           payBtn.disabled = true;
           denyBtn.disabled = true;
-          alert("Request denied.");
+
+          Swal.fire({
+            icon: "success",
+            title: "Denied",
+            text: "Request denied successfully",
+            timer: 2000,
+            showConfirmButton: false
+          });
         } catch (err) {
           console.error(err);
-          alert("Error updating request.");
+          Swal.fire({
+            icon: "error",
+            title: "Error",
+            text: "Error updating request."
+          });
         }
       });
     });
