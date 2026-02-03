@@ -64,32 +64,32 @@ def haversine(lat1, lon1, lat2, lon2):
 # Flight ETA calculation
 # ----------------------------
 def get_flight_data(flight_number, airport_icao):
-    params = {"key": API_KEY, "flightIata": flight_number}
-    response = requests.get(BASE_URL, params=params)
-    if response.status_code != 200:
-        raise Exception(f"AviationEdge error {response.status_code}")
+    try:
+        params = {"key": API_KEY, "flightIata": flight_number}
+        response = requests.get(BASE_URL, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        if not data:
+            raise Exception("No live data available")
+        flight = data[0]
 
-    data = response.json()
-    if not data:
-        raise Exception("No live data available")
+        geography = flight.get("geography")
+        speed = flight.get("speed")
+        arrival = flight.get("arrival")
 
-    flight = data[0]
+        if not geography or not speed or speed.get("horizontal", 0) == 0:
+            raise Exception("Flight not yet departed or speed unavailable")
 
-    # Safe access
-    geography = flight.get("geography")
-    speed = flight.get("speed")
-    arrival = flight.get("arrival")
+        if arrival is None or arrival.get("latitude") is None or arrival.get("longitude") is None:
+            arrival = {"latitude": AIRPORT_COORDS.get(airport_icao, (0, 0))[0],
+                       "longitude": AIRPORT_COORDS.get(airport_icao, (0, 0))[1]}
+            flight["arrival"] = arrival
 
-    if not geography or not speed:
-        raise Exception("Flight not yet departed or no live data")
-
-    # If arrival missing, use airport coords
-    if arrival is None or arrival.get("latitude") is None or arrival.get("longitude") is None:
-        arrival = {"latitude": AIRPORT_COORDS.get(airport_icao, (0, 0))[0],
-                   "longitude": AIRPORT_COORDS.get(airport_icao, (0, 0))[1]}
-        flight["arrival"] = arrival
-
-    return flight
+        return flight
+    except Exception as e:
+        # Return None if flight data is not usable
+        print(f"Flight data fallback triggered: {e}")
+        return None
 
 def calculate_eta(flight):
     lat1 = flight["geography"]["latitude"]
@@ -100,12 +100,10 @@ def calculate_eta(flight):
 
     distance_km = haversine(lat1, lon1, lat2, lon2)
     eta_hours = distance_km / speed_kmh
-
     current_utc = datetime.now(timezone.utc)
     eta_utc = current_utc + timedelta(hours=eta_hours)
     eta_local = eta_utc.astimezone(PH_TZ)
     eta_local += timedelta(minutes=5)  # buffer
-
     return distance_km, eta_hours, eta_local
 
 # ----------------------------
@@ -115,11 +113,8 @@ def get_active_schedules():
     ref = db.reference("/schedules")
     all_schedules = ref.get() or {}
     active = []
-
-    today_str = datetime.now(PH_TZ).strftime("%Y-%m-%d")  # YYYY-MM-DD
-
+    today_str = datetime.now(PH_TZ).strftime("%Y-%m-%d")
     for tripId, trip in all_schedules.items():
-        # Only Arrival trips, not completed/cancelled, and scheduled for today
         if (
             trip.get("tripType") == "Arrival" and
             trip.get("status") not in ("Completed", "Cancelled") and
@@ -138,10 +133,8 @@ def get_airport_from_pickup(pickup):
 
 def parse_trip_time(time_str):
     now = datetime.now(PH_TZ)
-    # parse time like "2:30PM" or "12:05AM"
     trip_time = datetime.strptime(time_str, "%I:%M%p")
     return now.replace(hour=trip_time.hour, minute=trip_time.minute, second=0, microsecond=0)
-
 
 def should_run_eta(trip):
     trip_time = parse_trip_time(trip["time"])
@@ -167,21 +160,28 @@ def eta_worker_loop():
         for trip in schedules:
             if not should_run_eta(trip):
                 continue
-
-            if now.minute % 15 != 0:  # 15-min interval
+            if now.minute % 15 != 0:
                 continue
 
             airport = get_airport_from_pickup(trip["pickup"])
             if not airport:
                 continue
 
+            eta_local = None
+            flight = None
             try:
                 flight = get_flight_data(trip["flightNumber"], airport)
-                distance, eta_hours, eta_local = calculate_eta(flight)
-                store_eta(trip["tripId"], eta_local)
-                print(f"[{now.strftime('%H:%M')}] ETA updated for trip {trip['tripId']}")
+                if flight:
+                    _, _, eta_local = calculate_eta(flight)
             except Exception as e:
-                print(f"[{now.strftime('%H:%M')}] Error updating ETA for {trip['tripId']}: {e}")
+                print(f"Error calculating ETA: {e}")
+
+            # fallback if flight data missing
+            if not eta_local:
+                eta_local = parse_trip_time(trip["time"]) + timedelta(minutes=5)
+
+            store_eta(trip["tripId"], eta_local)
+            print(f"[{now.strftime('%H:%M')}] ETA updated for trip {trip['tripId']}")
 
         time.sleep(CHECK_INTERVAL_SECONDS)
 
