@@ -615,7 +615,13 @@ document.addEventListener("DOMContentLoaded", () => {
             plateNumber: f.get("plateNumber"),
             luggage: f.get("luggage"),
             tripType: f.get("tripType"),
-            status: "Pending"
+            status: "Pending",
+
+            // <-- Add this
+            current: {
+                driverName: driverInput.value,
+                cellPhone: cellPhoneInput.value
+            }
         };
 
         const url = editingTransactionID

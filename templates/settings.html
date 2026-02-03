@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>OLStar | Admin Settings</title>
+
+  <!-- Base & Page Styles -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_settings.css') }}">
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>Admin Panel</h2>
+    </div>
+
+    <nav class="nav">
+      <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+      <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+
+      <details class="nav-group">
+        <summary class="nav-link">Operations</summary>
+        <div class="nav-submenu">
+          <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-sublink">Schedules</a>
+          <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-sublink">Track Drivers</a>
+          <a href="{{ url_for('pages.bookings_transactions') }}" class="nav-sublink">Transaction History</a>
+        </div>
+      </details>
+
+      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link active">Settings</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="content">
+
+    <!-- Page Header -->
+    <header class="page-header">
+      <button id="btnToggleSidebar" class="hamburger">☰</button>
+      <div class="page-header-text">
+        <h1>Settings</h1>
+        <p class="subtitle">Manage your admin preferences and account settings.</p>
+      </div>
+    </header>
+
+    <!-- Under Development Message -->
+    <section class="settings-placeholder">
+      <div class="placeholder-message">
+        <h2>Page Under Development</h2>
+        <p>This page is under development. Contents will be displayed once deployed.</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+</body>
+</html>
