@@ -326,6 +326,10 @@ document.addEventListener("DOMContentLoaded", () => {
                         <span class="value">${data.pax || "-"}</span>
                     </div>
                     <div class="detail">
+                        <span class="label">Trip Type</span>
+                        <span class="value">${getTripTypeLabel(data.tripType)}</span>
+                    </div>
+                    <div class="detail">
                         <span class="label">Flight</span>
                         <span class="value">${data.flightNumber || "-"}</span>
                     </div>
@@ -470,8 +474,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     color: sheet[`R${row + 1}`]?.v || "",
                     plateNumber: sheet[`S${row + 1}`]?.v || "",
                     luggage: sheet[`T${row + 1}`]?.v || 1,
-                    status: "Pending",
-                    current: { driverName, cellPhone }
+                    current: { driverName, cellPhone },
+
+                    tripType: sheet[`U${row + 1}`]?.v || "Departure",
+
+                    status: "Pending"
                 };
 
                 schedules.push(schedule);
@@ -535,6 +542,10 @@ document.addEventListener("DOMContentLoaded", () => {
         reader.readAsArrayBuffer(file);
     });
 
+    function getTripTypeLabel(val) {
+        return val || "-";
+    }
+
     async function fetchUsersPhoneMap() {
         try {
             const res = await fetch("/api/admin/users");
@@ -577,37 +588,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    // ---------------- SAVE (ADD / EDIT) ----------------
     manualForm.onsubmit = async e => {
         e.preventDefault();
+
         const f = new FormData(manualForm);
-        const dateISO = f.get("date");
-
-        const newCurrent = {
-            driverName: f.get("driverName"),
-            cellPhone: f.get("cellPhone")
-        };
-
-        const existingSchedule = editingTransactionID
-            ? allSchedules.find(s => s.transactionID === editingTransactionID)
-            : null;
-
-        let oldHistory = existingSchedule?.old || {};
-
-        if (existingSchedule?.current) {
-            const oldCurrent = existingSchedule.current;
-
-            const driverChanged =
-                oldCurrent.driverName !== newCurrent.driverName ||
-                oldCurrent.cellPhone !== newCurrent.cellPhone;
-
-            if (driverChanged) {
-                const nextIndex = Object.keys(oldHistory).length;
-                oldHistory[nextIndex] = {
-                    driverName: oldCurrent.driverName,
-                    cellPhone: oldCurrent.cellPhone
-                };
-            }
-        }
+        const dateISO = new Date(f.get("date")).toISOString().split("T")[0];
 
         const data = {
             date: dateISO,
@@ -628,20 +614,23 @@ document.addEventListener("DOMContentLoaded", () => {
             color: f.get("color"),
             plateNumber: f.get("plateNumber"),
             luggage: f.get("luggage"),
-            status: "Pending",
-            current: newCurrent,
-            old: Object.keys(oldHistory).length ? oldHistory : undefined
+            tripType: f.get("tripType"),
+            status: "Pending"
         };
 
-        const method = editingTransactionID ? "PUT" : "POST";
+        const url = editingTransactionID
+            ? `/api/schedules/${editingTransactionID}`
+            : `/api/schedules`;
 
-        if (await sendSchedulesToBackend(data, method, editingTransactionID)) {
-            dateFilter.value = dateISO;
-            await fetchSchedules(dateISO);
-            modal.style.display = "none";
-            resetManualForm();
-            showToast(editingTransactionID ? "Schedule updated!" : "Schedule added!", "success");
-        }
+        await fetch(url, {
+            method: editingTransactionID ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+
+        modal.style.display = "none";
+        resetManualForm();
+        fetchSchedules();
     };
 
     // ---------------- Initial Load ----------------

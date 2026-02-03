@@ -97,6 +97,8 @@ try:
     from routes.pages import pages_bp
     from routes.admin_users import admin_users_api
     from routes.schedules import schedules_api
+    from routes.admin_requests import admin_requests_api
+    from routes.admin_dashboard import admin_dashboard_api
 except ModuleNotFoundError:
     raise RuntimeError("routes modules not found in /routes")
 
@@ -112,6 +114,8 @@ app.register_blueprint(pages_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_users_api)
 app.register_blueprint(schedules_api)
+app.register_blueprint(admin_requests_api)
+app.register_blueprint(admin_dashboard_api)
 
 # -----------------------
 # Inject CSRF token cookie for JS

@@ -7,79 +7,129 @@
 
   <title>OLStar | Admin Dashboard</title>
 
-  <!-- External CSS -->
+  <!-- Base & Page Styles -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_dashboard.css') }}">
+
+  <!-- Chart.js for graphs -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Leaflet for mini map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Firebase SDK (compat for easier usage) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 </head>
 <body>
 
-  <div class="layout">
+<div class="layout">
 
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <h2>Admin Panel</h2>
-      </div>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>Admin Panel</h2>
+    </div>
 
-      <nav class="nav">
-        <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link active">Dashboard</a>
-        <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+    <nav class="nav">
+      <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link active">Dashboard</a>
+      <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
 
-        <!-- Bookings (Expandable) -->
-        <details class="nav-group">
-          <summary class="nav-link">Operations</summary>
-          <div class="nav-submenu">
-            <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-sublink">Schedules</a>
-            <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-sublink">Track Drivers</a>
-            <a href="{{ url_for('pages.bookings_transactions') }}" class="nav-sublink">Transaction History</a>
-          </div>
-        </details>
+      <details class="nav-group">
+        <summary class="nav-link">Operations</summary>
+        <div class="nav-submenu">
+          <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-sublink">Schedules</a>
+          <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-sublink">Track Drivers</a>
+          <a href="{{ url_for('pages.bookings_transactions') }}" class="nav-sublink">Transaction History</a>
+        </div>
+      </details>
 
-        <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
-      </nav>
+      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+    </nav>
 
-      <div class="sidebar-footer">
-        <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
-      </div>
-    </aside>
+    <div class="sidebar-footer">
+      <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+    </div>
+  </aside>
 
-    <!-- Main Content -->
-    <main class="content">
+  <!-- Main Content -->
+  <main class="content">
 
-      <header class="page-header">
-        <button id="btnToggleSidebar" class="hamburger">☰</button>
+    <!-- Page Header -->
+    <header class="page-header">
+      <button id="btnToggleSidebar" class="hamburger">☰</button>
+      <div class="page-header-text">
         <h1>Dashboard</h1>
         <p class="subtitle">Welcome back. You are logged in as an administrator.</p>
-      </header>
+      </div>
+    </header>
 
-      <!-- Stats Cards -->
-      <section class="cards">
-        <article class="card">
-          <h3 class="card-title">Total Users</h3>
-          <div class="card-value">—</div>
-        </article>
+    <!-- Metrics Cards -->
+    <section class="cards" id="metricsCards">
+      <article class="card">
+        <h3 class="card-title">Total Users</h3>
+        <div class="card-value" id="totalUsers">—</div>
+      </article>
 
-        <article class="card">
-          <h3 class="card-title">Active Sessions</h3>
-          <div class="card-value">—</div>
-        </article>
+      <article class="card">
+        <h3 class="card-title">Active Sessions</h3>
+        <div class="card-value" id="activeSessions">—</div>
+      </article>
 
-        <article class="card">
-          <h3 class="card-title">Bookings Today</h3>
-          <div class="card-value">—</div>
-        </article>
+      <article class="card">
+        <h3 class="card-title">Bookings Today</h3>
+        <div class="card-value" id="bookingsToday">—</div>
+      </article>
 
-        <article class="card">
-          <h3 class="card-title">System Status</h3>
-          <div class="card-value status-ok">OK</div>
-        </article>
-      </section>
+      <article class="card">
+        <h3 class="card-title">Drivers Online</h3>
+        <div class="card-value" id="driversOnline">—</div>
+      </article>
 
-    </main>
+      <article class="card">
+        <h3 class="card-title">Pending Requests</h3>
+        <div class="card-value" id="pendingRequests">—</div>
+      </article>
+    </section>
 
-  </div>
+    <!-- Quick Actions -->
+    <section class="quick-actions">
+      <button onclick="window.location.href='{{ url_for('pages.admin_users') }}'">Add / Manage Users</button>
+      <button onclick="window.location.href='{{ url_for('pages.bookings_schedules') }}'">Upload Schedules</button>
+      <button onclick="window.location.href='{{ url_for('pages.bookings_track_drivers') }}'">Track Drivers</button>
+      <button onclick="window.location.href='{{ url_for('pages.bookings_transactions') }}'">View Requests</button>
+    </section>
 
-  <script src="{{ url_for('static', filename='js/firebase-config.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/base.js') }}"></script>
+    <!-- Recent Requests -->
+    <section class="recent-requests">
+      <h2>Recent Requests</h2>
+      <div id="recentRequestsContainer" class="requests-grid">
+        <p>Loading requests...</p>
+      </div>
+    </section>
+
+    <!-- Activity Charts -->
+    <section class="charts">
+      <h2>Activity Trends</h2>
+      <div class="chart-container">
+        <canvas id="activityChart"></canvas>
+      </div>
+    </section>
+
+    <!-- Mini Map -->
+    <section class="mini-map">
+      <h2>Drivers Online</h2>
+      <div id="miniMap" style="height: 300px;"></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- App Scripts -->
+<script src="{{ url_for('static', filename='js/firebase-config.js') }}"></script>
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
 
 </body>
 </html>

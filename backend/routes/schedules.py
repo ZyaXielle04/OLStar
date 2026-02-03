@@ -1,5 +1,4 @@
 from flask import Blueprint, request, jsonify
-from twilio_client import send_sms, send_whatsapp
 from message_template import build_message
 
 schedules_api = Blueprint("schedules_api", __name__)
@@ -49,29 +48,6 @@ def create_schedule():
             ref = db.reference(f"schedules/{transaction_id}")
             ref.set(item)
             saved_ids.append(transaction_id)
-
-            # ---------------- Build Message ----------------
-            message_body = build_message(item)
-
-            # ---------------- Send SMS ----------------
-            contact_number = normalize_phone(item.get("contactNumber", ""))
-            msg_result = {"transactionID": transaction_id}
-
-            if contact_number:
-                try:
-                    send_sms(contact_number, message_body)
-                    msg_result["sms"] = "sent"
-                except Exception as e:
-                    msg_result["sms"] = f"failed: {str(e)}"
-
-                # ---------------- Send WhatsApp ----------------
-                try:
-                    send_whatsapp(contact_number, message_body)
-                    msg_result["whatsapp"] = "sent"
-                except Exception as e:
-                    msg_result["whatsapp"] = f"failed: {str(e)}"
-
-            message_results.append(msg_result)
 
         return jsonify({
             "success": True,

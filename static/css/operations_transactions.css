@@ -1,0 +1,140 @@
+/* ===============================
+   PAGE HEADER
+================================= */
+.page-header {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 40px;
+    padding: 20px;
+    border-bottom: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+    border-radius: var(--border-radius);
+}
+
+.page-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.page-header h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    line-height: 1.2;
+}
+
+.page-header .subtitle {
+    font-size: 1rem;
+    font-weight: 400;
+    color: #6b7280;
+}
+
+.page-header .btn {
+    align-self: flex-start;
+    background-color: var(--secondary-color);
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: var(--border-radius);
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.page-header .btn:hover {
+    background-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Align header horizontally on medium+ screens */
+@media (min-width: 768px) {
+    .page-header {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .page-header-text {
+        gap: 6px;
+    }
+
+    .page-header .btn {
+        align-self: auto;
+    }
+}
+
+.requests-grid {
+  margin-top: 50px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.request-card {
+  background-color: #fff;
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.request-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.amount {
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.status {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.status.pending {
+  background-color: #fff3cd;
+  color: #ff9800;
+}
+
+.status.paid {
+  background-color: #e6f4ea;
+  color: #2e7d32;
+}
+
+.status.denied {
+  background-color: #fdecea;
+  color: #c62828;
+}
+
+.images {
+  margin-top: 8px;
+}
+
+.images a {
+  margin-right: 10px;
+  font-size: 0.85rem;
+  color: #1e88e5;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.images a:hover {
+  color: #1565c0;
+}

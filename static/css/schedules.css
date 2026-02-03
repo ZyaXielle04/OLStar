@@ -8,6 +8,75 @@
 }
 
 /* ===============================
+   PAGE HEADER
+================================= */
+.page-header {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 40px;
+    padding: 20px;
+    border-bottom: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+    border-radius: var(--border-radius);
+}
+
+.page-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.page-header h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    line-height: 1.2;
+}
+
+.page-header .subtitle {
+    font-size: 1rem;
+    font-weight: 400;
+    color: #6b7280;
+}
+
+.page-header .btn {
+    align-self: flex-start;
+    background-color: var(--secondary-color);
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: var(--border-radius);
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.page-header .btn:hover {
+    background-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Align header horizontally on medium+ screens */
+@media (min-width: 768px) {
+    .page-header {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .page-header-text {
+        gap: 6px;
+    }
+
+    .page-header .btn {
+        align-self: auto;
+    }
+}
+
+/* ===============================
    CARDS STYLING
 ================================= */
 .cards {
@@ -745,4 +814,59 @@ textarea {
     order: 2;
     justify-content: flex-start;
   }
+}
+
+.form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-field label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #374151; /* gray-700 */
+}
+
+.styled-select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+
+    padding: 10px 40px 10px 12px;
+    font-size: 0.95rem;
+    border-radius: 8px;
+    border: 1px solid #d1d5db; /* gray-300 */
+    background-color: #fff;
+    color: #111827; /* gray-900 */
+
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M6 8l4 4 4-4' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 18px;
+
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.styled-select:hover {
+    border-color: #9ca3af; /* gray-400 */
+}
+
+.styled-select:focus {
+    outline: none;
+    border-color: #2563eb; /* blue-600 */
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.styled-select option[value="Arrival"] {
+    color: #16a34a; /* green */
+}
+
+.styled-select option[value="Departure"] {
+    color: #2563eb; /* blue */
+}
+
+.styled-select option[value="Special"] {
+    color: #7c3aed; /* purple */
 }
