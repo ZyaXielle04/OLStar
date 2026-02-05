@@ -162,44 +162,10 @@ async function fetchAndRenderCharts() {
 }
 
 // =======================
-// MINI MAP
-// =======================
-let miniMap;
-function initMiniMap(drivers = []) {
-  if (!miniMap) {
-    miniMap = L.map("miniMap").setView([14.5995, 120.9842], 12);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors"
-    }).addTo(miniMap);
-  }
-
-  // Clear existing markers
-  miniMap.eachLayer(layer => {
-    if (layer instanceof L.Marker) miniMap.removeLayer(layer);
-  });
-
-  drivers.forEach(driver => {
-    if (!driver.latitude || !driver.longitude) return;
-    L.marker([driver.latitude, driver.longitude])
-      .addTo(miniMap)
-      .bindPopup(`${driver.name} - ${driver.status}`);
-  });
-}
-
-// =======================
 // INITIALIZE DASHBOARD
 // =======================
 document.addEventListener("DOMContentLoaded", async () => {
   fetchDashboardMetrics();
   fetchRecentRequests();
   fetchAndRenderCharts();
-
-  // Load mini map
-  try {
-    const res = await fetch("/api/admin/drivers");
-    const data = await res.json();
-    initMiniMap(data.drivers || []);
-  } catch (err) {
-    console.error("Failed to load drivers for mini map:", err);
-  }
 });

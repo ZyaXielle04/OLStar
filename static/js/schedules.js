@@ -270,6 +270,7 @@ document.addEventListener("DOMContentLoaded", () => {
         event.innerHTML = `
             <div class="event-header">
                 <div class="event-time">${data.time || ""}</div>
+                <div class="event-tripType">${getTripTypeLabel(data.tripType)}</div>
                 <div class="event-id">${data.transactionID || ""}</div>
                 <span class="status ${statusClass}">${statusLabel}</span>
             </div>
@@ -296,7 +297,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 <!-- Route -->
                 <div class="event-route">
-                    ${data.pickup || ""} <span class="to">→</span> ${data.dropOff || ""}
+                    <p>${data.pickup || ""}</p> 
+                    <p>${data.dropOff || ""}</p>
                 </div>
 
                 <!-- Footer -->
