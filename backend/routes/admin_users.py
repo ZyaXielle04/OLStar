@@ -1,4 +1,3 @@
-# backend/routes/admin_users.py
 from flask import Blueprint, request, jsonify
 from firebase_admin import auth, db
 from decorators import admin_required
@@ -11,7 +10,6 @@ admin_users_api = Blueprint("admin_users_api", __name__)
 @admin_users_api.route("/api/admin/users", methods=["POST"])
 @admin_required
 def create_user():
-    # Import CSRF here to avoid circular imports
     from app import csrf
     csrf.exempt(create_user)
 
@@ -43,6 +41,7 @@ def create_user():
             "middleName": middle_name,
             "lastName": data["lastName"],
             "role": data.get("role", "driver"),
+            "defaultTransportUnit": data.get("defaultTransportUnit", ""),
             "active": False,
             "createdAt": {".sv": "timestamp"}
         }
@@ -90,8 +89,9 @@ def get_users():
                 "email": info.get("email", ""),
                 "phone": info.get("phone", ""),
                 "role": info.get("role", "user"),
-                "active": info.get("active", False),  # your RTDB active
-                "disabled": disabled_map.get(uid, False)  # actual Firebase Auth status
+                "defaultTransportUnit": info.get("defaultTransportUnit", ""),
+                "active": info.get("active", False),
+                "disabled": disabled_map.get(uid, False)
             }
             users_list.append(user_obj)
 
@@ -102,25 +102,39 @@ def get_users():
         return jsonify({"error": str(e)}), 500
 
 # -----------------------
-# EDIT USER PROFILE
+# EDIT USER PROFILE WITH TRANSPORT UNIT REASSIGNMENT
 # -----------------------
 @admin_users_api.route("/api/admin/users/<uid>", methods=["PATCH"])
 @admin_required
 def edit_user(uid):
     data = request.get_json() or {}
-    allowed_fields = ["phone", "firstName", "middleName", "lastName", "role", "active"]
+    allowed_fields = ["phone", "firstName", "middleName", "lastName", "role", "active", "defaultTransportUnit"]
     updates = {k: data[k] for k in allowed_fields if k in data}
 
     if not updates:
         return jsonify({"error": "No valid fields to update"}), 400
 
     try:
-        # Update Firebase DB
+        # ---------------- Handle transport unit reassignment ----------------
+        new_unit = updates.get("defaultTransportUnit")
+        if new_unit:
+            # Find any user who currently has this transport unit
+            users_ref = db.reference("users")
+            users_snapshot = users_ref.get() or {}
+            for other_uid, info in users_snapshot.items():
+                if other_uid != uid and info.get("defaultTransportUnit") == new_unit:
+                    # Remove the transport unit from the old user
+                    users_ref.child(other_uid).update({"defaultTransportUnit": ""})
+
+        # Update current user
         db.reference(f"users/{uid}").update(updates)
+
         # If active changed, also update Firebase Auth
         if "active" in updates:
             auth.update_user(uid, disabled=not updates["active"])
+
         return jsonify({"message": "User updated successfully"}), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -150,7 +164,6 @@ def toggle_user_status(uid):
     enable = bool(data["active"])  # True = enable account, False = disable
 
     try:
-        # Only update Firebase Auth disabled property
         auth.update_user(uid, disabled=not enable)
         return jsonify({"message": f"User account {'enabled' if enable else 'disabled'} successfully"}), 200
     except Exception as e:
@@ -174,5 +187,32 @@ def edit_password(uid):
     try:
         auth.update_user(uid, password=new_password)
         return jsonify({"message": "Password updated successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# -----------------------
+# GET ALL TRANSPORT UNITS
+# -----------------------
+@admin_users_api.route("/api/admin/transport-units", methods=["GET"])
+@admin_required
+def get_transport_units():
+    try:
+        # Fetch all transport units from Firebase
+        units_ref = db.reference("transportUnits")
+        units_snapshot = units_ref.get() or {}
+
+        # Transform data into an array for frontend
+        units_list = []
+        for key, info in units_snapshot.items():
+            units_list.append({
+                "id": key,
+                "name": info.get("transportUnit", ""),
+                "plateNo": info.get("plateNumber", ""),
+                "color": info.get("color", ""),
+                "unitType": info.get("unitType", "")
+            })
+
+        return jsonify({"units": units_list}), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500

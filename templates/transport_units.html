@@ -5,11 +5,11 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>OLStar | User Management</title>
+  <title>OLStar | Transport Units</title>
 
   <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/users.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/transport_units.css') }}">
 </head>
 <body>
 
@@ -23,14 +23,11 @@
 
       <nav class="nav">
         <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
-        <a href="{{ url_for('pages.admin_users') }}" class="nav-link active">Users</a>
-        <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link">Transport Units</a>
-
-        <!-- Operations (exposed) -->
+        <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+        <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link active">Transport Units</a>
         <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
         <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link">Track Drivers</a>
         <a href="{{ url_for('pages.bookings_transactions') }}" class="nav-link">Transaction History</a>
-
         <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
       </nav>
 
@@ -47,47 +44,44 @@
         <button id="btnToggleSidebar" class="hamburger">☰</button>
 
         <div class="page-header-text">
-          <h1>Users</h1>
-          <p class="subtitle">Manage registered users and permissions</p>
+          <h1>Transport Units</h1>
+          <p class="subtitle">Manage vehicles and their details</p>
         </div>
 
-        <button id="btnOpenCreateModal" class="btn">Add User</button>
+        <div class="header-actions">
+          <input type="text" id="transportSearch" placeholder="Search by Type, Brand, Color, or Plate" class="search-input"/>
+          <button id="btnOpenTransportModal" class="btn">Add Transport Unit</button>
+        </div>
       </header>
 
-      <!-- Users Grid -->
-      <section id="usersGrid" class="cards users-grid">
-        <!-- User cards will be dynamically injected here via JS -->
+      <!-- Transport Units Grid -->
+      <section id="transportGrid" class="cards users-grid">
+        <!-- Transport unit cards will be injected here via JS -->
       </section>
 
     </main>
 
   </div>
 
-  <!-- User Modal (Create/Edit) -->
-  <div id="userModal" class="modal">
+  <!-- Transport Modal (Create/Edit) -->
+  <div id="transportModal" class="modal">
     <div class="modal-content">
       <span class="close">&times;</span>
-      <h2 class="modal-title"></h2>
-      <form id="userForm">
-        <input type="text" name="firstName" placeholder="First Name" required />
-        <input type="text" name="middleName" placeholder="Middle Name" />
-        <input type="text" name="lastName" placeholder="Last Name" required />
-        <input type="email" name="email" placeholder="Email" required />
-        <input type="text" name="phone" placeholder="Phone" required />
-
-        <!-- ✅ NEW FIELD -->
-        <select name="defaultUnit">
-          <option value="">— No Default Transport Unit —</option>
-        </select>
-
+      <h2 class="modal-title">Add Transport Unit</h2>
+      <form id="transportForm">
+        <input type="text" name="unitType" placeholder="Unit Type (SUV, Sedan, Van)" required />
+        <input type="text" name="transportUnit" placeholder="Transport Unit (Brand / Model)" required />
+        <input type="text" name="color" placeholder="Color" required />
+        <input type="text" name="plateNumber" placeholder="Plate Number" required />
         <button type="submit">Save</button>
       </form>
     </div>
   </div>
 
+  <!-- Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
   <script src="{{ url_for('static', filename='js/base.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/users.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/transport_units.js') }}"></script>
 
 </body>
 </html>
