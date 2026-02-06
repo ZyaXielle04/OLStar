@@ -11,35 +11,26 @@ document.addEventListener("DOMContentLoaded", () => {
     const driverInput = document.getElementById("driverName");
     const cellPhoneInput = document.getElementById("cellPhone");
     const driverDatalist = document.getElementById("driverSuggestions");
+    const plateInput = document.getElementById("plateNumber");
+    const transportUnitInput = document.getElementById("transportUnit");
+    const unitTypeInput = document.getElementById("unitType");
+    const colorInput = document.getElementById("color");
+    const plateDatalist = document.getElementById("plateSuggestions");
+    let expandedEvents = new Set();
 
-    // Filter users as admin types and populate datalist
-    driverInput.addEventListener("input", () => {
-        const value = driverInput.value.trim().toLowerCase();
-        driverDatalist.innerHTML = "";
-
-        if (!value) return;
-
-        const matches = usersList.filter(u => {
-            const first = (u.firstName || "").toLowerCase();
-            const middle = (u.middleName || "").toLowerCase();
-            const last = (u.lastName || "").toLowerCase();
-
-            return (
-                first.includes(value) ||
-                middle.includes(value) ||
-                last.includes(value)
-            );
-        });
-
-        matches.forEach(u => {
-            const fullName = `${u.firstName} ${u.middleName} ${u.lastName}`
-                .replace(/\s+/g, " ")
-                .trim();
-
-            const option = document.createElement("option");
-            option.value = fullName;
-            driverDatalist.appendChild(option);
-        });
+    // ---------------- Plate Number Auto-fill ----------------
+    plateInput.addEventListener("input", () => {
+        const value = plateInput.value.trim();
+        const match = transportUnitsList.find(u => u.plateNumber === value);
+        if (match) {
+            transportUnitInput.value = match.transportUnit || "";
+            unitTypeInput.value = match.unitType || "";
+            colorInput.value = match.color || "";
+        } else {
+            transportUnitInput.value = "";
+            unitTypeInput.value = "";
+            colorInput.value = "";
+        }
     });
 
     // ---------------- SweetAlert2 Toast ----------------
@@ -158,6 +149,21 @@ document.addEventListener("DOMContentLoaded", () => {
             return false;
         }
     }
+    
+    async function fetchTransportUnits() {
+        try {
+            const res = await fetch("/api/transportUnits");
+            if (!res.ok) throw new Error("Failed to fetch transport units");
+            const data = await res.json();
+            transportUnitsList = data.transportUnits || [];
+        } catch (err) {
+            console.error(err);
+            transportUnitsList = [];
+        }
+    }
+
+    // call this on page load
+    fetchTransportUnits();
 
     async function deleteScheduleFromBackend(transactionID) {
         try {
@@ -171,10 +177,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // ---------------- Global Schedules ----------------
+    // ---------------- Global Data ----------------
     let allSchedules = [];
-    let editingTransactionID = null;
     let usersList = [];
+    let editingTransactionID = null;
+    let transportUnitsList = [];
 
     // ---------------- Fetch Users for Autocomplete ----------------
     async function fetchUsers() {
@@ -252,9 +259,50 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    function buildWhatsAppMessage(item) {
+        const current = item.current || {};
+
+        return `Hi Sir/Madam ${item.clientName || ""},
+
+This is from ${item.company || ""} X Ol-Star Transport. Here are your vehicle service details:
+
+✈️ FLIGHT DETAILS
+📅 Date: ${item.date || ""}
+⏰ Pickup Time: ${item.time || ""}
+👥 Passengers: ${item.pax || ""}
+
+📍 PICKUP AREA
+${item.pickup || ""}
+
+📍 DROP-OFF LOCATION
+${item.dropOff || ""}
+
+🚗 DRIVER INFORMATION
+Name: ${current.driverName || ""}
+Mobile: ${current.cellPhone || ""}
+Vehicle: ${item.transportUnit || ""} (${item.unitType || ""})
+Color: ${item.color || ""}
+Plate No: ${item.plateNumber || ""}
+
+🧳 CAR TYPE & LUGGAGE INFO
+Please note that the car type you have reserved is ${item.bookingType || ""}.
+The luggage specification allows a maximum of ${item.luggage || ""} pcs (24-inch max).
+
+ℹ️ ADDITIONAL INFO
+You have a free one (1) hour waiting period.
+After that, PHP 150 per succeeding hour.
+
+📞 0917-657-7693
+📱 WhatsApp: 0963-492-2662
+📧 olstaropc@gmail.com
+
+This is an automated message. Please do not reply.`;
+    }
+
     function createCalendarEvent(data) {
-        const event = document.createElement("div"); 
+        const event = document.createElement("div");
         event.classList.add("calendar-event");
+
         const statusMap = {
             "Pending": "#1 The Driver is to depart",
             "Confirmed": "#2 Driver has departed",
@@ -263,6 +311,7 @@ document.addEventListener("DOMContentLoaded", () => {
             "Completed": "#5 Service finished",
             "Cancelled": "Booking Cancelled"
         };
+
         const rawStatus = data.status || "Pending";
         const statusClass = rawStatus.toLowerCase().replace(/\s+/g, "-");
         const statusLabel = statusMap[rawStatus] || rawStatus;
@@ -277,7 +326,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
             <div class="event-info">
 
-                <!-- Company / Vehicle top row -->
                 <div class="event-top-row">
                     <div class="event-company">
                         <strong>Company: ${data.company || "-"}</strong> (${data.unitType})
@@ -292,32 +340,26 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
                 </div>
 
-                <!-- Client -->
                 <strong>${data.clientName || ""} | ${data.contactNumber || ""}</strong>
 
-                <!-- Route -->
                 <div class="event-route">
-                    <p>${data.pickup || ""}</p> 
-                    <p>${data.dropOff || ""}</p>
+                    <p>Pickup Location: <strong>${data.pickup || ""}</strong></p>
+                    <p>Drop Off Location: <strong>${data.dropOff || ""}</strong></p>
                 </div>
 
-                <!-- Footer -->
                 <div class="event-footer">
-
-                    <!-- LEFT: buttons -->
                     <div class="event-actions">
                         <button class="btn-view-more">View More</button>
+                        <button class="btn-copy">📋 Copy Message</button>
                         <button class="btn-edit">Edit</button>
                         <button class="btn-delete">Delete</button>
                     </div>
 
-                    <!-- RIGHT: driver + vehicle -->
                     <div class="driver-info">
                         <div class="driver-name">
                             ${data.current?.driverName || ""} | ${data.current?.cellPhone || ""}
                         </div>
                     </div>
-
                 </div>
             </div>
 
@@ -339,7 +381,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         <span class="label">Booking Type</span>
                         <span class="value">${data.bookingType || "-"}</span>
                     </div>
-
                     <div class="detail">
                         <span class="label">Amount</span>
                         <span class="value">${data.amount || "-"}</span>
@@ -348,7 +389,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         <span class="label">Driver Rate</span>
                         <span class="value">${data.driverRate || "-"}</span>
                     </div>
-
                     <div class="detail">
                         <span class="label">Luggage</span>
                         <span class="value">${data.luggage || "-"}</span>
@@ -363,21 +403,66 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
 
         const btnView = event.querySelector(".btn-view-more");
+        const btnCopy = event.querySelector(".btn-copy");
         const details = event.querySelector(".event-details");
+
+        // Restore expanded state AFTER render
+        if (expandedEvents.has(data.transactionID)) {
+            details.style.display = "block";
+            btnView.textContent = "View Less";
+        }
+
+        // Toggle handler
         btnView.addEventListener("click", () => {
             const isHidden = details.style.display === "none";
-            details.style.display = isHidden ? "block" : "none";
-            btnView.textContent = isHidden ? "View Less" : "View More";
+
+            if (isHidden) {
+                details.style.display = "block";
+                btnView.textContent = "View Less";
+                expandedEvents.add(data.transactionID);
+            } else {
+                details.style.display = "none";
+                btnView.textContent = "View More";
+                expandedEvents.delete(data.transactionID);
+            }
+        });
+
+        btnCopy.addEventListener("click", async () => {
+            const message = buildWhatsAppMessage(data);
+
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(message);
+                } else {
+                    // Fallback for HTTP / older browsers
+                    const textarea = document.createElement("textarea");
+                    textarea.value = message;
+                    textarea.style.position = "fixed"; // prevent scroll jump
+                    textarea.style.opacity = "0";
+                    document.body.appendChild(textarea);
+                    textarea.focus();
+                    textarea.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(textarea);
+                }
+
+                showToast("Message copied to clipboard!");
+            } catch (err) {
+                console.error("Copy failed:", err);
+                showToast("Failed to copy message", "error");
+            }
         });
 
         const btnEdit = event.querySelector(".btn-edit");
         btnEdit.addEventListener("click", () => {
             modal.style.display = "block";
             editingTransactionID = data.transactionID;
+
             for (let [key, value] of Object.entries(data)) {
                 const input = manualForm.querySelector(`[name="${key}"]`);
                 if (input) input.value = value;
             }
+
             if (data.current) {
                 driverInput.value = data.current.driverName || "";
                 cellPhoneInput.value = data.current.cellPhone || "";
@@ -398,6 +483,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (confirm.isConfirmed) {
                 if (await deleteScheduleFromBackend(data.transactionID)) {
                     event.remove();
+                    expandedEvents.delete(data.transactionID);
                     showToast("Schedule deleted.", "success");
                 }
             }
@@ -420,6 +506,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const file = e.target.files[0];
         if (!file) return;
 
+        const selectedDate = document.getElementById("dateFilter")?.value;
+        if (!selectedDate) {
+            showToast("Please select a date to import.", "error");
+            return;
+        }
+
         const phoneMap = await fetchUsersPhoneMap();
         const reader = new FileReader();
 
@@ -433,17 +525,16 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             const sheet = workbook.Sheets[sheetName];
-            const tomorrowStr = getTomorrowPHISO();
             const range = XLSX.utils.decode_range(sheet["!ref"]);
             const schedules = [];
-
-            // Prepare an array of promises for email sending
             const emailPromises = [];
 
             for (let row = range.s.r + 1; row <= range.e.r; row++) {
                 const dateValue = sheet[`A${row + 1}`]?.v;
                 const dateISO = excelToISODate(dateValue);
-                if (dateISO !== tomorrowStr) continue;
+
+                // <-- Only save rows that match selected date
+                if (dateISO !== selectedDate) continue;
 
                 const rawPhone = sheet[`P${row + 1}`]?.v || "";
                 const digits = rawPhone.replace(/\D/g, "");
@@ -477,15 +568,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     plateNumber: sheet[`S${row + 1}`]?.v || "",
                     luggage: sheet[`T${row + 1}`]?.v || 1,
                     current: { driverName, cellPhone },
-
                     tripType: sheet[`U${row + 1}`]?.v || "Departure",
-
                     status: "Pending"
                 };
 
                 schedules.push(schedule);
 
-                // ---------------- Send email via EmailJS ----------------
+                // Optional: EmailJS sending (if client email exists)
                 if (clientEmail) {
                     const emailData = {
                         to_email: clientEmail,
@@ -506,39 +595,27 @@ document.addEventListener("DOMContentLoaded", () => {
                         luggage: schedule.luggage
                     };
 
-                    const emailPromise = emailjs.send(
-                        "service_xpol5bw",     // replace with your EmailJS service ID
-                        "template_4qbpeez",    // replace with your EmailJS template ID
-                        emailData
-                    )
-                    .then(response => {
-                        console.log(`Email sent to ${clientEmail}`, response.status, response.text);
-                    })
-                    .catch(err => {
-                        console.error(`Failed to send email to ${clientEmail}`, err);
-                    });
-
-                    emailPromises.push(emailPromise);
+                    emailPromises.push(
+                        emailjs.send("service_xpol5bw", "template_4qbpeez", emailData)
+                            .then(resp => console.log(`Email sent to ${clientEmail}`, resp.status))
+                            .catch(err => console.error(`Failed to send email to ${clientEmail}`, err))
+                    );
                 }
             }
 
             if (!schedules.length) {
-                showToast("No schedules found for tomorrow!", "info");
+                showToast(`No schedules found for ${selectedDate}!`, "info");
                 return;
             }
 
-            // ---------------- Save schedules to Firebase ----------------
+            // Save to Firebase
             const saved = await sendSchedulesToBackend(schedules);
             if (saved) {
-                await fetchSchedules();
-                showToast("Tomorrow’s schedules saved successfully!", "success");
+                await fetchSchedules(selectedDate);
+                showToast(`Schedules for ${selectedDate} saved successfully!`, "success");
             }
 
-            // ---------------- Wait for all emails to finish ----------------
-            if (emailPromises.length > 0) {
-                await Promise.all(emailPromises);
-                console.log("All emails processed via EmailJS.");
-            }
+            if (emailPromises.length) await Promise.all(emailPromises);
         };
 
         reader.readAsArrayBuffer(file);
@@ -590,10 +667,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    // ---------------- SAVE (ADD / EDIT) ----------------
+    // ---------------- Save Manual Form ----------------
     manualForm.onsubmit = async e => {
         e.preventDefault();
-
         const f = new FormData(manualForm);
         const dateISO = new Date(f.get("date")).toISOString().split("T")[0];
 
@@ -618,12 +694,7 @@ document.addEventListener("DOMContentLoaded", () => {
             luggage: f.get("luggage"),
             tripType: f.get("tripType"),
             status: "Pending",
-
-            // <-- Add this
-            current: {
-                driverName: driverInput.value,
-                cellPhone: cellPhoneInput.value
-            }
+            current: { driverName: driverInput.value, cellPhone: cellPhoneInput.value }
         };
 
         const url = editingTransactionID
@@ -638,10 +709,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         modal.style.display = "none";
         resetManualForm();
-        fetchSchedules();
+        fetchAllSchedules();
     };
 
     // ---------------- Initial Load ----------------
     fetchSchedules();
-    startAutoRefresh(); // refresh every 500 milliseconds
+    startAutoRefresh(); // refresh every 5000 milliseconds
 });

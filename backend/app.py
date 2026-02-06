@@ -99,6 +99,7 @@ try:
     from routes.schedules import schedules_api
     from routes.admin_requests import admin_requests_api
     from routes.admin_dashboard import admin_dashboard_api
+    from backend.routes.admin_transport_units import admin_transport_units
 except ModuleNotFoundError:
     raise RuntimeError("routes modules not found in /routes")
 
@@ -116,6 +117,7 @@ app.register_blueprint(admin_users_api)
 app.register_blueprint(schedules_api)
 app.register_blueprint(admin_requests_api)
 app.register_blueprint(admin_dashboard_api)
+app.register_blueprint(admin_transport_units)
 
 # -----------------------
 # Inject CSRF token cookie for JS

@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from message_template import build_message
+from decorators import admin_required
 
 schedules_api = Blueprint("schedules_api", __name__)
 
@@ -24,6 +25,7 @@ def normalize_phone(number: str) -> str:
 
 
 # ---------------- CREATE ----------------
+@admin_required
 @schedules_api.route("/api/schedules", methods=["POST"])
 def create_schedule():
     from firebase_admin import db
@@ -60,6 +62,7 @@ def create_schedule():
 
 
 # ---------------- READ ----------------
+@admin_required
 @schedules_api.route("/api/schedules", methods=["GET"])
 def get_schedules():
     from firebase_admin import db
@@ -83,6 +86,7 @@ def get_schedules():
 
 
 # ---------------- UPDATE ----------------
+@admin_required
 @schedules_api.route("/api/schedules/<transaction_id>", methods=["PUT"])
 def update_schedule(transaction_id):
     from firebase_admin import db
@@ -105,6 +109,7 @@ def update_schedule(transaction_id):
 
 
 # ---------------- DELETE ----------------
+@admin_required
 @schedules_api.route("/api/schedules/<transaction_id>", methods=["DELETE"])
 def delete_schedule(transaction_id):
     from firebase_admin import db
@@ -116,5 +121,32 @@ def delete_schedule(transaction_id):
 
         ref.delete()
         return jsonify({"success": True, "transactionID": transaction_id}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ---------------- TRANSPORT UNITS ----------------
+@admin_required
+@schedules_api.route("/api/transportUnits", methods=["GET"])
+def get_transport_units():
+    """
+    Fetch all transport units from Firebase Realtime Database
+    """
+    from firebase_admin import db
+
+    try:
+        ref = db.reference("transportUnits")
+        data = ref.get() or {}
+
+        # Convert to list
+        transport_units = []
+        for key, unit in data.items():
+            transport_units.append({
+                "transportUnit": unit.get("transportUnit", ""),
+                "unitType": unit.get("unitType", ""),
+                "color": unit.get("color", ""),
+                "plateNumber": unit.get("plateNumber", "")
+            })
+
+        return jsonify({"success": True, "transportUnits": transport_units}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

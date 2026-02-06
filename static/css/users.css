@@ -396,3 +396,44 @@
         font-size: 1.75rem;
     }
 }
+
+/* ---------------- Dropdown Styles ---------------- */
+form select[name="defaultUnit"] {
+  width: 100%;               /* full width inside form */
+  padding: 10px 12px;        /* comfortable padding */
+  margin-bottom: 15px;       /* spacing from next field */
+  font-size: 1rem;           /* readable font */
+  border: 1px solid #ccc;    /* subtle border */
+  border-radius: 6px;        /* rounded corners */
+  background-color: #fff;    /* white background */
+  appearance: none;           /* remove default arrow in some browsers */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+/* Add a custom arrow using a pseudo-element */
+form select[name="defaultUnit"]::after {
+  content: "▼";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  font-size: 0.7rem;
+  color: #555;
+}
+
+/* Focus state */
+form select[name="defaultUnit"]:focus {
+  border-color: #4A90E2;
+  box-shadow: 0 0 5px rgba(74, 144, 226, 0.5);
+  outline: none;
+}
+
+/* Option styling */
+form select[name="defaultUnit"] option {
+  padding: 8px 12px;
+  font-size: 0.95rem;
+}

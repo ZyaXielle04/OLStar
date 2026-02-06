@@ -44,6 +44,12 @@ def bookings_transactions():
 def admin_settings():
     return render_template("settings.html")
 
+@pages_bp.route("/admin/transport_units")
+@login_required
+@admin_required
+def admin_transport_units():
+    return render_template("transport_units.html")
+
 @pages_bp.route("/admin/logout")
 @login_required
 def admin_logout():
