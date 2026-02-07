@@ -16,7 +16,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const unitTypeInput = document.getElementById("unitType");
     const colorInput = document.getElementById("color");
     const plateDatalist = document.getElementById("plateSuggestions");
-    let expandedEvents = new Set();
 
     // ---------------- Plate Number Auto-fill ----------------
     plateInput.addEventListener("input", () => {
@@ -304,11 +303,11 @@ This is an automated message. Please do not reply.`;
         event.classList.add("calendar-event");
 
         const statusMap = {
-            "Pending": "#1 The Driver is to depart",
-            "Confirmed": "#2 Driver has departed",
-            "Arrived": "#3 Driver has arrived",
-            "On Route": "#4 Service Start",
-            "Completed": "#5 Service finished",
+            "Pending": "The Driver is preparing to dispatch.",
+            "Confirmed": "Driver has departed",
+            "Arrived": "Driver has arrived",
+            "On Route": "Service Start",
+            "Completed": "Service finished",
             "Cancelled": "Booking Cancelled"
         };
 
@@ -340,7 +339,15 @@ This is an automated message. Please do not reply.`;
                     </div>
                 </div>
 
-                <strong>${data.clientName || ""} | ${data.contactNumber || ""}</strong>
+                <div class="client-info">
+                    <strong class="client-name">${data.clientName || ""}</strong>
+                    <button class="btn-copy-client" title="Copy client name">📋</button>
+
+                    <span> | </span>
+
+                    <strong class="client-contact">${data.contactNumber || ""}</strong>
+                    <button class="btn-copy-contact" title="Copy contact number">📋</button>
+                </div>
 
                 <div class="event-route">
                     <p>Pickup Location: <strong>${data.pickup || ""}</strong></p>
@@ -349,10 +356,15 @@ This is an automated message. Please do not reply.`;
 
                 <div class="event-footer">
                     <div class="event-actions">
-                        <button class="btn-view-more">View More</button>
-                        <button class="btn-copy">📋 Copy Message</button>
-                        <button class="btn-edit">Edit</button>
-                        <button class="btn-delete">Delete</button>
+                        <div class="action-left">
+                            <button class="btn-copy">📋 Message Template</button>
+                            <button class="btn-flightaware">✈️ FlightAware</button>
+                        </div>
+
+                        <div class="action-center">
+                            <button class="btn-edit">Edit</button>
+                            <button class="btn-delete">Delete</button>
+                        </div>
                     </div>
 
                     <div class="driver-info">
@@ -363,7 +375,8 @@ This is an automated message. Please do not reply.`;
                 </div>
             </div>
 
-            <div class="event-details" style="display:none;">
+            <div class="event-details">
+                <div class="status-progress" id="statusProgress"></div>
                 <div class="details-grid">
                     <div class="detail">
                         <span class="label">Pax</span>
@@ -402,30 +415,82 @@ This is an automated message. Please do not reply.`;
             </div>
         `;
 
-        const btnView = event.querySelector(".btn-view-more");
-        const btnCopy = event.querySelector(".btn-copy");
-        const details = event.querySelector(".event-details");
+        // --- Render Status Progress ---
+        function renderStatusProgress(status) {
+            const container = document.createElement("div");
+            container.classList.add("status-progress");
 
-        // Restore expanded state AFTER render
-        if (expandedEvents.has(data.transactionID)) {
-            details.style.display = "block";
-            btnView.textContent = "View Less";
+            const statusMap = {
+                "Pending": "The Driver is preparing to dispatch.",
+                "Confirmed": "Driver has departed",
+                "Arrived": "Driver has arrived",
+                "On Route": "Service Start",
+                "Completed": "Service finished",
+                "Cancelled": "Booking Cancelled"
+            };
+
+            const statusKeys = ["Pending", "Confirmed", "Arrived", "On Route", "Completed"];
+            const cancelled = status === "Cancelled";
+            const currentIndex = statusKeys.indexOf(status);
+
+            statusKeys.forEach((key, index) => {
+                // Step container
+                const step = document.createElement("div");
+                step.classList.add("status-step");
+
+                // Circle
+                const circle = document.createElement("div");
+                circle.classList.add("status-circle");
+                circle.textContent = index + 1;
+
+                if (cancelled) {
+                    circle.style.backgroundColor = "red";
+                } else if (index <= currentIndex) {
+                    circle.style.backgroundColor = "blue";
+                }
+
+                // Label
+                const label = document.createElement("div");
+                label.classList.add("status-label");
+
+                if (cancelled) {
+                    // Only the 3rd circle gets the "Booking Cancelled" text
+                    label.textContent = index === 2 ? "Booking Cancelled" : "";
+                } else {
+                    label.textContent = statusMap[key];
+                }
+
+                // Append circle and label
+                step.appendChild(circle);
+                step.appendChild(label);
+
+                // Line (except last step)
+                if (index < statusKeys.length - 1) {
+                    const line = document.createElement("div");
+                    line.classList.add("status-line");
+
+                    if (cancelled) {
+                        line.style.backgroundColor = "red";
+                    } else if (index < currentIndex) {
+                        line.style.backgroundColor = "blue";
+                    }
+
+                    step.appendChild(line);
+                }
+
+                container.appendChild(step);
+            });
+
+            return container;
         }
 
-        // Toggle handler
-        btnView.addEventListener("click", () => {
-            const isHidden = details.style.display === "none";
+        // Insert the progress bar into the event
+        event.appendChild(renderStatusProgress(rawStatus));
 
-            if (isHidden) {
-                details.style.display = "block";
-                btnView.textContent = "View Less";
-                expandedEvents.add(data.transactionID);
-            } else {
-                details.style.display = "none";
-                btnView.textContent = "View More";
-                expandedEvents.delete(data.transactionID);
-            }
-        });
+        const btnCopy = event.querySelector(".btn-copy");
+        const btnFlightAware = event.querySelector(".btn-flightaware");
+        const btnCopyClient = event.querySelector(".btn-copy-client");
+        const btnCopyContact = event.querySelector(".btn-copy-contact");
 
         btnCopy.addEventListener("click", async () => {
             const message = buildWhatsAppMessage(data);
@@ -451,6 +516,49 @@ This is an automated message. Please do not reply.`;
                 console.error("Copy failed:", err);
                 showToast("Failed to copy message", "error");
             }
+        });
+
+        function copyText(text, successMsg) {
+            if (!text) {
+                showToast("Nothing to copy", "info");
+                return;
+            }
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text);
+            } else {
+                const textarea = document.createElement("textarea");
+                textarea.value = text;
+                textarea.style.position = "fixed";
+                textarea.style.opacity = "0";
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand("copy");
+                document.body.removeChild(textarea);
+            }
+
+            showToast(successMsg);
+        }
+
+        btnCopyClient?.addEventListener("click", () => {
+            copyText(data.clientName, "Client name copied!");
+        });
+
+        btnCopyContact?.addEventListener("click", () => {
+            copyText(data.contactNumber, "Contact number copied!");
+        });
+
+        btnFlightAware.addEventListener("click", () => {
+            if (!data.flightNumber) {
+                showToast("No flight number available", "info");
+                return;
+            }
+
+            // Clean flight number (remove spaces)
+            const flightNumber = data.flightNumber.replace(/\s+/g, "").toUpperCase();
+
+            const url = `https://www.flightaware.com/live/flight/${flightNumber}`;
+            window.open(url, "_blank");
         });
 
         const btnEdit = event.querySelector(".btn-edit");
@@ -483,7 +591,6 @@ This is an automated message. Please do not reply.`;
             if (confirm.isConfirmed) {
                 if (await deleteScheduleFromBackend(data.transactionID)) {
                     event.remove();
-                    expandedEvents.delete(data.transactionID);
                     showToast("Schedule deleted.", "success");
                 }
             }
