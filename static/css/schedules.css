@@ -449,10 +449,23 @@ textarea {
 
 /* Buttons for each event */
 .event-actions {
-  margin-top: 10px;
+  display: flex;
+  gap: 125px;
+  justify-content: space-between;
+}
+
+/* Left buttons */
+.action-left {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  justify-self: start;
+}
+
+/* Center buttons */
+.action-center {
+  display: flex;
+  gap: 8px;
+  justify-self: center;
 }
 
 .event-actions button {
@@ -469,12 +482,12 @@ textarea {
   transform: translateY(-1px);
 }
 
-.btn-view-more {
+.btn-flightaware {
   background: #2f4156;
   color: #ffffff;
 }
 
-.btn-view-more:hover {
+.btn-flightaware:hover {
   background: #243447;
 }
 
@@ -776,13 +789,6 @@ textarea {
   margin-top: 12px;
 }
 
-/* Buttons on LEFT */
-.event-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-start;
-}
-
 /* Driver + vehicle on RIGHT */
 .driver-info {
   text-align: right;
@@ -878,4 +884,57 @@ textarea {
 
 .styled-select option[value="Special"] {
     color: #7c3aed; /* purple */
+}
+
+.client-info button {
+    margin-left: 4px;
+    cursor: pointer;
+    background: none;
+    border: none;
+}
+
+.status-progress {
+    display: flex;
+    align-items: flex-start; /* align circles at the top */
+    margin: 10px 0;
+}
+
+.status-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    position: relative;
+}
+
+.status-circle {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background-color: gray;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+    z-index: 1;
+    position: relative;
+}
+
+.status-label {
+    margin-top: 4px;
+    font-size: 12px;
+    text-align: center;
+    width: 200px; /* adjust width to fit text nicely */
+    word-wrap: break-word;
+}
+
+.status-line {
+    position: absolute;
+    top: 12px; /* vertically center relative to circle */
+    left: 50%;
+    right: -50%;
+    height: 4px;
+    background-color: gray;
+    z-index: 0;
 }

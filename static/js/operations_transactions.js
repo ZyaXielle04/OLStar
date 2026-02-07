@@ -42,7 +42,7 @@ fetch("/api/admin/requests")
             ${req.receiptUrl ? `<a href="${req.receiptUrl}" target="_blank">Receipt</a>` : ""}
             ${req.gcashUrl ? `<a href="${req.gcashUrl}" target="_blank">GCash</a>` : ""}
             ${req.mileageURL ? `<a href="${req.mileageURL}" target="_blank">Mileage</a>` : ""}
-            ${req.imageReply ? `<a href="${req.imageReply}" target="_blank">Reply Image</a>` : ""}
+            ${req.imageReply ? `<a href="${req.imageReply}" target="_blank">Receipt Image</a>` : ""}
           </div>
 
           <div class="request-actions" style="margin-top:10px;">
