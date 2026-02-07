@@ -758,6 +758,9 @@ This is an automated message. Please do not reply.`;
     function populateDriverFilter(selectedDate) {
         const drivers = new Set();
 
+        // Remember the currently selected driver
+        const currentSelection = driverFilter.value;
+
         // Filter schedules by selected date
         allSchedules
             .filter(s => s.date === selectedDate)
@@ -770,13 +773,18 @@ This is an automated message. Please do not reply.`;
 
         // Add drivers
         Array.from(drivers)
-            .sort((a, b) => a.localeCompare(b)) // optional: alphabetical
+            .sort((a, b) => a.localeCompare(b))
             .forEach(driver => {
                 const opt = document.createElement("option");
                 opt.value = driver;
                 opt.textContent = driver;
                 driverFilter.appendChild(opt);
             });
+
+        // Restore previous selection if it still exists
+        if (currentSelection && Array.from(driverFilter.options).some(o => o.value === currentSelection)) {
+            driverFilter.value = currentSelection;
+        }
     }
 
     driverFilter.addEventListener("change", () => {
