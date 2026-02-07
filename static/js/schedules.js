@@ -16,6 +16,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const unitTypeInput = document.getElementById("unitType");
     const colorInput = document.getElementById("color");
     const plateDatalist = document.getElementById("plateSuggestions");
+    const driverFilter = document.getElementById("driverFilter");
+
 
     // ---------------- Plate Number Auto-fill ----------------
     plateInput.addEventListener("input", () => {
@@ -229,6 +231,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const filterISO = selectedISO || dateFilter.value || getPHLocalISODate();
             dateFilter.value = filterISO;
+
+            populateDriverFilter(filterISO); // populate driver filter
+
             const filtered = allSchedules.filter(s => s.date === filterISO);
             renderSchedules(filtered);
         } catch (err) {
@@ -252,8 +257,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (dateFilter) {
         dateFilter.value = getPHLocalISODate();
         dateFilter.addEventListener("change", () => {
-            const selectedISO = dateFilter.value;
-            const filtered = allSchedules.filter(s => s.date === selectedISO);
+            const selectedDate = dateFilter.value;
+            const filtered = allSchedules.filter(s => s.date === selectedDate);
+            populateDriverFilter(selectedDate); // repopulate drivers for this date
             renderSchedules(filtered);
         });
     }
@@ -304,10 +310,10 @@ This is an automated message. Please do not reply.`;
 
         const statusMap = {
             "Pending": "The Driver is preparing to dispatch.",
-            "Confirmed": "Driver has departed",
-            "Arrived": "Driver has arrived",
-            "On Route": "Service Start",
-            "Completed": "Service finished",
+            "Confirmed": "Driver has departed.",
+            "Arrived": "Driver has arrived.",
+            "On Route": "Client On-board.",
+            "Completed": "Client has been dropped off.",
             "Cancelled": "Booking Cancelled"
         };
 
@@ -747,6 +753,43 @@ This is an automated message. Please do not reply.`;
         };
 
         reader.readAsArrayBuffer(file);
+    });
+
+    function populateDriverFilter(selectedDate) {
+        const drivers = new Set();
+
+        // Filter schedules by selected date
+        allSchedules
+            .filter(s => s.date === selectedDate)
+            .forEach(s => {
+                if (s.current?.driverName) drivers.add(s.current.driverName);
+            });
+
+        // Clear previous options
+        driverFilter.innerHTML = `<option value="">— All Drivers —</option>`;
+
+        // Add drivers
+        Array.from(drivers)
+            .sort((a, b) => a.localeCompare(b)) // optional: alphabetical
+            .forEach(driver => {
+                const opt = document.createElement("option");
+                opt.value = driver;
+                opt.textContent = driver;
+                driverFilter.appendChild(opt);
+            });
+    }
+
+    driverFilter.addEventListener("change", () => {
+        const selectedDriver = driverFilter.value;
+        const selectedDate = dateFilter.value || getPHLocalISODate();
+
+        let filtered = allSchedules.filter(s => s.date === selectedDate);
+
+        if (selectedDriver) {
+            filtered = filtered.filter(s => s.current?.driverName === selectedDriver);
+        }
+
+        renderSchedules(filtered);
     });
 
     function getTripTypeLabel(val) {

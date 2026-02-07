@@ -1,15 +1,29 @@
-// Initialize Leaflet map
-const map = L.map('map').setView([14.5995, 120.9842], 12); // Manila
+// ---------------- Initialize Leaflet map ----------------
+const origin = [14.5222733, 120.999655]; // Point of origin (Manila)
+const maxZoomLevel = 18; // Maximum zoom allowed
+const map = L.map('map').setView(origin, maxZoomLevel);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors'
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: maxZoomLevel
 }).addTo(map);
 
-// Firebase reference
+// ---------------- Origin Marker ----------------
+const originMarker = L.marker(origin, {
+  icon: L.icon({
+    iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png', // example icon
+    iconSize: [32, 32],
+    iconAnchor: [16, 32]
+  })
+}).addTo(map);
+
+originMarker.bindPopup("<strong>My garage</strong>").openPopup();
+
+// ---------------- Firebase reference ----------------
 const usersRef = firebase.database().ref('users');
 const driverMarkers = {};
 
-// Listen for real-time updates
+// ---------------- Listen for real-time updates ----------------
 usersRef.on('value', snapshot => {
   const users = snapshot.val();
   if (!users) return;

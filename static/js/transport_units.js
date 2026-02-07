@@ -72,12 +72,20 @@ document.addEventListener("DOMContentLoaded", () => {
         const search = transportSearch.value.toLowerCase();
         const units = data.units || []; // extract array
 
-        const filtered = units.filter(u =>
+        // Filter by search
+        let filtered = units.filter(u =>
             u.unitType.toLowerCase().includes(search) ||
             u.name.toLowerCase().includes(search) ||
             u.color.toLowerCase().includes(search) ||
             u.plateNo.toLowerCase().includes(search)
         );
+
+        // Sort alphabetically by transportUnit (name)
+        filtered.sort((a, b) => {
+            const nameA = (a.name || "").toLowerCase();
+            const nameB = (b.name || "").toLowerCase();
+            return nameA.localeCompare(nameB);
+        });
 
         if (!filtered.length) {
             transportGrid.innerHTML = `<p style="text-align:center;color:#6b7280;">No transport units found.</p>`;

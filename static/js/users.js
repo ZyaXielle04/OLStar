@@ -49,7 +49,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function populateTransportUnits(selected = "") {
     defaultUnitSelect.innerHTML = `<option value="">— No Default Transport Unit —</option>`;
-    transportUnits.forEach(u => {
+
+    // Sort alphabetically by unit name
+    const sortedUnits = [...transportUnits].sort((a, b) => {
+      const nameA = (a.name || "").toLowerCase();
+      const nameB = (b.name || "").toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    sortedUnits.forEach(u => {
       const opt = document.createElement("option");
       opt.value = u.id;
       opt.textContent = `${u.name} (${u.plateNo}) [${u.color}]`;
@@ -64,7 +72,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const { ok, data } = await safeFetch("/api/admin/users");
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
-    renderUsers((data.users || []).filter(u => u.role !== "admin"));
+    // Filter out admins
+    let users = (data.users || []).filter(u => u.role !== "admin");
+
+    // Sort alphabetically by full name
+    users.sort((a, b) => {
+      const nameA = `${a.firstName || ""} ${a.middleName || ""} ${a.lastName || ""}`.trim().toLowerCase();
+      const nameB = `${b.firstName || ""} ${b.middleName || ""} ${b.lastName || ""}`.trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+    renderUsers(users);
   }
 
   function renderUsers(users) {
