@@ -500,6 +500,15 @@ textarea {
   background: #047857;
 }
 
+.btn-driver-transfer {
+  background: #7c3aed;
+  color: #ffffff;
+}
+
+.btn-driver-transfer:hover {
+  background: #5b21b6;
+}
+
 .btn-edit {
   background: #4f46e5;
   color: #ffffff;

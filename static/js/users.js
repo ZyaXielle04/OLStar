@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ---------------- Fetch transport units ----------------
+  // ---------------- Transport Units ----------------
   async function fetchTransportUnits() {
     const { ok, data } = await safeFetch("/api/admin/transport-units");
     if (!ok) return toast.fire({ icon: "error", title: data.error });
@@ -58,18 +58,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ---------------- Fetch users ----------------
+  // ---------------- Users ----------------
   async function fetchUsers() {
     usersGrid.innerHTML = "<p>Loading users...</p>";
     const { ok, data } = await safeFetch("/api/admin/users");
-
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
-    const users = (data.users || []).filter(u => u.role !== "admin");
-    renderUsers(users);
+    renderUsers((data.users || []).filter(u => u.role !== "admin"));
   }
 
-  // ---------------- Render users ----------------
   function renderUsers(users) {
     usersGrid.innerHTML = "";
 
@@ -84,25 +81,18 @@ document.addEventListener("DOMContentLoaded", () => {
       card.dataset.phone = user.phone || "";
       card.dataset.defaultUnit = user.defaultTransportUnit || "";
 
-      const fullName = `${user.firstName || ""} ${user.middleName || ""} ${user.lastName || ""}`.replace(/\s+/g, " ").trim();
-
-      // ---------------- Lookup transport unit details ----------------
       let unitDetails = "-";
       if (user.defaultTransportUnit) {
         const unit = transportUnits.find(u => u.id === user.defaultTransportUnit);
         if (unit) {
-          unitDetails = `
-            ${unit.name}<p>Plate: ${unit.plateNo}</p><p>Color: ${unit.color}</p><p>Type: ${unit.unitType}</p>
-          `;
+          unitDetails = `${unit.name}<p>Plate: ${unit.plateNo}</p><p>Color: ${unit.color}</p><p>Type: ${unit.unitType}</p>`;
         }
       }
 
       card.innerHTML = `
         <div class="user-header">
-          <h3>${fullName}</h3>
-          <span class="user-role ${user.role}">
-            ${user.role}
-          </span>
+          <h3>${user.firstName} ${user.middleName} ${user.lastName}</h3>
+          <span class="user-role ${user.role}">${user.role}</span>
         </div>
 
         <div class="user-details">
@@ -112,6 +102,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         <div class="user-actions">
           <button class="btn btn-sm edit-btn">Edit</button>
+          <button class="btn btn-sm btn-warning password-btn">Password</button>
           <button class="btn btn-sm btn-danger delete-btn">Delete</button>
         </div>
       `;
@@ -121,9 +112,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.querySelectorAll(".edit-btn").forEach(b => b.addEventListener("click", openEditUserModal));
     document.querySelectorAll(".delete-btn").forEach(b => b.addEventListener("click", deleteUser));
+    document.querySelectorAll(".password-btn").forEach(b => b.addEventListener("click", openPasswordModal));
   }
 
-  // ---------------- Edit modal ----------------
+  // ---------------- Edit User ----------------
   function openEditUserModal(e) {
     const card = e.target.closest(".user-card");
     editingUserId = card.dataset.uid;
@@ -136,12 +128,49 @@ document.addEventListener("DOMContentLoaded", () => {
     userForm.email.disabled = true;
 
     populateTransportUnits(card.dataset.defaultUnit);
-
     modalTitle.textContent = "Edit User";
     openModal();
   }
 
-  // ---------------- Delete user ----------------
+  // ---------------- Password with Swal2 ----------------
+  function openPasswordModal(e) {
+    const card = e.target.closest(".user-card");
+    const uid = card.dataset.uid;
+
+    Swal.fire({
+      title: "Update Password",
+      input: "password",
+      inputLabel: "New Password",
+      inputPlaceholder: "Enter new password",
+      inputAttributes: { autocapitalize: "off", autocorrect: "off" },
+      showCancelButton: true,
+      confirmButtonText: "Update",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#2563eb",
+      preConfirm: async (password) => {
+        if (!password) {
+          Swal.showValidationMessage("Password is required");
+          return false;
+        }
+
+        const { ok, data } = await safeFetch(`/api/admin/users/${uid}/password`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("XSRF-TOKEN")
+          },
+          body: JSON.stringify({ password })
+        });
+
+        if (!ok) Swal.showValidationMessage(data.error || "Failed to update password");
+        return ok;
+      }
+    }).then(result => {
+      if (result.isConfirmed) toast.fire({ icon: "success", title: "Password updated" });
+    });
+  }
+
+  // ---------------- Delete User ----------------
   async function deleteUser(e) {
     const card = e.target.closest(".user-card");
     const uid = card.dataset.uid;
@@ -158,14 +187,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!confirm.isConfirmed) return;
 
     const { ok, data } = await safeFetch(`/api/admin/users/${uid}`, { method: "DELETE" });
-
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
     toast.fire({ icon: "success", title: "User deleted" });
     fetchUsers();
   }
 
-  // ---------------- Submit ----------------
+  // ---------------- Save User ----------------
   userForm.addEventListener("submit", async e => {
     e.preventDefault();
 
@@ -199,7 +227,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
     toast.fire({ icon: "success", title: editingUserId ? "User updated" : "User created" });
-
     editingUserId = null;
     userForm.reset();
     closeModal();

@@ -359,6 +359,7 @@ This is an automated message. Please do not reply.`;
                         <div class="action-left">
                             <button class="btn-copy">📋 Message Template</button>
                             <button class="btn-flightaware">✈️ FlightAware</button>
+                            <button class="btn-driver-transfer">🚕 Driver Transfer</button>
                         </div>
 
                         <div class="action-center">
@@ -491,6 +492,26 @@ This is an automated message. Please do not reply.`;
         const btnFlightAware = event.querySelector(".btn-flightaware");
         const btnCopyClient = event.querySelector(".btn-copy-client");
         const btnCopyContact = event.querySelector(".btn-copy-contact");
+        const btnDriverTransfer = event.querySelector(".btn-driver-transfer");
+
+        btnDriverTransfer.addEventListener("click", () => {
+            const clientName = data.clientName || "[Client Name]";
+            const driverName = data.current?.driverName || "[New Driver Name]";
+            const unit = data.transportUnit || "[Unit]";
+            const plate = data.plateNumber || "[Plate No.]";
+            const color = data.color || "[Color]";
+
+            const message = `Hi Sir/Madam ${clientName},\n\n` +
+                `We apologize that we have to change your assigned driver and unit due to certain reason. Here is the new assigned Driver information:\n\n` +
+                `Driver's Name: ${driverName}\n` +
+                `Unit: ${unit}\n` +
+                `Plate No.: ${plate}\n` +
+                `Color: ${color}\n\n` +
+                `Rest assured that the driver will be there.`;
+
+            // Use your existing copy function
+            copyText(message, "Driver transfer message copied!");
+        });
 
         btnCopy.addEventListener("click", async () => {
             const message = buildWhatsAppMessage(data);
