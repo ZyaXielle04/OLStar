@@ -635,7 +635,6 @@ This is an automated message. Please do not reply.`;
         sortSchedulesByDateTime(schedules).forEach(s => bookingsContainer.appendChild(createCalendarEvent(s)));
     }
 
-    // ---------------- XLSX Upload ----------------
     fileInput.addEventListener("change", async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -667,42 +666,42 @@ This is an automated message. Please do not reply.`;
                 const dateValue = sheet[`A${row + 1}`]?.v;
                 const dateISO = excelToISODate(dateValue);
 
-                // <-- Only save rows that match selected date
+                // Only save rows that match selected date
                 if (dateISO !== selectedDate) continue;
 
-                const rawPhone = sheet[`P${row + 1}`]?.v || "";
-                const digits = rawPhone.replace(/\D/g, "");
+                const rawPhone = sheet[`Q${row + 1}`]?.v || "";
+                const digits = String(rawPhone).replace(/\D/g, "");
                 const cellPhone = digits.match(/09\d{9}/)?.[0] || "";
 
-                let driverName = cleanDriverName(sheet[`J${row + 1}`]?.v || "");
+                let driverName = cleanDriverName(String(sheet[`K${row + 1}`]?.v || ""));
                 if (cellPhone && phoneMap[cellPhone]) {
                     driverName = phoneMap[cellPhone];
                 }
 
-                const clientEmail = sheet[`E${row + 1}`]?.v?.trim() || "";
+                const clientEmail = String(sheet[`E${row + 1}`]?.v || "").trim();
 
                 const schedule = {
-                    transactionID: generateTransactionID(),
-                    date: dateISO,
-                    time: sheet[`B${row + 1}`]?.v || "",
-                    clientName: sheet[`C${row + 1}`]?.v || "",
-                    contactNumber: sheet[`D${row + 1}`]?.v || "",
-                    note: sheet[`E${row + 1}`]?.v || "",
-                    pax: sheet[`F${row + 1}`]?.v || "",
-                    flightNumber: sheet[`G${row + 1}`]?.v || "",
-                    pickup: sheet[`H${row + 1}`]?.v || "",
-                    dropOff: sheet[`I${row + 1}`]?.v || "",
-                    unitType: sheet[`K${row + 1}`]?.v || "",
-                    amount: sheet[`L${row + 1}`]?.v || "",
-                    driverRate: sheet[`M${row + 1}`]?.v || "",
-                    company: sheet[`N${row + 1}`]?.v || "Ol-Star Transport",
-                    bookingType: sheet[`O${row + 1}`]?.v || "",
-                    transportUnit: sheet[`Q${row + 1}`]?.v || "",
-                    color: sheet[`R${row + 1}`]?.v || "",
-                    plateNumber: sheet[`S${row + 1}`]?.v || "",
-                    luggage: sheet[`T${row + 1}`]?.v || 1,
-                    current: { driverName, cellPhone },
-                    tripType: sheet[`U${row + 1}`]?.v || "Departure",
+                    transactionID: String(generateTransactionID()),
+                    date: String(dateISO),
+                    time: String(sheet[`B${row + 1}`]?.v || ""),
+                    clientName: String(sheet[`C${row + 1}`]?.v || ""),
+                    contactNumber: String(sheet[`D${row + 1}`]?.v || ""),
+                    note: String(sheet[`E${row + 1}`]?.v || ""),
+                    pax: String(sheet[`F${row + 1}`]?.v || ""),
+                    tripType: String(sheet[`G${row + 1}`]?.v || "Departure"),
+                    flightNumber: String(sheet[`H${row + 1}`]?.v || ""),
+                    pickup: String(sheet[`I${row + 1}`]?.v || ""),
+                    dropOff: String(sheet[`J${row + 1}`]?.v || ""),
+                    unitType: String(sheet[`L${row + 1}`]?.v || ""),
+                    amount: String(sheet[`M${row + 1}`]?.v || ""),
+                    driverRate: String(sheet[`N${row + 1}`]?.v || ""),
+                    company: String(sheet[`O${row + 1}`]?.v || "Ol-Star Transport"),
+                    bookingType: String(sheet[`P${row + 1}`]?.v || ""),
+                    transportUnit: String(sheet[`R${row + 1}`]?.v || ""),
+                    color: String(sheet[`S${row + 1}`]?.v || ""),
+                    plateNumber: String(sheet[`T${row + 1}`]?.v || ""),
+                    luggage: String(sheet[`U${row + 1}`]?.v || "1"),
+                    current: { driverName: String(driverName), cellPhone: String(cellPhone) },
                     status: "Pending"
                 };
 
@@ -719,8 +718,8 @@ This is an automated message. Please do not reply.`;
                         pax: schedule.pax,
                         pickup: schedule.pickup,
                         dropOff: schedule.dropOff,
-                        driverName: driverName,
-                        cellPhone: cellPhone,
+                        driverName: String(driverName),
+                        cellPhone: String(cellPhone),
                         transportUnit: schedule.transportUnit,
                         unitType: schedule.unitType,
                         color: schedule.color,
