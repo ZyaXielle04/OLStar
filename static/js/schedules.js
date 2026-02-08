@@ -234,8 +234,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             populateDriverFilter(filterISO); // populate driver filter
 
-            const filtered = allSchedules.filter(s => s.date === filterISO);
-            renderSchedules(filtered);
+            applyActiveFilters();
         } catch (err) {
             console.error("Failed to fetch schedules:", err);
             showToast("Failed to load schedules.", "error");
@@ -257,9 +256,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (dateFilter) {
         dateFilter.value = getPHLocalISODate();
         dateFilter.addEventListener("change", () => {
-            const selectedDate = dateFilter.value;
-            const filtered = allSchedules.filter(s => s.date === selectedDate);
-            populateDriverFilter(selectedDate); // repopulate drivers for this date
+            populateDriverFilter(dateFilter.value);
+            applyActiveFilters();
+            driverFilter.addEventListener("change", applyActiveFilters);
             renderSchedules(filtered);
         });
     }
@@ -893,4 +892,19 @@ This is an automated message. Please do not reply.`;
     // ---------------- Initial Load ----------------
     fetchSchedules();
     startAutoRefresh(); // refresh every 5000 milliseconds
+
+    function applyActiveFilters() {
+        const selectedDate = dateFilter?.value || getPHLocalISODate();
+        const selectedDriver = driverFilter?.value || "";
+
+        let filtered = allSchedules.filter(s => s.date === selectedDate);
+
+        if (selectedDriver) {
+            filtered = filtered.filter(
+                s => s.current?.driverName === selectedDriver
+            );
+        }
+
+        renderSchedules(filtered);
+    }
 });

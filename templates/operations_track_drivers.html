@@ -10,72 +10,70 @@
   <!-- Base & Page Styles -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/track_drivers.css') }}">
-
-  <!-- Leaflet CSS (NO integrity to avoid blocking) -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
 </head>
 <body>
 
-  <div class="layout">
+<div class="layout">
 
-      <!-- Sidebar -->
-      <aside class="sidebar">
-        <div class="sidebar-header">
-          <h2>Admin Panel</h2>
-        </div>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>Admin Panel</h2>
+    </div>
 
-        <nav class="nav">
-          <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
-          <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
-          <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link">Transport Units</a>
+    <nav class="nav">
+      <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+      <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+      <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link">Transport Units</a>
 
-          <!-- Operations (exposed) -->
-          <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
-          <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link active">Track Drivers</a>
-          <a href="{{ url_for('pages.bookings_transactions') }}" class="nav-link">Transaction History</a>
+      <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
+      <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link active">Track Drivers</a>
+      <a href="{{ url_for('pages.bookings_transactions') }}" class="nav-link">Transaction History</a>
 
-          <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
-        </nav>
+      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+    </nav>
 
-        <div class="sidebar-footer">
-          <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
-        </div>
-      </aside>
+    <div class="sidebar-footer">
+      <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+    </div>
+  </aside>
 
-    <!-- Main Content -->
-    <main class="content">
+  <!-- Main Content -->
+  <main class="content">
+    <header class="page-header">
+      <button id="btnToggleSidebar" class="hamburger">☰</button>
+      <h1>Track Drivers</h1>
+      <p class="subtitle">Monitor your drivers in real time on the map below.</p>
+      <button id="btnToggleTraffic" class="traffic-btn">Show Traffic</button>
+    </header>
 
-      <header class="page-header">
-        <button id="btnToggleSidebar" class="hamburger">☰</button>
-        <h1>Track Drivers</h1>
-        <p class="subtitle">Monitor your drivers in real time on the map below.</p>
-      </header>
+    <!-- Map Section -->
+    <section class="map-section">
+      <div id="map" style="width:100%; height:100%;"></div>
+    </section>
+  </main>
 
-      <!-- Map Section -->
-      <section class="map-section">
-        <div id="map"></div>
-      </section>
+</div>
 
-    </main>
+<!-- ================= SCRIPTS ================= -->
 
-  </div>
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-  <!-- ================= SCRIPTS================= -->
+<!-- App Scripts -->
+<script src="{{ url_for('static', filename='js/firebase-config.js') }}"></script>
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
 
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Google Maps (WITH geometry library) -->
+<script
+  src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_API_KEY }}&libraries=geometry&callback=initMap"
+  async
+  defer
+></script>
 
-  <!-- Firebase SDKs (compat for easier usage) -->
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-
-  <!-- App Scripts -->
-  <script src="{{ url_for('static', filename='js/firebase-config.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/base.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/track_drivers.js') }}"></script>
+<!-- Page Logic -->
+<script src="{{ url_for('static', filename='js/track_drivers.js') }}"></script>
 
 </body>
 </html>
