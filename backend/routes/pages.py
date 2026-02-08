@@ -1,6 +1,10 @@
 #/OLStar/backend/pages.py
 from flask import Blueprint, render_template, redirect, url_for, session
 from decorators import login_required, admin_required
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 pages_bp = Blueprint("pages", __name__)
 
@@ -30,7 +34,11 @@ def bookings_schedules():
 @login_required
 @admin_required
 def bookings_track_drivers():
-    return render_template("operations_track_drivers.html")
+    google_maps_api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    return render_template(
+        "operations_track_drivers.html",
+        GOOGLE_MAPS_API_KEY=google_maps_api_key
+    )
 
 @pages_bp.route("/admin/operations/transactions")
 @login_required
