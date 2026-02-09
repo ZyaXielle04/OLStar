@@ -87,7 +87,7 @@ def get_schedules():
 
 # ---------------- UPDATE ----------------
 @admin_required
-@schedules_api.route("/api/schedules/<transaction_id>", methods=["PUT"])
+@schedules_api.route("/api/schedules/<transaction_id>", methods=["PATCH"])
 def update_schedule(transaction_id):
     from firebase_admin import db
 
