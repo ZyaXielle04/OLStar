@@ -59,6 +59,14 @@
 
           <label for="fileInput" class="btn">Upload XLS/XLSX</label>
           <button class="btn" id="addManualBtn">Add Schedule Manually</button>
+
+          <button class="btn btn-danger" id="bulkDeleteBtn" disabled>
+            🗑️ Delete Selected
+          </button>
+
+          <button class="btn btn-danger-outline" id="deleteAllBtn">
+            ❌ Delete All (Filtered)
+          </button>
         </div>
       </header>
 
@@ -237,6 +245,14 @@
 
     </main>
 
+  </div>
+
+  <div id="statusPhotoModal" class="photo-modal">
+    <div class="photo-modal-content">
+      <span id="closeStatusPhotoModal">&times;</span>
+      <img id="statusPhotoImg" src="" alt="Status proof" />
+      <a id="downloadStatusPhoto" download target="_blank">Download image</a>
+    </div>
   </div>
 
   <!-- Other scripts -->

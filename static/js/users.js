@@ -73,7 +73,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
     // Filter out admins
-    let users = (data.users || []).filter(u => u.role !== "admin");
+    let users = (data.users || [])
+      .filter(u => (u.role || "").toLowerCase() !== "admin") // ignore admins
+      .filter(u => u.firstName || u.lastName); // only users with real names
+
 
     // Sort alphabetically by full name
     users.sort((a, b) => {
@@ -208,7 +211,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
     toast.fire({ icon: "success", title: "User deleted" });
-    fetchUsers();
+
+    // small delay to ensure RTDB is consistent
+    setTimeout(() => fetchUsers(), 200); 
   }
 
   // ---------------- Save User ----------------

@@ -17,6 +17,42 @@ document.addEventListener("DOMContentLoaded", () => {
     const colorInput = document.getElementById("color");
     const plateDatalist = document.getElementById("plateSuggestions");
     const driverFilter = document.getElementById("driverFilter");
+    const STATUS_PHOTO_MAP = {
+        "Confirmed": "pendingPhotoUrl",
+        "Arrived": "confirmedPhotoUrl",
+        "On Route": "arrivedPhotoUrl",
+        "Completed": "OnRoutePhotoUrl"
+    };
+
+    const statusPhotoModal = document.getElementById("statusPhotoModal");
+    const statusPhotoImg = document.getElementById("statusPhotoImg");
+    const downloadStatusPhoto = document.getElementById("downloadStatusPhoto");
+    const closeStatusPhotoModal = document.getElementById("closeStatusPhotoModal");
+    let selectedScheduleIDs = new Set();
+
+
+    function openStatusPhotoModal(photoUrl) {
+        if (!photoUrl) {
+            showToast("No photo uploaded for this status yet.", "info");
+            return;
+        }
+
+        statusPhotoImg.src = photoUrl;
+        downloadStatusPhoto.href = photoUrl;
+        statusPhotoModal.style.display = "block";
+    }
+
+    closeStatusPhotoModal.onclick = () => {
+        statusPhotoModal.style.display = "none";
+        statusPhotoImg.src = "";
+    };
+
+    window.addEventListener("click", e => {
+        if (e.target === statusPhotoModal) {
+            statusPhotoModal.style.display = "none";
+            statusPhotoImg.src = "";
+        }
+    });
 
 
     // ---------------- Plate Number Auto-fill ----------------
@@ -258,8 +294,6 @@ document.addEventListener("DOMContentLoaded", () => {
         dateFilter.addEventListener("change", () => {
             populateDriverFilter(dateFilter.value);
             applyActiveFilters();
-            driverFilter.addEventListener("change", applyActiveFilters);
-            renderSchedules(filtered);
         });
     }
 
@@ -321,6 +355,15 @@ This is an automated message. Please do not reply.`;
         const statusLabel = statusMap[rawStatus] || rawStatus;
 
         event.innerHTML = `
+
+            <div class="event-select">
+                <input
+                type="checkbox"
+                class="schedule-checkbox"
+                data-id="${data.transactionID}"
+                />
+            </div>
+
             <div class="event-header">
                 <div class="event-time">${data.time || ""}</div>
                 <div class="event-tripType">${getTripTypeLabel(data.tripType)}</div>
@@ -352,6 +395,10 @@ This is an automated message. Please do not reply.`;
 
                     <strong class="client-contact">${data.contactNumber || ""}</strong>
                     <button class="btn-copy-contact" title="Copy contact number">📋</button>
+
+                    <span> | </span>
+
+                    <strong class="event-note">(${data.note || "No email available on the note"})</strong>
                 </div>
 
                 <div class="event-route">
@@ -365,6 +412,7 @@ This is an automated message. Please do not reply.`;
                             <button class="btn-copy">📋 Message Template</button>
                             <button class="btn-flightaware">✈️ FlightAware</button>
                             <button class="btn-driver-transfer">🚕 Driver Transfer</button>
+                            <button class="btn-email-client">📧 Email Client</button>
                         </div>
 
                         <div class="action-center">
@@ -413,13 +461,36 @@ This is an automated message. Please do not reply.`;
                         <span class="value">${data.luggage || "-"}</span>
                     </div>
                 </div>
-
-                <div class="detail-note">
-                    <span class="label">Note</span>
-                    <p>${data.note || "—"}</p>
-                </div>
             </div>
         `;
+
+        // ---------------- Select schedule by clicking anywhere ----------------
+        const checkbox = event.querySelector(".schedule-checkbox");
+
+        // Prevent clicks on buttons inside the card from toggling selection
+        event.addEventListener("click", (e) => {
+            if (
+                e.target.closest("button") ||  // buttons
+                e.target.closest("a")          // links
+            ) return;
+
+            // Toggle checkbox
+            checkbox.checked = !checkbox.checked;
+
+            const id = checkbox.dataset.id;
+            if (checkbox.checked) {
+                selectedScheduleIDs.add(id);
+            } else {
+                selectedScheduleIDs.delete(id);
+            }
+
+            // Enable / disable bulk delete button
+            document.getElementById("bulkDeleteBtn").disabled =
+                selectedScheduleIDs.size === 0;
+
+            // Optional: highlight selected card
+            event.classList.toggle("selected-schedule", checkbox.checked);
+        });
 
         // --- Render Status Progress ---
         function renderStatusProgress(status) {
@@ -454,6 +525,28 @@ This is an automated message. Please do not reply.`;
                 } else if (index <= currentIndex) {
                     circle.style.backgroundColor = "blue";
                 }
+
+                circle.style.cursor = "pointer";
+
+                circle.addEventListener("click", () => {
+                    const statusKey = statusKeys[index];
+                    const photoKey = STATUS_PHOTO_MAP[statusKey];
+                    if (!photoKey) return;
+
+                    const photoContainer =
+                        data.PhotoUrl ||
+                        data.photoUrl ||
+                        data.photos ||
+                        {};
+
+                    const photoUrl = photoContainer[photoKey];
+
+                    console.log("Clicked:", statusKey);
+                    console.log("Photo key:", photoKey);
+                    console.log("Resolved URL:", photoUrl);
+
+                    openStatusPhotoModal(photoUrl);
+                });
 
                 // Label
                 const label = document.createElement("div");
@@ -498,6 +591,30 @@ This is an automated message. Please do not reply.`;
         const btnCopyClient = event.querySelector(".btn-copy-client");
         const btnCopyContact = event.querySelector(".btn-copy-contact");
         const btnDriverTransfer = event.querySelector(".btn-driver-transfer");
+        const btnEmailClient = event.querySelector(".btn-email-client");
+
+        btnEmailClient.addEventListener("click", () => {
+            const email = (data.note || "").trim(); // email stored in "note"
+
+            if (!email || !email.includes("@")) {
+                showToast("No valid email found for this client.", "info");
+                return;
+            }
+
+            const subject = `Your Transport Booking – ${data.company || "Ol-Star Transport"}`;
+
+            // ✅ Reuse WhatsApp message
+            const body = buildWhatsAppMessage(data);
+
+            const gmailUrl =
+                `https://mail.google.com/mail/?view=cm&fs=1` +
+                `&to=${encodeURIComponent(email)}` +
+                `&su=${encodeURIComponent(subject)}` +
+                `&body=${encodeURIComponent(body)}`;
+
+            window.open(gmailUrl, "_blank");
+        });
+        
 
         btnDriverTransfer.addEventListener("click", () => {
             const clientName = data.clientName || "[Client Name]";
@@ -632,7 +749,75 @@ This is an automated message. Please do not reply.`;
             return;
         }
         sortSchedulesByDateTime(schedules).forEach(s => bookingsContainer.appendChild(createCalendarEvent(s)));
+
+        document.querySelectorAll(".schedule-checkbox").forEach(cb => {
+            cb.addEventListener("change", e => {
+                const id = e.target.dataset.id;
+
+                if (e.target.checked) {
+                selectedScheduleIDs.add(id);
+                } else {
+                selectedScheduleIDs.delete(id);
+                }
+
+                document.getElementById("bulkDeleteBtn").disabled =
+                selectedScheduleIDs.size === 0;
+            });
+        });
     }
+
+    document.getElementById("bulkDeleteBtn").addEventListener("click", async () => {
+        const confirm = await Swal.fire({
+            title: "Delete selected schedules?",
+            text: `You are about to delete ${selectedScheduleIDs.size} schedules.`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Yes, delete",
+        });
+
+        if (!confirm.isConfirmed) return;
+
+        for (const id of selectedScheduleIDs) {
+            await deleteScheduleFromBackend(id);
+        }
+
+        selectedScheduleIDs.clear();
+        await fetchSchedules(dateFilter.value);
+        showToast("Selected schedules deleted.");
+    });
+
+    document.getElementById("deleteAllBtn").addEventListener("click", async () => {
+        const selectedDate = dateFilter.value || getPHLocalISODate();
+        const selectedDriver = driverFilter.value;
+
+        const targets = allSchedules.filter(s => {
+            if (s.date !== selectedDate) return false;
+            if (selectedDriver && s.current?.driverName !== selectedDriver) return false;
+            return true;
+        });
+
+        if (!targets.length) {
+            showToast("No schedules to delete.", "info");
+            return;
+        }
+
+        const confirm = await Swal.fire({
+            title: "Delete ALL schedules?",
+            html: `This will delete <b>${targets.length}</b> schedules.`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Yes, delete all",
+        });
+
+        if (!confirm.isConfirmed) return;
+
+        for (const s of targets) {
+            await deleteScheduleFromBackend(s.transactionID);
+        }
+
+        await fetchSchedules(selectedDate);
+        showToast("All filtered schedules deleted.");
+    });
 
     fileInput.addEventListener("change", async (e) => {
         const file = e.target.files[0];
@@ -844,14 +1029,14 @@ This is an automated message. Please do not reply.`;
         }
     };
 
-    // ---------------- Save Manual Form ----------------
     manualForm.onsubmit = async e => {
         e.preventDefault();
+
         const f = new FormData(manualForm);
-        const dateISO = new Date(f.get("date")).toISOString().split("T")[0];
 
         const data = {
-            date: dateISO,
+            transactionID: editingTransactionID || generateTransactionID(),
+            date: f.get("date"), // PH-safe
             time: f.get("time"),
             clientName: f.get("clientName"),
             contactNumber: f.get("contactNumber"),
@@ -871,22 +1056,42 @@ This is an automated message. Please do not reply.`;
             luggage: f.get("luggage"),
             tripType: f.get("tripType"),
             status: "Pending",
-            current: { driverName: driverInput.value, cellPhone: cellPhoneInput.value }
+            current: {
+                driverName: driverInput.value,
+                cellPhone: cellPhoneInput.value
+            }
         };
 
         const url = editingTransactionID
             ? `/api/schedules/${editingTransactionID}`
             : `/api/schedules`;
 
-        await fetch(url, {
-            method: editingTransactionID ? "PUT" : "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
-        });
+        try {
+            const res = await fetch(url, {
+                method: editingTransactionID ? "PUT" : "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+            });
 
-        modal.style.display = "none";
-        resetManualForm();
-        fetchAllSchedules();
+            if (!res.ok) {
+                const msg = await res.text();
+                throw new Error(msg);
+            }
+
+            modal.style.display = "none";
+            resetManualForm();
+            await fetchSchedules(dateFilter.value);
+
+            showToast(
+                editingTransactionID
+                    ? "Schedule updated successfully!"
+                    : "Schedule added successfully!"
+            );
+
+        } catch (err) {
+            console.error("Manual save failed:", err);
+            showToast("Failed to save schedule.", "error");
+        }
     };
 
     // ---------------- Initial Load ----------------

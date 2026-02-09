@@ -523,6 +523,24 @@ textarea {
   background: #b91c1c;
 }
 
+.btn-driver-transfer {
+  background: #7c3aed;
+  color: #ffffff;
+}
+
+.btn-driver-transfer:hover {
+  background: #5b21b6;
+}
+
+.btn-email-client {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.btn-email-client:hover {
+  background: #1d4ed8;
+}
+
 /* Date filter styled like buttons */
 .date-filter {
   padding: 10px 12px;
@@ -979,4 +997,113 @@ textarea {
 .driver-filter-container label {
     font-weight: 500;
     color: #374151; /* gray-700 */
+}
+
+.client-info button {
+    margin-left: 4px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+}
+
+/* ---------------- Photo Modal Overlay ---------------- */
+.photo-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.75); /* slate-900 w/ opacity */
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* ---------------- Modal Container ---------------- */
+.photo-modal-content {
+  position: relative;
+  background: #ffffff;
+  max-width: min(90%, 720px);
+  max-height: 90%;
+  margin: 5vh auto;
+  padding: 20px 22px 24px;
+  border-radius: 14px;
+  text-align: center;
+  box-shadow:
+    0 20px 25px -5px rgba(0,0,0,.2),
+    0 8px 10px -6px rgba(0,0,0,.2);
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* ---------------- Image ---------------- */
+.photo-modal-content img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 12px auto 16px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: #f1f5f9;
+}
+
+/* ---------------- Download Button ---------------- */
+.photo-modal-content a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: #2563eb;
+  color: #ffffff;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.photo-modal-content a:hover {
+  background: #1e40af;
+  transform: translateY(-1px);
+}
+
+.photo-modal-content a:active {
+  transform: translateY(0);
+}
+
+/* ---------------- Close Button ---------------- */
+#closeStatusPhotoModal {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  font-size: 24px;
+  line-height: 1;
+  color: #475569;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+#closeStatusPhotoModal:hover {
+  color: #0f172a;
+}
+
+/* ---------------- Animations ---------------- */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Highlight selected schedule card */
+.selected-schedule {
+    border: 2px solid #ef4444; /* red border */
+    background-color: #fee2e2; /* light red bg */
 }

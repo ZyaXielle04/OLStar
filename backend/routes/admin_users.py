@@ -78,7 +78,8 @@ def get_users():
 
         # Build user objects
         for uid, info in users_snapshot.items():
-            if role_filter and info.get("role") != role_filter:
+            # Skip incomplete users
+            if not info.get("firstName") and not info.get("lastName"):
                 continue
 
             user_obj = {
