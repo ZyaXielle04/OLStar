@@ -523,7 +523,7 @@ This is an automated message. Please do not reply.`;
                 if (cancelled) {
                     circle.style.backgroundColor = "red";
                 } else if (index <= currentIndex) {
-                    circle.style.backgroundColor = "blue";
+                    circle.style.backgroundColor = "#aacafd"; // blue for completed steps
                 }
 
                 circle.style.cursor = "pointer";
