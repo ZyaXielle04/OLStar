@@ -4,6 +4,13 @@ from decorators import admin_required
 
 schedules_api = Blueprint("schedules_api", __name__)
 
+EDITABLE_FIELDS = {
+    "date", "time", "clientName", "contactNumber",
+    "pickup", "dropOff", "pax", "flightNumber", "note",
+    "unitType", "amount", "driverRate", "company",
+    "bookingType", "transportUnit", "color",
+    "plateNumber", "luggage", "tripType"
+}
 
 def normalize_phone(number: str) -> str:
     """
@@ -38,7 +45,6 @@ def create_schedule():
         data = [data]
 
     saved_ids = []
-    message_results = []
 
     try:
         for item in data:
@@ -46,20 +52,20 @@ def create_schedule():
             if not transaction_id:
                 return jsonify({"error": "transactionID is required"}), 400
 
-            # ---------------- Save to Firebase ----------------
+            item["status"] = item.get("status", "Pending")
+
             ref = db.reference(f"schedules/{transaction_id}")
             ref.set(item)
+
             saved_ids.append(transaction_id)
 
         return jsonify({
             "success": True,
-            "transactionIDs": saved_ids,
-            "messages": message_results
+            "transactionIDs": saved_ids
         }), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 # ---------------- READ ----------------
 @admin_required
@@ -87,26 +93,38 @@ def get_schedules():
 
 # ---------------- UPDATE ----------------
 @admin_required
-@schedules_api.route("/api/schedules/<transaction_id>", methods=["PATCH"])
+@schedules_api.route("/api/schedules/<transaction_id>", methods=["PATCH", "PUT"])
 def update_schedule(transaction_id):
     from firebase_admin import db
 
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
+    data = request.get_json() or {}
 
     ref = db.reference(f"schedules/{transaction_id}")
     existing = ref.get()
     if not existing:
         return jsonify({"error": "Schedule not found"}), 404
 
+    # 🔐 Handle driver assignment ONLY here
     if "current" in data:
-        ref.child("current").set(data["current"])
-        data.pop("current")
+        current = data.get("current") or {}
+        ref.child("current").update({
+            "driverName": current.get("driverName", ""),
+            "cellPhone": current.get("cellPhone", "")
+        })
 
-    ref.update(data)
-    return jsonify({"success": True, "transactionID": transaction_id}), 200
+    # 🛡️ Allow-list update only (root fields)
+    updates = {
+        k: v for k, v in data.items()
+        if k in EDITABLE_FIELDS
+    }
 
+    if updates:
+        ref.update(updates)
+
+    return jsonify({
+        "success": True,
+        "transactionID": transaction_id
+    }), 200
 
 # ---------------- DELETE ----------------
 @admin_required

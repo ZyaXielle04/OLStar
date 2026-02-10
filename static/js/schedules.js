@@ -1035,8 +1035,7 @@ This is an automated message. Please do not reply.`;
         const f = new FormData(manualForm);
 
         const data = {
-            transactionID: editingTransactionID || generateTransactionID(),
-            date: f.get("date"), // PH-safe
+            date: f.get("date"),
             time: f.get("time"),
             clientName: f.get("clientName"),
             contactNumber: f.get("contactNumber"),
@@ -1055,7 +1054,6 @@ This is an automated message. Please do not reply.`;
             plateNumber: f.get("plateNumber"),
             luggage: f.get("luggage"),
             tripType: f.get("tripType"),
-            status: "Pending",
             current: {
                 driverName: driverInput.value,
                 cellPhone: cellPhoneInput.value
@@ -1066,10 +1064,16 @@ This is an automated message. Please do not reply.`;
             ? `/api/schedules/${editingTransactionID}`
             : `/api/schedules`;
 
+        if (!editingTransactionID) {
+            data.transactionID = generateTransactionID();
+            data.status = "Pending";
+        }
+
         try {
             const res = await fetch(url, {
-                method: editingTransactionID ? "PUT" : "POST",
+                method: editingTransactionID ? "PATCH" : "POST",
                 headers: { "Content-Type": "application/json" },
+                credentials: "include",
                 body: JSON.stringify(data)
             });
 
