@@ -341,6 +341,11 @@ This is an automated message. Please do not reply.`;
         const event = document.createElement("div");
         event.classList.add("calendar-event");
 
+        // Add no-show class if clientNoShow is true
+        if (data.clientNoShow === true) {
+            event.classList.add("no-show-trip");
+        }
+
         const statusMap = {
             "Pending": "The Driver is preparing to dispatch.",
             "Confirmed": "Driver has departed.",
@@ -355,7 +360,6 @@ This is an automated message. Please do not reply.`;
         const statusLabel = statusMap[rawStatus] || rawStatus;
 
         event.innerHTML = `
-
             <div class="event-select">
                 <input
                 type="checkbox"
@@ -368,6 +372,7 @@ This is an automated message. Please do not reply.`;
                 <div class="event-time">${data.time || ""}</div>
                 <div class="event-tripType">${getTripTypeLabel(data.tripType)}</div>
                 <div class="event-id">${data.transactionID || ""}</div>
+                ${data.clientNoShow === true ? '<span class="no-show-badge">🚫 NO SHOW</span>' : ''}
                 <span class="status ${statusClass}">${statusLabel}</span>
             </div>
 

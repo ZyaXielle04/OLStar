@@ -1107,3 +1107,90 @@ textarea {
     border: 2px solid #ef4444; /* red border */
     background-color: #fee2e2; /* light red bg */
 }
+
+/* No Show Badge - Tag Style */
+.no-show-badge {
+    background-color: #dc3545;
+    color: white;
+    padding: 4px 10px 4px 14px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    position: relative;
+    margin-left: 15px;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 10px 50%);
+}
+
+.no-show-badge::before {
+    content: "🚫";
+    font-size: 11px;
+}
+
+/* No Show Trip Card */
+.no-show-trip {
+    position: relative;
+    overflow: hidden;
+}
+
+.no-show-trip::after {
+    content: "NO SHOW";
+    position: absolute;
+    top: 10px;
+    right: -30px;
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+    padding: 5px 40px;
+    font-size: 10px;
+    font-weight: bold;
+    transform: rotate(45deg);
+    letter-spacing: 2px;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+/* Trip Number Badge */
+.trip-number-badge {
+    background-color: #172747;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 14px;
+    margin-right: 10px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Color variations based on status */
+.trip-number-badge.completed {
+    background-color: #6c757d;
+}
+
+.trip-number-badge.cancelled,
+.trip-number-badge.no-show {
+    background-color: #dc3545;
+}
+
+/* Alternative: Badge style instead of circle */
+.trip-number-badge.pill {
+    background-color: #172747;
+    color: white;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+    display: inline-flex;
+    align-items: center;
+    margin-right: 10px;
+}
+
+.trip-number-badge.pill::before {
+    content: "#";
+    margin-right: 2px;
+    opacity: 0.9;
+}
