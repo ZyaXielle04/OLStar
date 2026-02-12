@@ -263,13 +263,14 @@ document.addEventListener("DOMContentLoaded", () => {
             const res = await fetch("/api/schedules");
             if (!res.ok) throw new Error(await res.text());
             const data = await res.json();
-            allSchedules = data.schedules || [];
-
+            
+            // Assign permanent trip numbers to ALL schedules
+            allSchedules = assignTripNumbers(data.schedules || []);
+            
             const filterISO = selectedISO || dateFilter.value || getPHLocalISODate();
             dateFilter.value = filterISO;
 
-            populateDriverFilter(filterISO); // populate driver filter
-
+            populateDriverFilter(filterISO);
             applyActiveFilters();
         } catch (err) {
             console.error("Failed to fetch schedules:", err);
@@ -341,9 +342,18 @@ This is an automated message. Please do not reply.`;
         const event = document.createElement("div");
         event.classList.add("calendar-event");
 
+        // Get driver-specific trip number
+        const driverName = data.current?.driverName || "Unassigned";
+        const tripNumber = data.tripNumber || null;
+
         // Add no-show class if clientNoShow is true
         if (data.clientNoShow === true) {
             event.classList.add("no-show-trip");
+        }
+
+        // Add completed class if status is Completed
+        if (data.status === "Completed") {
+            event.classList.add("completed-trip");
         }
 
         const statusMap = {
@@ -359,6 +369,12 @@ This is an automated message. Please do not reply.`;
         const statusClass = rawStatus.toLowerCase().replace(/\s+/g, "-");
         const statusLabel = statusMap[rawStatus] || rawStatus;
 
+        // Create driver badge with trip number
+        const driverBadge = tripNumber ? 
+            `<div class="driver-trip-badge" title="${driverName}">
+                <span class="trip-num">#${tripNumber}</span>
+            </div>` : '';
+
         event.innerHTML = `
             <div class="event-select">
                 <input
@@ -369,9 +385,12 @@ This is an automated message. Please do not reply.`;
             </div>
 
             <div class="event-header">
+                ${driverBadge}
                 <div class="event-time">${data.time || ""}</div>
                 <div class="event-tripType">${getTripTypeLabel(data.tripType)}</div>
-                <div class="event-id">${data.transactionID || ""}</div>
+                <div class="event-id">
+                    ${data.transactionID || ""}
+                </div>
                 ${data.clientNoShow === true ? '<span class="no-show-badge">🚫 NO SHOW</span>' : ''}
                 <span class="status ${statusClass}">${statusLabel}</span>
             </div>
@@ -428,7 +447,7 @@ This is an automated message. Please do not reply.`;
 
                     <div class="driver-info">
                         <div class="driver-name">
-                            ${data.current?.driverName || ""} | ${data.current?.cellPhone || ""}
+                            <strong>${driverName}</strong> | ${data.current?.cellPhone || ""}
                         </div>
                     </div>
                 </div>
@@ -513,6 +532,7 @@ This is an automated message. Please do not reply.`;
 
             const statusKeys = ["Pending", "Confirmed", "Arrived", "On Route", "Completed"];
             const cancelled = status === "Cancelled";
+            const noShow = data.clientNoShow === true;
             const currentIndex = statusKeys.indexOf(status);
 
             statusKeys.forEach((key, index) => {
@@ -525,7 +545,7 @@ This is an automated message. Please do not reply.`;
                 circle.classList.add("status-circle");
                 circle.textContent = index + 1;
 
-                if (cancelled) {
+                if (cancelled || noShow) {
                     circle.style.backgroundColor = "red";
                 } else if (index <= currentIndex) {
                     circle.style.backgroundColor = "#aacafd"; // blue for completed steps
@@ -558,8 +578,9 @@ This is an automated message. Please do not reply.`;
                 label.classList.add("status-label");
 
                 if (cancelled) {
-                    // Only the 3rd circle gets the "Booking Cancelled" text
                     label.textContent = index === 2 ? "Booking Cancelled" : "";
+                } else if (noShow) {
+                    label.textContent = index === 2 ? "Client No Show" : "";
                 } else {
                     label.textContent = statusMap[key];
                 }
@@ -573,7 +594,7 @@ This is an automated message. Please do not reply.`;
                     const line = document.createElement("div");
                     line.classList.add("status-line");
 
-                    if (cancelled) {
+                    if (cancelled || noShow) {
                         line.style.backgroundColor = "red";
                     } else if (index < currentIndex) {
                         line.style.backgroundColor = "blue";
@@ -745,6 +766,62 @@ This is an automated message. Please do not reply.`;
         });
 
         return event;
+    }
+
+    // Helper function to get initials from driver name
+    function getInitials(name) {
+        if (!name || name === "Unassigned") return "DR";
+        return name.split(' ')
+            .map(word => word[0])
+            .join('')
+            .toUpperCase()
+            .substring(0, 2);
+    }
+
+    function assignTripNumbers(schedules) {
+        // First, group by driver
+        const schedulesByDriver = {};
+        
+        schedules.forEach(schedule => {
+            const driverName = schedule.current?.driverName || "Unassigned";
+            if (!schedulesByDriver[driverName]) {
+                schedulesByDriver[driverName] = [];
+            }
+            schedulesByDriver[driverName].push(schedule);
+        });
+        
+        // For each driver, group by date and assign numbers
+        Object.keys(schedulesByDriver).forEach(driver => {
+            const driverSchedules = schedulesByDriver[driver];
+            
+            // Group driver's schedules by date
+            const byDate = {};
+            driverSchedules.forEach(schedule => {
+                if (!byDate[schedule.date]) {
+                    byDate[schedule.date] = [];
+                }
+                byDate[schedule.date].push(schedule);
+            });
+            
+            // For each date, sort by time and assign numbers starting from 1
+            Object.keys(byDate).forEach(date => {
+                const dateSchedules = byDate[date];
+                
+                // Sort by time (earliest to latest)
+                dateSchedules.sort((a, b) => {
+                    return parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time);
+                });
+                
+                // Assign PERMANENT trip numbers (1, 2, 3, etc.) for THIS driver on THIS date
+                let tripNumber = 1;
+                dateSchedules.forEach(schedule => {
+                    schedule.tripNumber = tripNumber++;  // Each driver's trips start at #1
+                    schedule.tripNumberForDriver = `${driver}-${schedule.date}-${schedule.tripNumber}`; // Unique identifier
+                });
+            });
+        });
+        
+        return schedules;
     }
 
     function renderSchedules(schedules) {
@@ -945,27 +1022,34 @@ This is an automated message. Please do not reply.`;
 
     function populateDriverFilter(selectedDate) {
         const drivers = new Set();
-
-        // Remember the currently selected driver
         const currentSelection = driverFilter.value;
 
-        // Filter schedules by selected date
+        // Filter schedules by selected date and collect drivers
         allSchedules
             .filter(s => s.date === selectedDate)
             .forEach(s => {
-                if (s.current?.driverName) drivers.add(s.current.driverName);
+                if (s.current?.driverName) {
+                    drivers.add(s.current.driverName);
+                }
             });
 
         // Clear previous options
         driverFilter.innerHTML = `<option value="">— All Drivers —</option>`;
 
-        // Add drivers
+        // Add drivers with their trip counts for the day
         Array.from(drivers)
             .sort((a, b) => a.localeCompare(b))
             .forEach(driver => {
                 const opt = document.createElement("option");
                 opt.value = driver;
-                opt.textContent = driver;
+                
+                // Count how many trips this driver has on selected date
+                const tripCount = allSchedules.filter(s => 
+                    s.date === selectedDate && 
+                    s.current?.driverName === driver
+                ).length;
+                
+                opt.textContent = `${driver} (${tripCount} trips)`;
                 driverFilter.appendChild(opt);
             });
 
@@ -1117,6 +1201,8 @@ This is an automated message. Please do not reply.`;
             filtered = filtered.filter(
                 s => s.current?.driverName === selectedDriver
             );
+            // When filtering by driver, their trip numbers remain 1,2,3 etc.
+            // No need to renumber - they keep their permanent numbers
         }
 
         renderSchedules(filtered);
