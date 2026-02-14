@@ -4,7 +4,7 @@ from decorators import admin_required
 
 admin_requests_api = Blueprint("admin_requests_api", __name__)
 
-# ---------------- GET all requests (existing) ----------------
+# ---------------- GET all requests ----------------
 @admin_requests_api.route("/api/admin/requests", methods=["GET"])
 @admin_required
 def get_all_requests():

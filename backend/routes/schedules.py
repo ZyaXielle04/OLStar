@@ -104,7 +104,7 @@ def update_schedule(transaction_id):
     if not existing:
         return jsonify({"error": "Schedule not found"}), 404
 
-    # 🔐 Handle driver assignment ONLY here
+    # Handle driver assignment ONLY here
     if "current" in data:
         current = data.get("current") or {}
         ref.child("current").update({
@@ -112,7 +112,7 @@ def update_schedule(transaction_id):
             "cellPhone": current.get("cellPhone", "")
         })
 
-    # 🛡️ Allow-list update only (root fields)
+    # Allow-list update only
     updates = {
         k: v for k, v in data.items()
         if k in EDITABLE_FIELDS

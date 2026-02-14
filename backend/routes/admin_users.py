@@ -14,7 +14,7 @@ def create_user():
     csrf.exempt(create_user)
 
     data = request.get_json(force=True) or {}
-    print("Received payload:", data)  # Debug log
+    print("Received payload:", data)
 
     # Required fields
     required_fields = ["email", "phone", "firstName", "lastName"]
@@ -55,7 +55,7 @@ def create_user():
         return jsonify({"error": str(e)}), 500
 
 # -----------------------
-# GET USERS (optionally filter by role)
+# GET USERS
 # -----------------------
 @admin_users_api.route("/api/admin/users", methods=["GET"])
 @admin_required
@@ -153,7 +153,7 @@ def delete_user(uid):
         return jsonify({"error": str(e)}), 500
 
 # -----------------------
-# ENABLE / DISABLE USER (Firebase Auth only)
+# ENABLE / DISABLE USER
 # -----------------------
 @admin_users_api.route("/api/admin/users/<uid>/status", methods=["PATCH"])
 @admin_required
