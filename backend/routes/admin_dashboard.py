@@ -19,11 +19,10 @@ def dashboard_metrics():
         requests_ref = db.reference("requests")
         requests = requests_ref.get() or {}
 
-        bookings_ref = db.reference("schedules")  # <-- updated to match your schedules node
+        bookings_ref = db.reference("schedules")
         all_bookings = bookings_ref.get() or {}
 
         # Current date in server timezone
-        from datetime import datetime
         today = datetime.now().date()
 
         # Count bookings where date matches today
@@ -119,58 +118,73 @@ def drivers_online():
         return jsonify({"error": str(e)}), 500
 
 # ----------------------
-# DASHBOARD CHARTS
+# CALENDAR SCHEDULES - WITH CLIENTNAME
 # ----------------------
-@admin_dashboard_api.route("/api/admin/dashboard/charts", methods=["GET"])
+@admin_dashboard_api.route("/api/admin/calendar/schedules", methods=["GET"])
 @admin_required
-def dashboard_charts():
+def get_calendar_schedules():
     try:
+        # Get all schedules
         schedules_ref = db.reference("schedules")
-        requests_ref = db.reference("requests")
-
         schedules = schedules_ref.get() or {}
-        requests = requests_ref.get() or {}
+        
+        print(f"Found {len(schedules)} schedules in database")
+        
+        # Optional: Get users for additional info if needed
+        users_ref = db.reference("users")
+        users = users_ref.get() or {}
 
-        bookings_data = []
-        requests_data = []
-
-        today = datetime.now()
-
-        # Last 7 days
-        for i in range(7, 0, -1):
-            day = today - timedelta(days=i)
-            day_start = datetime.combine(day, datetime.min.time())
-            day_end = datetime.combine(day, datetime.max.time())
-
-            day_str = day.strftime("%Y-%m-%d")
-
-            # Count bookings for this day
-            bookings_count = sum(
-                1 for s in schedules.values() if s.get("date") == day_str
-            )
-
-            # Count requests for this day based on timestamp
-            requests_count = 0
-            for r in requests.values():
-                ts = r.get("timestamp")
-                if not ts:
-                    continue
-                # If timestamp is in milliseconds, divide by 1000
-                if ts > 1e12:  # likely ms
-                    ts_dt = datetime.fromtimestamp(ts / 1000)
+        schedules_list = []
+        for sid, schedule in schedules.items():
+            # Debug: print first few schedules to see structure
+            if len(schedules_list) < 3:
+                print(f"Schedule {sid} data:", schedule)
+            
+            # Create schedule object with all fields including clientName
+            schedule_data = {
+                "id": sid,
+                "date": schedule.get("date"),
+                "time": schedule.get("time"),
+                "flightNumber": schedule.get("flightNumber"),
+                "luggage": schedule.get("luggage", "0"),
+                "note": schedule.get("note", schedule.get("notes", "")),
+                "pax": schedule.get("pax", "1"),
+                "pickup": schedule.get("pickup", schedule.get("pickupLocation")),
+                "plateNumber": schedule.get("plateNumber"),
+                "status": schedule.get("status", "Pending"),
+                "transactionID": schedule.get("transactionID"),
+                "transportUnit": schedule.get("transportUnit"),
+                "tripType": schedule.get("tripType"),
+                "unitType": schedule.get("unitType"),
+                "amount": schedule.get("amount"),
+                "driverId": schedule.get("driverId"),
+                "passengerId": schedule.get("passengerId"),
+                "dropoffLocation": schedule.get("dropoffLocation"),
+                "endTime": schedule.get("endTime"),
+                # Add clientName explicitly
+                "clientName": schedule.get("clientName", schedule.get("passengerName", "")),
+                "passengerName": schedule.get("passengerName", schedule.get("clientName", ""))
+            }
+            
+            # If clientName is in a nested object or different path, handle it
+            if not schedule_data["clientName"] and schedule.get("client"):
+                if isinstance(schedule.get("client"), dict):
+                    schedule_data["clientName"] = schedule["client"].get("name", "")
                 else:
-                    ts_dt = datetime.fromtimestamp(ts)
-                if day_start <= ts_dt <= day_end:
-                    requests_count += 1
+                    schedule_data["clientName"] = schedule.get("client", "")
+            
+            schedules_list.append(schedule_data)
 
-            bookings_data.append({"date": day_str, "count": bookings_count})
-            requests_data.append({"date": day_str, "count": requests_count})
+        # Sort by date and time
+        schedules_list.sort(key=lambda x: (x.get("date", ""), x.get("time", "")))
 
+        print(f"Returning {len(schedules_list)} schedules with clientName")
+        
         return jsonify({
-            "bookings": bookings_data,
-            "requests": requests_data
+            "schedules": schedules_list,
+            "count": len(schedules_list)
         })
-
+        
     except Exception as e:
-        print("Error fetching chart data:", e)
+        print("Error fetching calendar schedules:", e)
         return jsonify({"error": str(e)}), 500

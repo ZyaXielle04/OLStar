@@ -11,8 +11,9 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_dashboard.css') }}">
 
-  <!-- Chart.js for graphs -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- FullCalendar for Google Calendar-like view -->
+  <link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css' rel='stylesheet' />
+  <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
 
   <!-- Leaflet for mini map -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -106,13 +107,33 @@
       </div>
     </section>
 
-    <!-- Activity Charts -->
-    <section class="charts">
-      <h2>Activity Trends</h2>
-      <div class="chart-container">
-        <canvas id="activityChart"></canvas>
+    <!-- Schedule Calendar -->
+    <section class="schedule-calendar">
+      <h2>Schedule Calendar</h2>
+      <div class="calendar-container">
+        <div id="scheduleCalendar"></div>
       </div>
     </section>
+
+    <!-- Calendar Legend -->
+    <div class="calendar-legend">
+      <div class="legend-item">
+        <span class="legend-color scheduled"></span>
+        <span>Scheduled</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-color in-progress"></span>
+        <span>In Progress</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-color completed"></span>
+        <span>Completed</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-color cancelled"></span>
+        <span>Cancelled</span>
+      </div>
+    </div>
 
   </main>
 </div>
