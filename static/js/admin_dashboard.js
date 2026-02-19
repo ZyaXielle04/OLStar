@@ -280,7 +280,8 @@ async function initializeCalendar() {
         const flightNumber = schedule.flightNumber || '';
         const pax = schedule.pax || '1';
         const luggage = schedule.luggage || '0';
-        const unitType = schedule.unitType || schedule.transportUnit || 'Vehicle';
+        const unitType = schedule.unitType || 'Vehicle';
+        const transportUnit = schedule.transportUnit || '';
         const plateNumber = schedule.plateNumber || '';
         const tripType = schedule.tripType || '';
         const transactionID = schedule.transactionID || '';
@@ -329,7 +330,7 @@ async function initializeCalendar() {
             
             // Vehicle information
             unitType: unitType,
-            transportUnit: schedule.transportUnit || unitType,
+            transportUnit: schedule.transportUnit,
             plateNumber: plateNumber,
             
             // Status
@@ -591,6 +592,7 @@ function showEventDetails(event) {
         
         <div class="detail-section">
           <h4>Vehicle Information</h4>
+          <p><strong>Transport Unit:</strong> ${props.transportUnit || 'N/A'}</p>
           <p><strong>Vehicle Type:</strong> ${props.unitType}</p>
           <p><strong>Plate Number:</strong> ${props.plateNumber || 'N/A'}</p>
         </div>
