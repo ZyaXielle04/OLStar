@@ -1,72 +1,124 @@
+// Make all functions globally available
+window.driverMarkers = {};
+window.previousLocations = {};
+window.lastValidSpeed = {};
+window.lastUpdateTime = {};
+window.addressCache = new Map();
+window.activeInfoWindow = null;
+
 let map;
 const origin = { lat: 14.5222733, lng: 120.999655 }; // Manila
-const driverMarkers = {};
-const previousLocations = {};
-const lastValidSpeed = {}; // Store last valid speed to prevent 0.0 flicker
-const lastUpdateTime = {}; // Track last update time for each driver
-
-// Cache for geocoded addresses to avoid repeated API calls
-const addressCache = new Map();
 
 // Traffic Layer
 let trafficLayer;
 let trafficVisible = false;
 
-// Single info window instance
-let activeInfoWindow = null;
-let isInfoWindowOpen = false; // NEW: Track if info window is intentionally open
-
 // ---------------- Initialize Google Map ----------------
-function initMap() {
-  map = new google.maps.Map(document.getElementById("map"), {
-    center: origin,
-    zoom: 18,
-    mapTypeId: "roadmap",
-    mapId: "DEMO_MAP_ID" // Using demo ID for testing
-  });
-
-  // Origin Marker (Garage)
-  new google.maps.Marker({
-    position: origin,
-    map: map,
-    title: "My Garage",
-    icon: {
-      url: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
-      scaledSize: new google.maps.Size(32, 32)
-    }
-  });
-
-  // Initialize Traffic Layer
-  trafficLayer = new google.maps.TrafficLayer();
-
-  // Add traffic toggle button listener
-  const btn = document.getElementById("btnToggleTraffic");
-  if (btn) {
-    btn.addEventListener("click", () => {
-      trafficVisible = !trafficVisible;
-      if (trafficVisible) {
-        trafficLayer.setMap(map);
-        btn.innerText = "Hide Traffic";
-        btn.classList.add("active");
-      } else {
-        trafficLayer.setMap(null);
-        btn.innerText = "Show Traffic";
-        btn.classList.remove("active");
-      }
-    });
+window.initMap = function() {
+  console.log("initMap called");
+  
+  // Check if map container exists
+  const mapContainer = document.getElementById("map");
+  if (!mapContainer) {
+    console.error("Map container not found, retrying...");
+    setTimeout(window.initMap, 500);
+    return;
   }
 
-  // Add click listener to map to close info window when clicking on empty space
-  map.addListener("click", () => {
-    if (activeInfoWindow) {
-      activeInfoWindow.close();
-      activeInfoWindow = null;
-      isInfoWindowOpen = false;
-    }
-  });
+  // Check if Google Maps API is loaded
+  if (typeof google === 'undefined' || !google.maps) {
+    console.error("Google Maps API not loaded");
+    return;
+  }
 
-  // Start listening to driver updates
-  listenForDrivers();
+  try {
+    map = new google.maps.Map(mapContainer, {
+      center: origin,
+      zoom: 18,
+      mapTypeId: "roadmap",
+      mapId: "DEMO_MAP_ID",
+      streetViewControl: false,
+      fullscreenControl: true,
+      zoomControl: true
+    });
+
+    // Origin Marker (Garage)
+    new google.maps.Marker({
+      position: origin,
+      map: map,
+      title: "My Garage",
+      icon: {
+        url: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
+        scaledSize: new google.maps.Size(32, 32)
+      }
+    });
+
+    // Initialize Traffic Layer
+    trafficLayer = new google.maps.TrafficLayer();
+
+    // Add traffic toggle button listener
+    const btn = document.getElementById("btnToggleTraffic");
+    if (btn) {
+      // Remove any existing listeners to prevent duplicates
+      btn.replaceWith(btn.cloneNode(true));
+      const newBtn = document.getElementById("btnToggleTraffic");
+      
+      newBtn.addEventListener("click", () => {
+        trafficVisible = !trafficVisible;
+        if (trafficVisible) {
+          trafficLayer.setMap(map);
+          newBtn.innerText = "Hide Traffic";
+          newBtn.classList.add("active");
+        } else {
+          trafficLayer.setMap(null);
+          newBtn.innerText = "Show Traffic";
+          newBtn.classList.remove("active");
+        }
+      });
+    }
+
+    // Add click listener to map to close info window when clicking on empty space
+    map.addListener("click", () => {
+      closeActiveInfoWindow();
+    });
+
+    // Start listening to driver updates
+    listenForDrivers();
+    
+    // Trigger resize to ensure proper rendering
+    google.maps.event.trigger(map, 'resize');
+    
+    console.log("Map initialized successfully");
+    
+  } catch (error) {
+    console.error("Error initializing map:", error);
+    showMapError("Failed to initialize map. Please refresh the page.");
+  }
+};
+
+// ---------------- Show Map Error ----------------
+function showMapError(message) {
+  const mapContainer = document.getElementById("map");
+  if (mapContainer) {
+    mapContainer.innerHTML = `
+      <div style="display: flex; justify-content: center; align-items: center; height: 100%; background: #f8f9fa; border-radius: 8px; padding: 20px; text-align: center;">
+        <div>
+          <p style="color: #dc3545; margin-bottom: 10px;">⚠️ ${message}</p>
+          <button onclick="location.reload()" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Refresh Page
+          </button>
+        </div>
+      </div>
+    `;
+  }
+}
+
+// ---------------- Close Active Info Window Helper ----------------
+function closeActiveInfoWindow() {
+  if (window.activeInfoWindow) {
+    window.activeInfoWindow.close();
+    window.activeInfoWindow = null;
+  }
 }
 
 // ---------------- Geocoding Function with Multiple Fallbacks ----------------
@@ -74,8 +126,8 @@ async function reverseGeocode(lat, lng) {
   const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
   
   // Check cache first (with timestamp to expire after 1 hour)
-  if (addressCache.has(cacheKey)) {
-    const cached = addressCache.get(cacheKey);
+  if (window.addressCache.has(cacheKey)) {
+    const cached = window.addressCache.get(cacheKey);
     if (Date.now() - cached.timestamp < 3600000) { // 1 hour cache
       return cached.address;
     }
@@ -86,7 +138,7 @@ async function reverseGeocode(lat, lng) {
     // Method 1: Google Maps Geocoding API (primary)
     const googleAddress = await tryGoogleGeocode(lat, lng);
     if (googleAddress) {
-      addressCache.set(cacheKey, {
+      window.addressCache.set(cacheKey, {
         address: googleAddress,
         timestamp: Date.now()
       });
@@ -100,7 +152,7 @@ async function reverseGeocode(lat, lng) {
     // Method 2: OpenStreetMap Nominatim (fallback)
     const osmAddress = await tryOpenStreetMapGeocode(lat, lng);
     if (osmAddress) {
-      addressCache.set(cacheKey, {
+      window.addressCache.set(cacheKey, {
         address: osmAddress,
         timestamp: Date.now()
       });
@@ -112,7 +164,7 @@ async function reverseGeocode(lat, lng) {
 
   // Method 3: Generate a descriptive location based on coordinates
   const approximateLocation = getApproximateLocation(lat, lng);
-  addressCache.set(cacheKey, {
+  window.addressCache.set(cacheKey, {
     address: approximateLocation,
     timestamp: Date.now()
   });
@@ -122,6 +174,7 @@ async function reverseGeocode(lat, lng) {
 // ---------------- Google Geocoding ----------------
 async function tryGoogleGeocode(lat, lng) {
   try {
+    // Use the same API key from the page
     const response = await fetch(
       `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyBZwE8kSgkloKvNgOEKhJUVyNS2He2NqT0`
     );
@@ -157,7 +210,7 @@ async function tryOpenStreetMapGeocode(lat, lng) {
       {
         headers: {
           'Accept': 'application/json',
-          'User-Agent': 'FleetTrackingApp/1.0' // Replace with your app name
+          'User-Agent': 'FleetTrackingApp/1.0'
         }
       }
     );
@@ -221,7 +274,7 @@ function getApproximateLocation(lat, lng) {
 // ---------------- Calculate Speed with Smoothing ----------------
 function calculateSpeed(uid, currentLoc, prevLoc) {
   if (!prevLoc) {
-    lastValidSpeed[uid] = 0;
+    window.lastValidSpeed[uid] = 0;
     return 0;
   }
 
@@ -251,44 +304,51 @@ function calculateSpeed(uid, currentLoc, prevLoc) {
       speedKmh = (distanceMeters / timeDiffSec) * 3.6;
       
       // Smooth the speed - don't allow unrealistic jumps
-      if (lastValidSpeed[uid] > 0) {
+      if (window.lastValidSpeed[uid] > 0) {
         // Max 50% increase or decrease per update
-        const maxChange = lastValidSpeed[uid] * 0.5;
-        if (Math.abs(speedKmh - lastValidSpeed[uid]) > maxChange) {
-          speedKmh = lastValidSpeed[uid] + (Math.sign(speedKmh - lastValidSpeed[uid]) * maxChange);
+        const maxChange = window.lastValidSpeed[uid] * 0.5;
+        if (Math.abs(speedKmh - window.lastValidSpeed[uid]) > maxChange) {
+          speedKmh = window.lastValidSpeed[uid] + (Math.sign(speedKmh - window.lastValidSpeed[uid]) * maxChange);
         }
       }
       
       // Cap maximum speed (typical vehicle speed)
       speedKmh = Math.min(speedKmh, 150);
-      lastValidSpeed[uid] = speedKmh;
+      window.lastValidSpeed[uid] = speedKmh;
     } else {
       // Very small movement - gradually decay speed
-      if (lastValidSpeed[uid] > 0) {
-        speedKmh = Math.max(0, lastValidSpeed[uid] * 0.8);
+      if (window.lastValidSpeed[uid] > 0) {
+        speedKmh = Math.max(0, window.lastValidSpeed[uid] * 0.8);
         if (speedKmh < 0.5) speedKmh = 0;
-        lastValidSpeed[uid] = speedKmh;
+        window.lastValidSpeed[uid] = speedKmh;
       }
     }
   } else {
     // Time difference outside valid range - use last valid speed with decay
-    if (lastUpdateTime[uid] && (currentTime - lastUpdateTime[uid]) > MAX_TIME_DIFF * 1000) {
+    if (window.lastUpdateTime[uid] && (currentTime - window.lastUpdateTime[uid]) > MAX_TIME_DIFF * 1000) {
       // If no update for a while, assume stopped
       speedKmh = 0;
-      lastValidSpeed[uid] = 0;
+      window.lastValidSpeed[uid] = 0;
     } else {
-      speedKmh = lastValidSpeed[uid] || 0;
+      speedKmh = window.lastValidSpeed[uid] || 0;
     }
   }
   
   // Update last update time
-  lastUpdateTime[uid] = currentTime;
+  window.lastUpdateTime[uid] = currentTime;
   
   return Math.max(0, speedKmh); // Ensure non-negative
 }
 
 // ---------------- Firebase Real-Time Tracking ----------------
 function listenForDrivers() {
+  // Check if Firebase is initialized
+  if (typeof firebase === 'undefined' || !firebase.database) {
+    console.error("Firebase not initialized");
+    setTimeout(listenForDrivers, 1000);
+    return;
+  }
+
   const usersRef = firebase.database().ref("users");
 
   usersRef.on("value", snapshot => {
@@ -296,13 +356,18 @@ function listenForDrivers() {
     if (!users) return;
 
     // Remove markers for drivers no longer broadcasting
-    Object.keys(driverMarkers).forEach(uid => {
+    Object.keys(window.driverMarkers).forEach(uid => {
       if (!users[uid] || !users[uid].currentLocation) {
-        driverMarkers[uid].setMap(null);
-        delete driverMarkers[uid];
-        delete previousLocations[uid];
-        delete lastValidSpeed[uid];
-        delete lastUpdateTime[uid];
+        // If this marker had the active info window, close it
+        if (window.activeInfoWindow && window.driverMarkers[uid].infoWindow === window.activeInfoWindow) {
+          closeActiveInfoWindow();
+        }
+        
+        window.driverMarkers[uid].setMap(null);
+        delete window.driverMarkers[uid];
+        delete window.previousLocations[uid];
+        delete window.lastValidSpeed[uid];
+        delete window.lastUpdateTime[uid];
       }
     });
 
@@ -319,22 +384,22 @@ function listenForDrivers() {
       let speedKmh = 0;
 
       // Calculate speed using previous location if it exists
-      if (previousLocations[uid]) {
-        speedKmh = calculateSpeed(uid, loc, previousLocations[uid]);
+      if (window.previousLocations[uid]) {
+        speedKmh = calculateSpeed(uid, loc, window.previousLocations[uid]);
       } else {
-        lastValidSpeed[uid] = 0;
+        window.lastValidSpeed[uid] = 0;
       }
 
       // Save current location for next update
-      previousLocations[uid] = {
+      window.previousLocations[uid] = {
         latitude: loc.latitude,
         longitude: loc.longitude,
         timestamp: loc.timestamp
       };
 
       // Update existing marker or create new one
-      if (driverMarkers[uid]) {
-        const marker = driverMarkers[uid];
+      if (window.driverMarkers[uid]) {
+        const marker = window.driverMarkers[uid];
         
         // Update position
         marker.setPosition({ lat: loc.latitude, lng: loc.longitude });
@@ -345,9 +410,9 @@ function listenForDrivers() {
         // Update stored user data
         marker.userData = { user, loc, speedKmh };
         
-        // Only update info window if it's intentionally open
-        if (isInfoWindowOpen && activeInfoWindow === marker.infoWindow) {
-          updateInfoWindowWithAddress(marker, user, loc, speedKmh);
+        // If this marker has the active info window, update its content
+        if (window.activeInfoWindow && marker.infoWindow === window.activeInfoWindow) {
+          updateInfoWindowContent(marker, user, loc, speedKmh);
         }
       } else {
         // Create new marker
@@ -365,22 +430,22 @@ function listenForDrivers() {
 
         // Add close listener to info window
         infoWindow.addListener("closeclick", () => {
-          activeInfoWindow = null;
-          isInfoWindowOpen = false;
+          // Only clear activeInfoWindow if this is the one that's closing
+          if (window.activeInfoWindow === infoWindow) {
+            window.activeInfoWindow = null;
+          }
         });
 
         // Store data in marker
         marker.userData = { user, loc, speedKmh };
         marker.infoWindow = infoWindow;
         
-        // Add click listener with stopPropagation to prevent map click
+        // Add click listener
         marker.addListener("click", (event) => {
           event.stop(); // Stop event propagation
           
-          // Close any previously open info window
-          if (activeInfoWindow) {
-            activeInfoWindow.close();
-          }
+          // Close any currently open info window first
+          closeActiveInfoWindow();
           
           // Get current data from marker
           const currentData = marker.userData;
@@ -399,14 +464,13 @@ function listenForDrivers() {
             infoWindow.open(map, marker);
             
             // Set as active info window
-            activeInfoWindow = infoWindow;
-            isInfoWindowOpen = true;
+            window.activeInfoWindow = infoWindow;
           });
         });
 
-        driverMarkers[uid] = marker;
+        window.driverMarkers[uid] = marker;
         
-        // Pre-load address for this marker
+        // Pre-load address for this marker (cached for future use)
         reverseGeocode(loc.latitude, loc.longitude).then(address => {
           if (marker.infoWindow && marker.infoWindow.getContent().includes("Loading address...")) {
             marker.infoWindow.setContent(createInfoWindowContent(user, loc, speedKmh, address));
@@ -414,23 +478,22 @@ function listenForDrivers() {
         });
       }
     });
+  }, error => {
+    console.error("Firebase error:", error);
   });
 }
 
-// ---------------- Update Info Window with Address ----------------
-async function updateInfoWindowWithAddress(marker, user, loc, speedKmh) {
-  if (!marker.infoWindow || !isInfoWindowOpen) return;
+// ---------------- Update Info Window Content ----------------
+function updateInfoWindowContent(marker, user, loc, speedKmh) {
+  if (!marker.infoWindow || marker.infoWindow !== window.activeInfoWindow) return;
   
   // Get address (with caching)
-  const address = await reverseGeocode(loc.latitude, loc.longitude);
-  
-  // Update info window content
-  marker.infoWindow.setContent(createInfoWindowContent(user, loc, speedKmh, address));
-  
-  // Reopen if it's the active window and still open
-  if (isInfoWindowOpen && activeInfoWindow === marker.infoWindow) {
-    marker.infoWindow.open(map, marker);
-  }
+  reverseGeocode(loc.latitude, loc.longitude).then(address => {
+    // Check if this info window is still the active one
+    if (window.activeInfoWindow === marker.infoWindow) {
+      marker.infoWindow.setContent(createInfoWindowContent(user, loc, speedKmh, address));
+    }
+  });
 }
 
 // ---------------- Create Info Window Content Helper ----------------
@@ -501,20 +564,52 @@ function createInfoWindowContent(user, loc, speedKmh, address) {
   `;
 }
 
-// ---------------- Helper function to refresh all open info windows ----------------
+// ---------------- Helper function to refresh active info window ----------------
 function refreshActiveInfoWindow() {
-  if (isInfoWindowOpen && activeInfoWindow && activeInfoWindow.getAnchor()) {
-    const marker = activeInfoWindow.getAnchor();
+  if (window.activeInfoWindow) {
+    const marker = window.activeInfoWindow.getAnchor();
     if (marker && marker.userData) {
       const { user, loc, speedKmh } = marker.userData;
-      reverseGeocode(loc.latitude, loc.longitude).then(address => {
-        if (isInfoWindowOpen && activeInfoWindow === marker.infoWindow) {
-          activeInfoWindow.setContent(createInfoWindowContent(user, loc, speedKmh, address));
-        }
-      });
+      updateInfoWindowContent(marker, user, loc, speedKmh);
     }
   }
 }
 
+// ---------------- Fallback initialization if callback doesn't fire ----------------
+document.addEventListener('DOMContentLoaded', function() {
+  console.log("DOM loaded, checking for map...");
+  
+  // If map exists and Google Maps is loaded but initMap hasn't been called
+  if (document.getElementById('map')) {
+    if (typeof google !== 'undefined' && google.maps && typeof window.initMap === 'function' && !map) {
+      console.log("Google Maps loaded, calling initMap from DOMContentLoaded");
+      window.initMap();
+    }
+  }
+});
+
+// Handle page visibility changes
+document.addEventListener('visibilitychange', function() {
+  if (!document.hidden && map) {
+    // Page became visible, trigger map resize
+    google.maps.event.trigger(map, 'resize');
+  }
+});
+
+// Handle window resize
+window.addEventListener('resize', function() {
+  if (map) {
+    google.maps.event.trigger(map, 'resize');
+  }
+});
+
+// Error handler for Google Maps authentication
+window.gm_authFailure = function() {
+  console.error('Google Maps authentication failed');
+  showMapError("Google Maps authentication failed. Please check your API key.");
+};
+
 // Refresh active info window every 30 seconds
 setInterval(refreshActiveInfoWindow, 30000);
+
+console.log("Track drivers script loaded");
