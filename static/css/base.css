@@ -23,6 +23,7 @@ body {
     background: var(--background-light);
     min-height: 100vh;
     color: #1f2933;
+    overflow-x: hidden;
 }
 
 /* ===============================
@@ -31,6 +32,8 @@ body {
 .layout {
     display: flex;
     min-height: 100vh;
+    position: relative;
+    width: 100%;
 }
 
 /* ===============================
@@ -51,7 +54,7 @@ body {
     z-index: 1000;
     border-right: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 2px 0 12px rgba(0,0,0,0.1);
-    transition: all 0.3s ease;
+    transition: left 0.3s ease;
 }
 
 /* Sidebar Header */
@@ -97,7 +100,7 @@ body {
 }
 
 /* ===============================
-   COLLAPSIBLE SUBMENU (modern)
+   COLLAPSIBLE SUBMENU
 ================================= */
 .nav-group summary {
     list-style: none;
@@ -109,15 +112,15 @@ body {
     border-radius: var(--border-radius);
     font-weight: 500;
     transition: all 0.2s ease;
-    appearance: none;               /* remove default OS styles */
+    appearance: none;
 }
 
 .nav-group summary::-webkit-details-marker {
-    display: none;                  /* Chrome/Safari default arrow */
+    display: none;
 }
 
 .nav-group summary::marker {
-    content: none;                  /* Firefox default arrow */
+    content: none;
 }
 
 /* Custom arrow */
@@ -176,6 +179,7 @@ details[open] .nav-submenu {
     font-weight: 500;
     font-size: 0.95rem;
     transition: all 0.2s ease;
+    text-decoration: none;
 }
 
 .logout-btn:hover {
@@ -193,6 +197,94 @@ details[open] .nav-submenu {
     flex-direction: column;
     padding: 30px;
     transition: margin-left 0.3s ease;
+}
+
+/* ===============================
+   HAMBURGER MENU - FIXED
+================================= */
+.hamburger {
+    display: none !important; /* Hidden by default on desktop */
+    position: fixed !important;
+    top: 15px !important;
+    left: 15px !important;
+    z-index: 1100 !important;
+    background: var(--primary-color) !important;
+    color: white !important;
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 8px !important;
+    border: none !important;
+    font-size: 24px !important;
+    cursor: pointer !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+    line-height: 44px !important;
+    text-align: center !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Hamburger stays visible when sidebar is open */
+.hamburger.visible,
+.hamburger.open {
+    display: block !important;
+}
+
+/* ===============================
+   RESPONSIVE (Tablet / Mobile)
+================================= */
+@media (max-width: 1024px) {
+    /* Show hamburger on mobile */
+    .hamburger {
+        display: block !important;
+    }
+    
+    /* Sidebar hidden by default */
+    .sidebar {
+        left: calc(-1 * var(--sidebar-width)) !important;
+        box-shadow: none !important;
+    }
+    
+    /* Sidebar when open */
+    .sidebar.open {
+        left: 0 !important;
+        box-shadow: 2px 0 20px rgba(0,0,0,0.3) !important;
+    }
+    
+    /* Overlay when sidebar is open */
+    .sidebar.open::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: var(--sidebar-width);
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0,0,0,0.5);
+        z-index: 999;
+        pointer-events: none;
+    }
+    
+    /* Content adjustments */
+    .content {
+        margin-left: 0 !important;
+        width: 100%;
+        padding: 70px 20px 20px 20px !important;
+    }
+}
+
+/* Small phones */
+@media (max-width: 480px) {
+    .hamburger {
+        top: 10px !important;
+        left: 10px !important;
+        width: 40px !important;
+        height: 40px !important;
+        line-height: 40px !important;
+        font-size: 20px !important;
+    }
+    
+    .content {
+        padding: 60px 12px 16px 12px !important;
+    }
 }
 
 /* ===============================
@@ -215,91 +307,20 @@ details[open] .nav-submenu {
 }
 
 /* ===============================
-   RESPONSIVE (Tablet / Mobile)
+   TOUCH-FRIENDLY TARGETS
 ================================= */
-@media (max-width: 1024px) {
-    .sidebar {
-        position: absolute;
-        left: -100%;
-        top: 0;
-        height: 100%;
-    }
-
-    .sidebar.open {
-        left: 0;
-    }
-
-    .content {
-        margin-left: 0;
-        padding: 20px;
-    }
-
-    .hamburger {
-        display: block;
-        font-size: 1.5rem;
-        color: var(--font-color-light);
-        cursor: pointer;
-        position: fixed;
-        top: 15px;
-        left: 15px;
-        z-index: 1100;
-    }
+button,
+.btn,
+.nav-link,
+.nav-sublink,
+input[type="submit"] {
+    min-height: 44px;
+    min-width: 44px;
 }
 
-.layout {
-  display: flex;
-  min-height: 100vh;
-}
-
-.sidebar {
-  width: 260px;
-  color: #fff;
-  flex-shrink: 0;
-}
-
-.content {
-  flex: 1;
-  padding: 1.5rem;
-}
-
-
-/* Hamburger button */
-.hamburger {
-  display: none;
-  font-size: 1.5rem;
-  background: var(--background-light);
-  width: 30px;
-  height: 03px;
-  border-radius: 50px;
-  border: none;
-  cursor: pointer;
-  color: var(--primary-color);
-}
-
-/* Mobile layout */
-@media (max-width: 1024px) {
-  .hamburger {
-    display: block;
-  }
-
-  .layout {
-    position: relative;
-  }
-
-  .sidebar {
-    position: fixed;
-    top: 0;
-    left: -260px;
-    height: 100vh;
-    z-index: 1000;
-    transition: left 0.3s ease;
-  }
-
-  .sidebar.open {
-    left: 0;
-  }
-
-  .content {
-    padding: 1rem;
-  }
+/* Better touch scrolling */
+.sidebar,
+.modal-content,
+.cards {
+    -webkit-overflow-scrolling: touch;
 }
