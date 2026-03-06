@@ -48,7 +48,7 @@
         <h1>Schedules</h1>
         <p class="subtitle">View and manage all booking schedules</p>
 
-        <!-- Action Buttons -->
+        <!-- Action Buttons - Added Get Schedules button here -->
         <div class="actions">
           <label for="importDate">Import schedules for date:</label>
           <input type="date" id="dateFilter" class="date-filter" />
@@ -59,6 +59,11 @@
 
           <label for="fileInput" class="btn">Upload XLS/XLSX</label>
           <button class="btn" id="addManualBtn">Add Schedule Manually</button>
+          
+          <!-- NEW: Get Schedules Button -->
+          <button class="btn-get-schedules" id="getSchedulesBtn">
+            <span>📋</span> Get Schedules
+          </button>
 
           <button class="btn btn-danger" id="bulkDeleteBtn" disabled>
             🗑️ Delete Selected
@@ -69,8 +74,6 @@
           </button>
         </div>
       </header>
-
-      
 
       <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none;" />
 

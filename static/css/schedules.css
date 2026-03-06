@@ -1180,3 +1180,70 @@ textarea {
     border-radius: 999px;
     position: relative;
 }
+
+.btn-get-schedules {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background-color 0.2s;
+}
+
+.btn-get-schedules:hover {
+  background-color: #45a049;
+}
+
+.btn-get-schedules:active {
+  background-color: #3d8b40;
+}
+
+.btn-get-schedules i {
+  font-size: 16px;
+}
+
+/* Adjust the actions container to accommodate more buttons */
+.page-header .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+/* Make sure buttons don't overflow on small screens */
+@media (max-width: 1200px) {
+  .page-header .actions {
+    justify-content: flex-start;
+  }
+}
+
+.calendar-event.completed-trip {
+    background-color: #e8f5e9 !important;
+    border-left: 4px solid #4caf50;
+    opacity: 0.95;
+    transition: background-color 0.2s ease;
+}
+
+.calendar-event.completed-trip:hover {
+    background-color: #c8e6c9 !important;
+}
+
+.calendar-event.completed-trip .event-header,
+.calendar-event.completed-trip .event-info,
+.calendar-event.completed-trip .event-details,
+.calendar-event.completed-trip .event-footer {
+    background-color: transparent;
+}
+
+.calendar-event.completed-trip .status.completed {
+    background-color: #4caf50;
+    color: white;
+    font-weight: bold;
+}

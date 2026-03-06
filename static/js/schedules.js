@@ -257,15 +257,23 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // ---------------- Fetch and Render Schedules ----------------
     async function fetchSchedules(selectedISO = null) {
         try {
             const res = await fetch("/api/schedules");
             if (!res.ok) throw new Error(await res.text());
             const data = await res.json();
             
+            // Check each schedule for cancellation
+            const schedules = (data.schedules || []).map(schedule => {
+                if (shouldBeCancelled(schedule) && schedule.status !== "Cancelled") {
+                    // Optionally update the backend here if needed
+                    schedule.status = "Cancelled";
+                }
+                return schedule;
+            });
+            
             // Assign permanent trip numbers to ALL schedules
-            allSchedules = assignTripNumbers(data.schedules || []);
+            allSchedules = assignTripNumbers(schedules);
             
             const filterISO = selectedISO || dateFilter.value || getPHLocalISODate();
             dateFilter.value = filterISO;
@@ -748,16 +756,26 @@ This is an automated message. Please do not reply.`;
 
         const btnDelete = event.querySelector(".btn-delete");
         btnDelete.addEventListener("click", async () => {
-            const confirm = await Swal.fire({
-                title: "Are you sure?",
-                text: "This will delete the schedule permanently.",
+            const result = await Swal.fire({
+                title: "Delete Schedule",
+                text: "This action cannot be undone. Please type 'Confirm Delete' below to proceed.",
+                input: "text",
+                inputPlaceholder: "Type 'Confirm Delete' here",
                 icon: "warning",
                 showCancelButton: true,
-                confirmButtonText: "Yes, delete it!",
-                cancelButtonText: "Cancel"
+                confirmButtonText: "Delete",        cancelButtonText: "Cancel",
+                confirmButtonColor: "#d33",
+                preConfirm: (input) => {
+                    if (input !== "Confirm Delete") {
+                        Swal.showValidationMessage("You must type exactly 'Confirm Delete'");
+                        return false;
+                    }
+                    return input;
+                }
             });
 
-            if (confirm.isConfirmed) {
+            // Check if the user confirmed and the input matches
+            if (result.isConfirmed && result.value === "Confirm Delete") {
                 if (await deleteScheduleFromBackend(data.transactionID)) {
                     event.remove();
                     showToast("Schedule deleted.", "success");
@@ -849,23 +867,34 @@ This is an automated message. Please do not reply.`;
     }
 
     document.getElementById("bulkDeleteBtn").addEventListener("click", async () => {
-        const confirm = await Swal.fire({
-            title: "Delete selected schedules?",
-            text: `You are about to delete ${selectedScheduleIDs.size} schedules.`,
+        const result = await Swal.fire({
+            title: `Delete ${selectedScheduleIDs.size} selected schedules?`,
+            text: "This action cannot be undone. Please type 'Confirm Delete' below to proceed.",
+            input: "text",
+            inputPlaceholder: "Type 'Confirm Delete' here",
             icon: "warning",
             showCancelButton: true,
-            confirmButtonText: "Yes, delete",
+            confirmButtonText: "Delete",
+            cancelButtonText: "Cancel",
+            confirmButtonColor: "#d33",
+            preConfirm: (input) => {
+                if (input !== "Confirm Delete") {
+                    Swal.showValidationMessage("You must type exactly 'Confirm Delete'");
+                    return false;
+                }
+                return input;
+            }
         });
 
-        if (!confirm.isConfirmed) return;
+        if (result.isConfirmed && result.value === "Confirm Delete") {
+            for (const id of selectedScheduleIDs) {
+                await deleteScheduleFromBackend(id);
+            }
 
-        for (const id of selectedScheduleIDs) {
-            await deleteScheduleFromBackend(id);
+            selectedScheduleIDs.clear();
+            await fetchSchedules(dateFilter.value);
+            showToast("Selected schedules deleted.", "success");
         }
-
-        selectedScheduleIDs.clear();
-        await fetchSchedules(dateFilter.value);
-        showToast("Selected schedules deleted.");
     });
 
     document.getElementById("deleteAllBtn").addEventListener("click", async () => {
@@ -883,22 +912,33 @@ This is an automated message. Please do not reply.`;
             return;
         }
 
-        const confirm = await Swal.fire({
-            title: "Delete ALL schedules?",
-            html: `This will delete <b>${targets.length}</b> schedules.`,
+        const result = await Swal.fire({
+            title: `Delete ALL ${targets.length} filtered schedules?`,
+            text: "This action cannot be undone. Please type 'Confirm Delete' below to proceed.",
+            input: "text",
+            inputPlaceholder: "Type 'Confirm Delete' here",
             icon: "warning",
             showCancelButton: true,
-            confirmButtonText: "Yes, delete all",
+            confirmButtonText: "Delete",
+            cancelButtonText: "Cancel",
+            confirmButtonColor: "#d33",
+            preConfirm: (input) => {
+                if (input !== "Confirm Delete") {
+                    Swal.showValidationMessage("You must type exactly 'Confirm Delete'");
+                    return false;
+                }
+                return input;
+            }
         });
 
-        if (!confirm.isConfirmed) return;
+        if (result.isConfirmed && result.value === "Confirm Delete") {
+            for (const s of targets) {
+                await deleteScheduleFromBackend(s.transactionID);
+            }
 
-        for (const s of targets) {
-            await deleteScheduleFromBackend(s.transactionID);
+            await fetchSchedules(selectedDate);
+            showToast("All filtered schedules deleted.", "success");
         }
-
-        await fetchSchedules(selectedDate);
-        showToast("All filtered schedules deleted.");
     });
 
     fileInput.addEventListener("change", async (e) => {
@@ -968,7 +1008,7 @@ This is an automated message. Please do not reply.`;
                     plateNumber: String(sheet[`T${row + 1}`]?.v || ""),
                     luggage: String(sheet[`U${row + 1}`]?.v || "1"),
                     current: { driverName: String(driverName), cellPhone: String(cellPhone) },
-                    status: "Pending"
+                    status: String(sheet[`E${row + 1}`]?.v || "").toLowerCase().includes("cancel") ? "Cancelled" : "Pending"
                 };
 
                 schedules.push(schedule);
@@ -1122,6 +1162,9 @@ This is an automated message. Please do not reply.`;
         e.preventDefault();
 
         const f = new FormData(manualForm);
+        
+        // Get the note value
+        const note = f.get("note") || "";
 
         const data = {
             date: f.get("date"),
@@ -1132,7 +1175,7 @@ This is an automated message. Please do not reply.`;
             dropOff: f.get("dropOff"),
             pax: f.get("pax"),
             flightNumber: f.get("flightNumber"),
-            note: f.get("note"),
+            note: note,
             unitType: f.get("unitType"),
             amount: f.get("amount"),
             driverRate: f.get("driverRate"),
@@ -1155,7 +1198,17 @@ This is an automated message. Please do not reply.`;
 
         if (!editingTransactionID) {
             data.transactionID = generateTransactionID();
-            data.status = "Pending";
+            // Check if note contains "cancel" (case insensitive)
+            data.status = note.toLowerCase().includes("cancel") ? "Cancelled" : "Pending";
+        } else {
+            // For edits, preserve existing status unless note contains "cancel"
+            // You might want to fetch the existing schedule first or handle this differently
+            // This is a simplified approach:
+            if (note.toLowerCase().includes("cancel")) {
+                data.status = "Cancelled";
+            }
+            // If note doesn't contain "cancel", don't change the status
+            // The backend should preserve the existing status
         }
 
         try {
@@ -1187,6 +1240,11 @@ This is an automated message. Please do not reply.`;
         }
     };
 
+    function shouldBeCancelled(schedule) {
+        return schedule.note && schedule.note.toLowerCase().includes("cancel");
+    }
+
+
     // ---------------- Initial Load ----------------
     fetchSchedules();
     startAutoRefresh(); // refresh every 5000 milliseconds
@@ -1207,4 +1265,105 @@ This is an automated message. Please do not reply.`;
 
         renderSchedules(filtered);
     }
+
+    document.getElementById("getSchedulesBtn").addEventListener("click", async () => {
+        const selectedDate = dateFilter?.value || getPHLocalISODate();
+        const selectedDriver = driverFilter?.value || "";
+        
+        // Filter schedules based on current filters
+        let filteredSchedules = allSchedules.filter(s => s.date === selectedDate);
+        
+        if (selectedDriver) {
+            filteredSchedules = filteredSchedules.filter(
+                s => s.current?.driverName === selectedDriver
+            );
+        }
+        
+        if (filteredSchedules.length === 0) {
+            showToast("No schedules found for the selected filters.", "info");
+            return;
+        }
+        
+        // Sort schedules by time
+        const sortedSchedules = sortSchedulesByDateTime(filteredSchedules);
+        
+        // Format the date
+        const formattedDate = new Date(selectedDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        
+        // Build the formatted text
+        let formattedText = '';
+        
+        sortedSchedules.forEach((schedule, index) => {
+            // Get driver name and clean contact number
+            const driverName = schedule.current?.driverName || "Unassigned";
+            const contactNumber = schedule.contactNumber || "";
+            
+            // Clean and format contact number (remove spaces, ensure format)
+            const cleanContact = contactNumber.replace(/\s+/g, "");
+            
+            // If this is the first item, add header with date and driver info
+            if (index === 0) {
+                formattedText += `Date: ${formattedDate}\n`;
+                formattedText += `Driver: ${driverName}\n`;
+                formattedText += `_________________________________________\n`;
+            }
+            
+            // Add each schedule entry
+            formattedText += `${index + 1})\n`;
+            formattedText += `TRANSPOR UNIT:  ${schedule.transportUnit || "N/A"}\n`;
+            formattedText += `PLATE NO:  ${schedule.plateNumber || "N/A"}\n`;
+            formattedText += `SAHOD: ${schedule.driverRate || "0"}\n`;
+            formattedText += `\n`;
+            formattedText += `COMPANY NAME: ${schedule.company || "N/A"}\n`;
+            formattedText += `TYPE OF SERVICE:  ${formattedDate}\n`;
+            formattedText += `\n`;
+            formattedText += `Date: ${formattedDate}\n`;
+            formattedText += `Pickup Time: ${schedule.time || "N/A"}\n`;
+            formattedText += `Clients Name: ${schedule.clientName || "N/A"}\n`;
+            formattedText += `Contact No: ${schedule.contactNumber || "N/A"}\n`;
+            formattedText += `Number of Pax: ${schedule.pax || "0"}\n`;
+            formattedText += `Flight ${schedule.flightNumber || "0"}\n`;
+            formattedText += `\n`;
+            formattedText += `Pickup Area:\n`;
+            formattedText += `${schedule.pickup || "N/A"}\n`;
+            formattedText += `\n`;
+            formattedText += `Drop Off:\n`;
+            formattedText += `${schedule.dropOff || "N/A"}\n`;
+            
+            // Add separator between entries (except for the last one)
+            if (index < sortedSchedules.length - 1) {
+                formattedText += `__________________________\n`;
+            }
+        });
+        
+        // Add rate at the end
+        formattedText += `\nRate: 1750`;
+        
+        // Copy to clipboard
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(formattedText);
+            } else {
+                // Fallback for HTTP / older browsers
+                const textarea = document.createElement("textarea");
+                textarea.value = formattedText;
+                textarea.style.position = "fixed";
+                textarea.style.opacity = "0";
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                document.execCommand("copy");
+                document.body.removeChild(textarea);
+            }
+            
+            showToast(`✅ Copied ${sortedSchedules.length} schedule(s) to clipboard!`);
+        } catch (err) {
+            console.error("Copy failed:", err);
+            showToast("Failed to copy to clipboard", "error");
+        }
+    });
 });
