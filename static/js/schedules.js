@@ -17,6 +17,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const colorInput = document.getElementById("color");
     const plateDatalist = document.getElementById("plateSuggestions");
     const driverFilter = document.getElementById("driverFilter");
+    
+    // Flight Screenshot Modal Elements
+    const flightScreenshotModal = document.getElementById("flightScreenshotModal");
+    const flightScreenshotImg = document.getElementById("flightScreenshotImg");
+    const closeFlightModal = document.getElementById("closeFlightModal");
+    const refreshFlightBtn = document.getElementById("refreshFlightBtn");
+    const downloadFlightBtn = document.getElementById("downloadFlightBtn");
+    
     const STATUS_PHOTO_MAP = {
         "Confirmed": "pendingPhotoUrl",
         "Arrived": "confirmedPhotoUrl",
@@ -220,6 +228,83 @@ document.addEventListener("DOMContentLoaded", () => {
     let editingTransactionID = null;
     let transportUnitsList = [];
 
+    async function captureFlightScreenshot(flightNumber, transactionId = null) {
+        if (!flightNumber) {
+            showToast("No flight number available", "info");
+            return;
+        }
+        
+        // Show loading state
+        Swal.fire({
+            title: 'Capturing Flight Screenshot',
+            text: `Please wait while we capture ${flightNumber} from FlightAware...`,
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        try {
+            let url;
+            if (transactionId) {
+                url = `/api/flight/screenshot/${transactionId}/${flightNumber}`;
+            } else {
+                url = `/api/flight/screenshot/${flightNumber}`;
+            }
+            
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            Swal.close();
+            
+            if (data.success && data.screenshot_url) {
+                if (transactionId) {
+                    showToast("✅ Flight screenshot captured and saved to schedule!");
+                } else {
+                    showToast("✅ Flight screenshot captured successfully!");
+                }
+            } else {
+                showToast(`❌ Failed: ${data.error || 'Unknown error'}`, "error");
+            }
+        } catch (err) {
+            Swal.close();
+            console.error("Flight screenshot error:", err);
+            showToast("❌ Failed to capture flight screenshot", "error");
+        }
+    }
+
+    async function saveFlightScreenshotToSchedule(transactionId, screenshotUrl) {
+        try {
+            const response = await fetch(`/api/schedules/${transactionId}`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": getCSRFToken()
+                },
+                body: JSON.stringify({
+                    flightScreenshot: screenshotUrl,
+                    flightScreenshotTimestamp: new Date().toISOString()
+                })
+            });
+            
+            if (!response.ok) {
+                console.error("Failed to save flight screenshot reference");
+            }
+        } catch (err) {
+            console.error("Error saving flight screenshot:", err);
+        }
+    }
+
+    function viewExistingFlightScreenshot(schedule) {
+        const screenshotUrl = schedule.PhotoUrl?.flightAwareUrl || schedule.flightScreenshot;
+        if (screenshotUrl) {
+            // Open in new tab
+            window.open(screenshotUrl, '_blank');
+        } else {
+            showToast("No screenshot available for this flight", "info");
+        }
+    }
+
     // ---------------- Fetch Users for Autocomplete ----------------
     async function fetchUsers() {
         try {
@@ -266,7 +351,6 @@ document.addEventListener("DOMContentLoaded", () => {
             // Check each schedule for cancellation
             const schedules = (data.schedules || []).map(schedule => {
                 if (shouldBeCancelled(schedule) && schedule.status !== "Cancelled") {
-                    // Optionally update the backend here if needed
                     schedule.status = "Cancelled";
                 }
                 return schedule;
@@ -346,7 +430,7 @@ After that, PHP 150 per succeeding hour.
 This is an automated message. Please do not reply.`;
     }
 
-    function createCalendarEvent(data) {
+        function createCalendarEvent(data) {
         const event = document.createElement("div");
         event.classList.add("calendar-event");
 
@@ -377,11 +461,19 @@ This is an automated message. Please do not reply.`;
         const statusClass = rawStatus.toLowerCase().replace(/\s+/g, "-");
         const statusLabel = statusMap[rawStatus] || rawStatus;
 
-        // Create driver badge with trip number
-        const driverBadge = tripNumber ? 
-            `<div class="driver-trip-badge" title="${driverName}">
-                <span class="trip-num">#${tripNumber}</span>
-            </div>` : '';
+        // Create driver badge with trip number and camera icon if screenshot exists
+        let driverBadge = '';
+        if (tripNumber) {
+            const hasScreenshot = data.PhotoUrl?.flightAwareUrl || data.flightScreenshot;
+            driverBadge = `
+                <div class="driver-trip-badge" title="${driverName}">
+                    <span class="trip-num">#${tripNumber}</span>
+                    ${hasScreenshot ? 
+                        `<span class="screenshot-indicator" title="View flight screenshot" style="cursor:pointer; margin-left:5px; font-size:20px;">📸</span>` 
+                        : ''}
+                </div>
+            `;
+        }
 
         event.innerHTML = `
             <div class="event-select">
@@ -445,6 +537,7 @@ This is an automated message. Please do not reply.`;
                             <button class="btn-flightaware">✈️ FlightAware</button>
                             <button class="btn-driver-transfer">🚕 Driver Transfer</button>
                             <button class="btn-email-client">📧 Email Client</button>
+                            <button class="btn-ring-driver" data-transaction="${data.transactionID}">🔔 Ring Driver</button>
                         </div>
 
                         <div class="action-center">
@@ -495,6 +588,223 @@ This is an automated message. Please do not reply.`;
                 </div>
             </div>
         `;
+
+        document.getElementById("migrateDriversBtn")?.addEventListener("click", async () => {
+            const result = await Swal.fire({
+                title: 'Migrate Driver Fields?',
+                text: 'This will add fcm_token and notifications_enabled fields to all drivers.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, Migrate',
+                cancelButtonText: 'Cancel'
+            });
+            
+            if (!result.isConfirmed) return;
+            
+            Swal.fire({
+                title: 'Migrating...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
+            try {
+                const response = await fetch('/api/admin/migrate-driver-fields', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCSRFToken()
+                    }
+                });
+                
+                const data = await response.json();
+                Swal.close();
+                
+                if (data.success) {
+                    Swal.fire({
+                        title: '✅ Migration Complete',
+                        html: `
+                            <p><strong>Updated:</strong> ${data.updated} drivers</p>
+                            <p><strong>Skipped:</strong> ${data.skipped} drivers</p>
+                        `,
+                        icon: 'success'
+                    });
+                } else {
+                    Swal.fire({
+                        title: '❌ Migration Failed',
+                        text: data.error,
+                        icon: 'error'
+                    });
+                }
+            } catch (err) {
+                Swal.close();
+                Swal.fire({
+                    title: '❌ Error',
+                    text: err.message,
+                    icon: 'error'
+                });
+            }
+        });
+
+        // Ring Driver Function
+        async function ringDriver(transactionId, driverName) {
+            if (!transactionId) {
+                showToast("No transaction ID available", "info");
+                return;
+            }
+            
+            if (!driverName || driverName === "Unassigned") {
+                showToast("No driver assigned to this trip", "warning");
+                return;
+            }
+            
+            // Confirm with admin
+            const result = await Swal.fire({
+                title: '🔔 Ring Driver?',
+                html: `
+                    <div style="text-align: left;">
+                        <p><strong>Driver:</strong> ${driverName}</p>
+                        <p><strong>Trip:</strong> ${transactionId}</p>
+                        <p style="color: #ff6b6b; margin-top: 15px;">
+                            This will send an alarm notification to the driver's phone.
+                        </p>
+                    </div>
+                `,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: '🔔 Ring Now',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#ff6b6b'
+            });
+            
+            if (!result.isConfirmed) return;
+            
+            // Show loading
+            Swal.fire({
+                title: 'Ringing Driver...',
+                text: 'Sending alarm notification',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
+            try {
+                const response = await fetch(`/api/driver/ring/${transactionId}`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": getCSRFToken()
+                    }
+                });
+                
+                const data = await response.json();
+                Swal.close();
+                
+                if (data.success) {
+                    await Swal.fire({
+                        title: '✅ Ring Sent!',
+                        html: `
+                            <p>Alarm sent to ${driverName}</p>
+                            <p style="font-size: 12px; color: #666;">Message ID: ${data.fcm_message_id}</p>
+                        `,
+                        icon: 'success',
+                        confirmButtonText: 'OK'
+                    });
+                } else if (data.error === "Driver not registered for push notifications") {
+                    // Driver not registered - show phone number
+                    Swal.fire({
+                        title: '📱 Driver Not Registered',
+                        html: `
+                            <p>${driverName} hasn't registered for push notifications.</p>
+                            ${data.driver_phone ? `<p><strong>Phone:</strong> ${data.driver_phone}</p>` : ''}
+                        `,
+                        icon: 'warning',
+                        confirmButtonText: 'OK'
+                    });
+                } else {
+                    showToast(`Failed: ${data.error || 'Unknown error'}`, "error");
+                }
+            } catch (err) {
+                Swal.close();
+                console.error("Ring driver error:", err);
+                showToast("Failed to ring driver", "error");
+            }
+        }
+
+        // Add event listener for ring button
+        const btnRingDriver = event.querySelector(".btn-ring-driver");
+        if (btnRingDriver) {
+            const driverName = data.current?.driverName;
+            
+            // Disable if no driver
+            if (!driverName || driverName === "Unassigned") {
+                btnRingDriver.disabled = true;
+                btnRingDriver.title = "No driver assigned";
+                btnRingDriver.style.opacity = "0.5";
+            }
+            
+            btnRingDriver.addEventListener("click", () => {
+                ringDriver(data.transactionID, data.current?.driverName);
+            });
+        }
+
+        // View ring history function
+        async function viewRingHistory(transactionId) {
+            try {
+                const response = await fetch(`/api/driver/ring-history/${transactionId}`);
+                const data = await response.json();
+                
+                if (data.success && data.rings && data.rings.length > 0) {
+                    let historyHtml = `
+                        <div style="max-height: 400px; overflow-y: auto;">
+                            <p><strong>Total Rings:</strong> ${data.total_rings}</p>
+                    `;
+                    
+                    data.rings.forEach((ring, index) => {
+                        const ringDate = ring.timestamp ? new Date(ring.timestamp).toLocaleString() : 'Unknown';
+                        historyHtml += `
+                            <div style="padding: 12px; margin: 8px 0; background: #f8f9fa; border-radius: 6px; border-left: 4px solid ${ring.status === 'sent' ? '#28a745' : '#dc3545'};">
+                                <div><strong>Ring #${index + 1}</strong></div>
+                                <div>📅 ${ringDate}</div>
+                                <div>📊 Status: <span style="color: ${ring.status === 'sent' ? '#28a745' : '#dc3545'};">${ring.status}</span></div>
+                                ${ring.trip_details ? `
+                                    <div style="margin-top: 5px; font-size: 12px; color: #666;">
+                                        Trip #${ring.trip_details.trip_number} - ${ring.trip_details.time}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `;
+                    });
+                    
+                    historyHtml += '</div>';
+                    
+                    Swal.fire({
+                        title: '🔔 Ring History',
+                        html: historyHtml,
+                        icon: 'info',
+                        width: '600px',
+                        confirmButtonText: 'Close'
+                    });
+                } else {
+                    showToast("No ring history found for this trip", "info");
+                }
+            } catch (err) {
+                console.error("Error fetching ring history:", err);
+                showToast("Failed to load ring history", "error");
+            }
+        }
+
+        // Add click handler for screenshot indicator (next to trip number)
+        const screenshotIndicator = event.querySelector('.screenshot-indicator');
+        if (screenshotIndicator) {
+            screenshotIndicator.addEventListener('click', (e) => {
+                e.stopPropagation();
+                viewExistingFlightScreenshot(data);
+            });
+        }
 
         // ---------------- Select schedule by clicking anywhere ----------------
         const checkbox = event.querySelector(".schedule-checkbox");
@@ -725,7 +1035,11 @@ This is an automated message. Please do not reply.`;
             copyText(data.contactNumber, "Contact number copied!");
         });
 
-        btnFlightAware.addEventListener("click", () => {
+        function hasExistingFlightScreenshot(schedule) {
+            return schedule.photoUrl?.flightAwareUrl || schedule.flightScreenshot;
+        }
+
+        btnFlightAware.addEventListener("click", async () => {
             if (!data.flightNumber) {
                 showToast("No flight number available", "info");
                 return;
@@ -733,9 +1047,71 @@ This is an automated message. Please do not reply.`;
 
             // Clean flight number (remove spaces)
             const flightNumber = data.flightNumber.replace(/\s+/g, "").toUpperCase();
+            
+            // Check if there's an existing screenshot
+            const existingScreenshot = data.PhotoUrl?.flightAwareUrl || data.flightScreenshot;
 
-            const url = `https://www.flightaware.com/live/flight/${flightNumber}`;
-            window.open(url, "_blank");
+            if (existingScreenshot) {
+                // Show options with view screenshot button
+                Swal.fire({
+                    title: 'Flight Options',
+                    html: `
+                        <div style="margin-bottom: 20px;">
+                            <strong>Flight:</strong> ${flightNumber}
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                            <button class="swal2-confirm swal2-styled" style="background-color: #3085d6;" onclick="window.open('https://www.flightaware.com/live/flight/${flightNumber}', '_blank')">
+                                🌐 Open FlightAware
+                            </button>
+                            <button class="swal2-confirm swal2-styled" style="background-color: #28a745;" onclick="viewFlightScreenshotInNewTab('${existingScreenshot}')">
+                                👁️ View Screenshot
+                            </button>
+                            <button class="swal2-deny swal2-styled" style="background-color: #dd33dd;" onclick="captureFlightScreenshot('${flightNumber}', '${data.transactionID}')">
+                                📸 Take New Screenshot
+                            </button>
+                            <button class="swal2-cancel swal2-styled" onclick="Swal.close()">
+                                Cancel
+                            </button>
+                        </div>
+                    `,
+                    showConfirmButton: false,
+                    showDenyButton: false,
+                    showCancelButton: false,
+                    didOpen: () => {
+                        // Make functions global for the buttons
+                        window.viewFlightScreenshotInNewTab = function(url) {
+                            Swal.close();
+                            window.open(url, '_blank');
+                        };
+                        
+                        window.captureFlightScreenshot = function(flightNum, transId) {
+                            Swal.close();
+                            captureFlightScreenshot(flightNum, transId);
+                        };
+                    }
+                });
+            } else {
+                // No existing screenshot - show simple options
+                const result = await Swal.fire({
+                    title: 'Flight Options',
+                    text: `Flight: ${flightNumber}`,
+                    icon: 'question',
+                    showCancelButton: true,
+                    showDenyButton: true,
+                    confirmButtonText: '🌐 Open FlightAware',
+                    denyButtonText: '📸 Take Screenshot',
+                    cancelButtonText: 'Cancel'
+                });
+
+                if (result.isConfirmed) {
+                    // Open FlightAware website
+                    const url = `https://www.flightaware.com/live/flight/${flightNumber}`;
+                    window.open(url, "_blank");
+                } else if (result.isDenied) {
+                    // Capture screenshot
+                    await captureFlightScreenshot(flightNumber, data.transactionID);
+                }
+            }
         });
 
         const btnEdit = event.querySelector(".btn-edit");
@@ -1202,13 +1578,9 @@ This is an automated message. Please do not reply.`;
             data.status = note.toLowerCase().includes("cancel") ? "Cancelled" : "Pending";
         } else {
             // For edits, preserve existing status unless note contains "cancel"
-            // You might want to fetch the existing schedule first or handle this differently
-            // This is a simplified approach:
             if (note.toLowerCase().includes("cancel")) {
                 data.status = "Cancelled";
             }
-            // If note doesn't contain "cancel", don't change the status
-            // The backend should preserve the existing status
         }
 
         try {

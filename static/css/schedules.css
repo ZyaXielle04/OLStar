@@ -1247,3 +1247,58 @@ textarea {
     color: white;
     font-weight: bold;
 }
+
+/* Ring Driver Button */
+.btn-ring-driver {
+    background-color: #ff6b6b;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.3s ease;
+    margin-left: 5px;
+}
+
+.btn-ring-driver:hover:not(:disabled) {
+    background-color: #ff5252;
+    transform: scale(1.05);
+}
+
+.btn-ring-driver:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.btn-ring-driver.ring-success {
+    background-color: #28a745;
+    animation: ringPulse 1s;
+}
+
+/* Ringing Animation */
+@keyframes ringPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+    }
+}
+
+.ringing-animation {
+    font-size: 48px;
+    animation: ringBell 0.5s ease infinite;
+}
+
+@keyframes ringBell {
+    0% { transform: rotate(0deg); }
+    25% { transform: rotate(15deg); }
+    75% { transform: rotate(-15deg); }
+    100% { transform: rotate(0deg); }
+}
+

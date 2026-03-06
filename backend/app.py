@@ -100,6 +100,8 @@ try:
     from routes.admin_requests import admin_requests_api
     from routes.admin_dashboard import admin_dashboard_api
     from backend.routes.admin_transport_units import admin_transport_units
+    from backend.routes.flight_tracker import flight_tracker
+    from backend.routes.fcm_notifications import fcm_notifications
 except ModuleNotFoundError:
     raise RuntimeError("routes modules not found in /routes")
 
@@ -118,6 +120,8 @@ app.register_blueprint(schedules_api)
 app.register_blueprint(admin_requests_api)
 app.register_blueprint(admin_dashboard_api)
 app.register_blueprint(admin_transport_units)
+app.register_blueprint(flight_tracker)
+app.register_blueprint(fcm_notifications)
 
 # -----------------------
 # Inject CSRF token cookie for JS

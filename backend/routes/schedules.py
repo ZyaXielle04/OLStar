@@ -1,6 +1,16 @@
-from flask import Blueprint, request, jsonify
+import os
+import time
+import tempfile
+from flask import Blueprint, request, jsonify, send_file
 from message_template import build_message
 from decorators import admin_required
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 schedules_api = Blueprint("schedules_api", __name__)
 
@@ -29,6 +39,82 @@ def normalize_phone(number: str) -> str:
         return number
 
     return f"+{number}"
+
+
+# ---------------- FLIGHTAWARE SCREENSHOT ----------------
+@admin_required
+@schedules_api.route("/api/flightaware/screenshot/<flight_number>", methods=["GET"])
+def get_flightaware_screenshot(flight_number):
+    """
+    Capture a screenshot of FlightAware for the given flight number
+    """
+    temp_file = None
+    driver = None
+    
+    try:
+        # Clean flight number
+        flight_number = flight_number.replace(" ", "").upper()
+        
+        # Set up Chrome options for headless browsing
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new")  # Run in headless mode
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        
+        # Initialize the driver
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        # Navigate to FlightAware
+        url = f"https://www.flightaware.com/live/flight/{flight_number}"
+        driver.get(url)
+        
+        # Wait for the page to load
+        wait = WebDriverWait(driver, 15)
+        
+        # Wait for flight status card to appear
+        try:
+            # Try to wait for the flight status card
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".flightPageCard")))
+        except:
+            # If not found, try alternative selectors
+            try:
+                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='flightPageCard']")))
+            except:
+                # Wait a bit more and continue anyway
+                time.sleep(3)
+        
+        # Additional wait for any dynamic content
+        time.sleep(2)
+        
+        # Take screenshot
+        temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+        driver.save_screenshot(temp_file.name)
+        temp_file.close()
+        
+        # Return the screenshot
+        return send_file(
+            temp_file.name,
+            mimetype='image/png',
+            as_attachment=True,
+            download_name=f'flight_{flight_number}.png'
+        )
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+        
+    finally:
+        # Clean up
+        if driver:
+            driver.quit()
+        if temp_file and os.path.exists(temp_file.name):
+            try:
+                os.unlink(temp_file.name)
+            except:
+                pass
 
 
 # ---------------- CREATE ----------------
@@ -66,6 +152,7 @@ def create_schedule():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # ---------------- READ ----------------
 @admin_required
@@ -126,6 +213,7 @@ def update_schedule(transaction_id):
         "transactionID": transaction_id
     }), 200
 
+
 # ---------------- DELETE ----------------
 @admin_required
 @schedules_api.route("/api/schedules/<transaction_id>", methods=["DELETE"])
@@ -141,6 +229,7 @@ def delete_schedule(transaction_id):
         return jsonify({"success": True, "transactionID": transaction_id}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # ---------------- TRANSPORT UNITS ----------------
 @admin_required
