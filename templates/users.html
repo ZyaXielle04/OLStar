@@ -75,7 +75,15 @@
         <input type="email" name="email" placeholder="Email" required />
         <input type="text" name="phone" placeholder="Phone" required />
 
-        <!-- ✅ NEW FIELD -->
+        <!-- ✅ NEW DRIVER TYPE FIELD -->
+        <select name="driverType" required>
+          <option value="">— Select Driver Type —</option>
+          <option value="main">Main Driver</option>
+          <option value="indirect">Outsource Indirect</option>
+          <option value="direct">Outsource Direct</option>
+        </select>
+
+        <!-- ✅ TRANSPORT UNIT FIELD -->
         <select name="defaultUnit">
           <option value="">— No Default Transport Unit —</option>
         </select>

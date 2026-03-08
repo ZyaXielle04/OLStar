@@ -437,3 +437,175 @@ form select[name="defaultUnit"] option {
   padding: 8px 12px;
   font-size: 0.95rem;
 }
+
+/* ===============================
+   DRIVER TYPE DROPDOWN STYLING
+================================= */
+
+/* Main dropdown styling - matches your existing select styling */
+form select[name="driverType"] {
+  width: 100%;               /* full width inside form */
+  padding: 12px 14px;        /* comfortable padding - matches input fields */
+  margin-bottom: 15px;       /* spacing from next field */
+  font-size: 0.95rem;        /* matches input font size */
+  border: 1px solid #d1d5db; /* matches input border */
+  border-radius: var(--border-radius); /* uses your variable: 0.5rem */
+  background-color: #fff;    /* white background */
+  appearance: none;           /* remove default arrow in some browsers */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  color: #374151;            /* text color matches your user details */
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23374151' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+}
+
+/* Focus state - matches your input focus styling */
+form select[name="driverType"]:focus {
+  outline: none;
+  border-color: var(--secondary-color); /* #567C8D - matches your teal */
+  box-shadow: 0 0 0 3px rgba(86, 124, 141, 0.15); /* matches input focus */
+}
+
+/* Style for the placeholder/default option */
+form select[name="driverType"] option[value=""] {
+  color: #9ca3af; /* gray-400 - subtle placeholder color */
+}
+
+/* Style for the actual options */
+form select[name="driverType"] option {
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  color: #374151; /* matches your text color */
+  background-color: #fff;
+}
+
+/* Hover effect on options (limited browser support) */
+form select[name="driverType"] option:hover {
+  background-color: #f3f4f6;
+}
+
+/* When an option is selected */
+form select[name="driverType"] option:checked {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+/* Container for the dropdown to help with positioning */
+.form-field-container {
+  position: relative;
+  width: 100%;
+  margin-bottom: 15px;
+}
+
+/* Optional label styling if you want to add a label */
+.form-field-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--primary-color);
+  margin-bottom: 4px;
+}
+
+/* Required field indicator */
+.form-field-label.required::after {
+  content: " *";
+  color: #e11d48; /* red color for required indicator */
+}
+
+/* Disabled state */
+form select[name="driverType"]:disabled {
+  background-color: #f3f4f6;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Error state */
+form select[name="driverType"].error {
+  border-color: #e11d48;
+  box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.15);
+}
+
+/* Success state */
+form select[name="driverType"].success {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+}
+
+/* Mobile adjustments */
+@media (max-width: 480px) {
+  form select[name="driverType"] {
+    font-size: 0.9rem;
+    padding: 10px 12px;
+    background-position: right 10px center;
+  }
+}
+
+/* ===============================
+   DRIVER TYPE DISPLAY IN USER CARDS
+================================= */
+.user-details .driver-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* Driver type badges */
+.driver-type-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0.3px;
+}
+
+/* Main Driver badge */
+.driver-type-badge.main {
+  background-color: #2F4156; /* navy - primary color */
+  color: white;
+}
+
+/* Outsource Indirect badge */
+.driver-type-badge.indirect {
+  background-color: #567C8D; /* teal - secondary color */
+  color: white;
+}
+
+/* Outsource Direct badge */
+.driver-type-badge.direct {
+  background-color: #ca8a04; /* amber/gold */
+  color: white;
+}
+
+/* Driver type icon */
+.driver-type-icon {
+  width: 20px;
+  height: 20px;
+  opacity: 0.7;
+}
+
+form select[name="driverType"] {
+  background-image: none;
+}
+
+.custom-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.custom-select-wrapper::after {
+  content: "▼";
+  font-size: 0.7rem;
+  color: #555;
+  position: absolute;
+  right: 14px;
+  top: 40%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}

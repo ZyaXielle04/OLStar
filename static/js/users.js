@@ -5,6 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const userForm = document.getElementById("userForm");
   const modalTitle = userModal.querySelector(".modal-title");
   const defaultUnitSelect = userForm.defaultUnit;
+  const driverTypeSelect = userForm.driverType; // NEW
 
   let editingUserId = null;
   let transportUnits = [];
@@ -77,7 +78,6 @@ document.addEventListener("DOMContentLoaded", () => {
       .filter(u => (u.role || "").toLowerCase() !== "admin") // ignore admins
       .filter(u => u.firstName || u.lastName); // only users with real names
 
-
     // Sort alphabetically by full name
     users.sort((a, b) => {
       const nameA = `${a.firstName || ""} ${a.middleName || ""} ${a.lastName || ""}`.trim().toLowerCase();
@@ -100,6 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
       card.dataset.middleName = user.middleName || "";
       card.dataset.lastName = user.lastName || "";
       card.dataset.phone = user.phone || "";
+      card.dataset.driverType = user.driverType || ""; // NEW
       card.dataset.defaultUnit = user.defaultTransportUnit || "";
 
       let unitDetails = "-";
@@ -110,6 +111,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
+      // Format driver type for display
+      const driverTypeDisplay = user.driverTypeDisplay || user.driverType || "Not set";
+
       card.innerHTML = `
         <div class="user-header">
           <h3>${user.firstName} ${user.middleName} ${user.lastName}</h3>
@@ -117,8 +121,9 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
 
         <div class="user-details">
-          <p>Phone: ${user.phone || "-"}</p>
-          <p>Default Unit: ${unitDetails}</p>
+          <p><strong>Phone:</strong> ${user.phone || "-"}</p>
+          <p><strong>Driver Type:</strong> ${driverTypeDisplay}</p>
+          <p><strong>Default Unit:</strong> ${unitDetails}</p>
         </div>
 
         <div class="user-actions">
@@ -147,6 +152,14 @@ document.addEventListener("DOMContentLoaded", () => {
     userForm.phone.value = card.dataset.phone;
     userForm.email.value = "";
     userForm.email.disabled = true;
+
+    // Set driver type value
+    const driverType = card.dataset.driverType;
+    if (driverType && ["main", "indirect", "direct"].includes(driverType)) {
+      driverTypeSelect.value = driverType;
+    } else {
+      driverTypeSelect.value = "";
+    }
 
     populateTransportUnits(card.dataset.defaultUnit);
     modalTitle.textContent = "Edit User";
@@ -220,11 +233,18 @@ document.addEventListener("DOMContentLoaded", () => {
   userForm.addEventListener("submit", async e => {
     e.preventDefault();
 
+    // Validate driver type
+    if (!driverTypeSelect.value) {
+      toast.fire({ icon: "error", title: "Please select a driver type" });
+      return;
+    }
+
     const payload = {
       firstName: userForm.firstName.value.trim(),
       middleName: userForm.middleName.value.trim(),
       lastName: userForm.lastName.value.trim(),
       phone: userForm.phone.value.trim(),
+      driverType: driverTypeSelect.value, // NEW
       defaultTransportUnit: defaultUnitSelect.value || ""
     };
 
@@ -267,6 +287,7 @@ document.addEventListener("DOMContentLoaded", () => {
     editingUserId = null;
     userForm.reset();
     userForm.email.disabled = false;
+    driverTypeSelect.value = ""; // Reset driver type
     populateTransportUnits();
     modalTitle.textContent = "Create User";
     openModal();

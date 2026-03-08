@@ -17,10 +17,16 @@ def create_user():
     print("Received payload:", data)
 
     # Required fields
-    required_fields = ["email", "phone", "firstName", "lastName"]
+    required_fields = ["email", "phone", "firstName", "lastName", "driverType"]
     missing_fields = [f for f in required_fields if not data.get(f)]
     if missing_fields:
         return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
+
+    # Validate driverType
+    driver_type = data.get("driverType")
+    valid_driver_types = ["main", "indirect", "direct"]
+    if driver_type not in valid_driver_types:
+        return jsonify({"error": "Invalid driverType. Must be 'main', 'indirect', or 'direct'"}), 400
 
     middle_name = data.get("middleName", "")
 
@@ -41,6 +47,7 @@ def create_user():
             "middleName": middle_name,
             "lastName": data["lastName"],
             "role": data.get("role", "driver"),
+            "driverType": driver_type,  # NEW FIELD
             "defaultTransportUnit": data.get("defaultTransportUnit", ""),
             "active": False,
             "createdAt": {".sv": "timestamp"}
@@ -82,6 +89,16 @@ def get_users():
             if not info.get("firstName") and not info.get("lastName"):
                 continue
 
+            # Format driver type for display
+            driver_type = info.get("driverType", "")
+            driver_type_display = ""
+            if driver_type == "main":
+                driver_type_display = "Main Driver"
+            elif driver_type == "indirect":
+                driver_type_display = "Outsource Indirect"
+            elif driver_type == "direct":
+                driver_type_display = "Outsource Direct"
+
             user_obj = {
                 "uid": uid,
                 "firstName": info.get("firstName", ""),
@@ -90,6 +107,8 @@ def get_users():
                 "email": info.get("email", ""),
                 "phone": info.get("phone", ""),
                 "role": info.get("role", "user"),
+                "driverType": driver_type,  # NEW FIELD
+                "driverTypeDisplay": driver_type_display,  # For UI display
                 "defaultTransportUnit": info.get("defaultTransportUnit", ""),
                 "active": info.get("active", False),
                 "disabled": disabled_map.get(uid, False)
@@ -109,8 +128,14 @@ def get_users():
 @admin_required
 def edit_user(uid):
     data = request.get_json() or {}
-    allowed_fields = ["phone", "firstName", "middleName", "lastName", "role", "active", "defaultTransportUnit"]
+    allowed_fields = ["phone", "firstName", "middleName", "lastName", "role", "active", "driverType", "defaultTransportUnit"]
     updates = {k: data[k] for k in allowed_fields if k in data}
+
+    # Validate driverType if present
+    if "driverType" in updates:
+        valid_driver_types = ["main", "indirect", "direct"]
+        if updates["driverType"] not in valid_driver_types:
+            return jsonify({"error": "Invalid driverType. Must be 'main', 'indirect', or 'direct'"}), 400
 
     if not updates:
         return jsonify({"error": "No valid fields to update"}), 400
