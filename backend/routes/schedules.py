@@ -1,7 +1,8 @@
 import os
 import time
 import tempfile
-from flask import Blueprint, request, jsonify, send_file
+from datetime import datetime
+from flask import Blueprint, request, jsonify, send_file, session
 from message_template import build_message
 from decorators import admin_required
 from selenium import webdriver
@@ -131,6 +132,22 @@ def create_schedule():
         data = [data]
 
     saved_ids = []
+    
+    # Get user info from cookies - these are set in auth.py from firstName and lastName
+    user_email = request.cookies.get("user_email", "system")
+    user_full_name = request.cookies.get("user_full_name", "System")
+    user_first_name = request.cookies.get("user_first_name", "")
+    user_last_name = request.cookies.get("user_last_name", "")
+    
+    # Construct full name if not already provided
+    if not user_full_name and user_first_name and user_last_name:
+        user_full_name = f"{user_first_name} {user_last_name}".strip()
+    elif not user_full_name and user_first_name:
+        user_full_name = user_first_name
+    elif not user_full_name and user_last_name:
+        user_full_name = user_last_name
+    else:
+        user_full_name = user_full_name or "System"
 
     try:
         for item in data:
@@ -139,6 +156,20 @@ def create_schedule():
                 return jsonify({"error": "transactionID is required"}), 400
 
             item["status"] = item.get("status", "Pending")
+            
+            # Add creation timestamp to history
+            if "history" not in item:
+                item["history"] = []
+            
+            item["history"].append({
+                "timestamp": datetime.now().isoformat(),
+                "action": "created",
+                "user": user_full_name,  # This will be "John Doe" from firstName and lastName
+                "user_email": user_email,
+                "user_first_name": user_first_name,
+                "user_last_name": user_last_name,
+                "changes": [{"field": "initial", "old": None, "new": "Schedule created"}]
+            })
 
             ref = db.reference(f"schedules/{transaction_id}")
             ref.set(item)
@@ -171,6 +202,9 @@ def get_schedules():
                 "driverName": current.get("driverName", ""),
                 "cellPhone": current.get("cellPhone", "")
             }
+            # Ensure history exists
+            if "history" not in schedule:
+                schedule["history"] = []
             schedules.append(schedule)
 
         return jsonify({"success": True, "schedules": schedules}), 200
@@ -185,32 +219,103 @@ def update_schedule(transaction_id):
     from firebase_admin import db
 
     data = request.get_json() or {}
+    
+    # Get user info from cookies - these are set in auth.py from firstName and lastName
+    user_email = request.cookies.get("user_email", "unknown")
+    user_full_name = request.cookies.get("user_full_name", "Unknown")
+    user_first_name = request.cookies.get("user_first_name", "")
+    user_last_name = request.cookies.get("user_last_name", "")
+    
+    # Construct full name if not already provided
+    if not user_full_name and user_first_name and user_last_name:
+        user_full_name = f"{user_first_name} {user_last_name}".strip()
+    elif not user_full_name and user_first_name:
+        user_full_name = user_first_name
+    elif not user_full_name and user_last_name:
+        user_full_name = user_last_name
+    else:
+        user_full_name = user_full_name or "Unknown"
 
     ref = db.reference(f"schedules/{transaction_id}")
     existing = ref.get()
     if not existing:
         return jsonify({"error": "Schedule not found"}), 404
 
-    # Handle driver assignment ONLY here
+    changes = []
+    
+    # Track driver assignment changes
     if "current" in data:
         current = data.get("current") or {}
+        old_driver = existing.get("current", {}).get("driverName", "")
+        new_driver = current.get("driverName", "")
+        old_phone = existing.get("current", {}).get("cellPhone", "")
+        new_phone = current.get("cellPhone", "")
+        
+        if old_driver != new_driver:
+            changes.append({
+                "field": "driverName",
+                "old": old_driver,
+                "new": new_driver
+            })
+        
+        if old_phone != new_phone:
+            changes.append({
+                "field": "cellPhone",
+                "old": old_phone,
+                "new": new_phone
+            })
+        
+        # Special handling for driver transfer
+        if old_driver and new_driver and old_driver != new_driver:
+            changes.append({
+                "field": "driver_transfer",
+                "old": f"Driver {old_driver}",
+                "new": f"Driver {new_driver}",
+                "note": "Driver Transfer"
+            })
+        
         ref.child("current").update({
-            "driverName": current.get("driverName", ""),
-            "cellPhone": current.get("cellPhone", "")
+            "driverName": new_driver,
+            "cellPhone": new_phone
         })
 
-    # Allow-list update only
-    updates = {
-        k: v for k, v in data.items()
-        if k in EDITABLE_FIELDS
-    }
+    # Track other field changes
+    updates = {}
+    for k, v in data.items():
+        if k in EDITABLE_FIELDS:
+            old_val = existing.get(k, "")
+            if str(old_val) != str(v):
+                changes.append({
+                    "field": k,
+                    "old": old_val,
+                    "new": v
+                })
+                updates[k] = v
 
     if updates:
         ref.update(updates)
 
+    # Save history if there were changes
+    if changes:
+        history_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "action": "updated",
+            "user": user_full_name,  # This will be "John Doe" from firstName and lastName
+            "user_email": user_email,
+            "user_first_name": user_first_name,
+            "user_last_name": user_last_name,
+            "changes": changes
+        }
+        
+        # Get existing history or create new array
+        history = existing.get("history", [])
+        history.append(history_entry)
+        ref.child("history").set(history)
+
     return jsonify({
         "success": True,
-        "transactionID": transaction_id
+        "transactionID": transaction_id,
+        "changes": changes
     }), 200
 
 
@@ -227,6 +332,34 @@ def delete_schedule(transaction_id):
 
         ref.delete()
         return jsonify({"success": True, "transactionID": transaction_id}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------- SCHEDULE HISTORY ----------------
+@admin_required
+@schedules_api.route("/api/schedules/<transaction_id>/history", methods=["GET"])
+def get_schedule_history(transaction_id):
+    """
+    Get the change history for a specific schedule
+    """
+    from firebase_admin import db
+    
+    try:
+        ref = db.reference(f"schedules/{transaction_id}")
+        schedule = ref.get()
+        
+        if not schedule:
+            return jsonify({"error": "Schedule not found"}), 404
+        
+        history = schedule.get("history", [])
+        
+        return jsonify({
+            "success": True,
+            "transactionID": transaction_id,
+            "history": history
+        }), 200
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

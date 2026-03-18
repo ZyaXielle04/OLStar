@@ -1,0 +1,651 @@
+/* General Ledger Overview CSS */
+
+.page-header {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 30px;
+    padding: 20px;
+    border-bottom: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+    border-radius: var(--border-radius);
+}
+
+.page-header h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    line-height: 1.2;
+}
+
+.page-header .subtitle {
+    font-size: 1rem;
+    font-weight: 400;
+    color: #6b7280;
+}
+
+.header-with-badge {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.superadmin-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 5px rgba(102, 126, 234, 0.3);
+}
+
+/* Date Range Section */
+.date-range-section {
+    background-color: white;
+    border-radius: 10px;
+    padding: 15px 20px;
+    margin-bottom: 25px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.date-range-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.date-range-tabs {
+    display: flex;
+    gap: 5px;
+    background-color: #f8f9fa;
+    padding: 4px;
+    border-radius: 8px;
+}
+
+.date-tab {
+    padding: 8px 16px;
+    border: none;
+    background: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: #7f8c8d;
+    transition: all 0.2s;
+}
+
+.date-tab:hover {
+    background-color: #e9ecef;
+    color: #2c3e50;
+}
+
+.date-tab.active {
+    background-color: #3498db;
+    color: white;
+}
+
+.custom-date-range {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.date-input {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.btn-sm {
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
+/* Net Worth Cards */
+.net-worth-section {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.net-worth-card {
+    background-color: white;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.net-worth-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.net-worth-card.primary {
+    border-left: 4px solid #3498db;
+}
+
+.net-worth-card.success {
+    border-left: 4px solid #2ecc71;
+}
+
+.net-worth-card.warning {
+    border-left: 4px solid #f39c12;
+}
+
+.net-worth-card.info {
+    border-left: 4px solid #00bcd4;
+}
+
+.net-worth-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 15px;
+    font-size: 24px;
+}
+
+.net-worth-card.primary .net-worth-icon {
+    background-color: rgba(52, 152, 219, 0.1);
+    color: #3498db;
+}
+
+.net-worth-card.success .net-worth-icon {
+    background-color: rgba(46, 204, 113, 0.1);
+    color: #2ecc71;
+}
+
+.net-worth-card.warning .net-worth-icon {
+    background-color: rgba(243, 156, 18, 0.1);
+    color: #f39c12;
+}
+
+.net-worth-card.info .net-worth-icon {
+    background-color: rgba(0, 188, 212, 0.1);
+    color: #00bcd4;
+}
+
+.net-worth-details {
+    flex: 1;
+}
+
+.net-worth-details h3 {
+    margin: 0 0 5px 0;
+    font-size: 14px;
+    color: #7f8c8d;
+    font-weight: 500;
+}
+
+.net-worth-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #2c3e50;
+    line-height: 1.2;
+    margin-bottom: 5px;
+}
+
+.net-worth-period {
+    font-size: 12px;
+    color: #95a5a6;
+}
+
+/* Chart Section */
+.chart-section {
+    background-color: white;
+    border-radius: 12px;
+    padding: 25px;
+    margin-bottom: 30px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.section-header h2 {
+    margin: 0;
+    font-size: 18px;
+    color: #2c3e50;
+}
+
+.chart-legend {
+    display: flex;
+    gap: 20px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 14px;
+    color: #7f8c8d;
+}
+
+.legend-item i {
+    font-size: 12px;
+}
+
+.legend-item.income i {
+    color: #2ecc71;
+}
+
+.legend-item.expenses i {
+    color: #e74c3c;
+}
+
+.legend-item.profit i {
+    color: #3498db;
+}
+
+.chart-container {
+    height: 300px;
+    position: relative;
+}
+
+/* Summary Cards */
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.summary-card {
+    background-color: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.summary-card.income-card {
+    border-top: 4px solid #2ecc71;
+}
+
+.summary-card.expense-card {
+    border-top: 4px solid #e74c3c;
+}
+
+.summary-card.advance-card {
+    border-top: 4px solid #f39c12;
+}
+
+.summary-card.deduction-card {
+    border-top: 4px solid #9b59b6;
+}
+
+.summary-header {
+    padding: 15px 20px;
+    background-color: #f8f9fa;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.summary-header i {
+    font-size: 20px;
+}
+
+.income-card .summary-header i {
+    color: #2ecc71;
+}
+
+.expense-card .summary-header i {
+    color: #e74c3c;
+}
+
+.advance-card .summary-header i {
+    color: #f39c12;
+}
+
+.deduction-card .summary-header i {
+    color: #9b59b6;
+}
+
+.summary-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: #2c3e50;
+}
+
+.summary-body {
+    padding: 15px 20px;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 14px;
+    color: #7f8c8d;
+}
+
+.summary-row.total {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #ecf0f1;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.summary-row.warning {
+    color: #e67e22;
+}
+
+.summary-value {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+/* Categories Section */
+.categories-section {
+    background-color: white;
+    border-radius: 12px;
+    padding: 25px;
+    margin-bottom: 30px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.categories-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+
+.category-card {
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 10px;
+    transition: transform 0.2s;
+}
+
+.category-card:hover {
+    transform: translateY(-2px);
+}
+
+.category-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 15px;
+    font-size: 20px;
+}
+
+.category-icon.gas {
+    background-color: rgba(52, 152, 219, 0.1);
+    color: #3498db;
+}
+
+.category-icon.rfid {
+    background-color: rgba(155, 89, 182, 0.1);
+    color: #9b59b6;
+}
+
+.category-icon.maintenance {
+    background-color: rgba(230, 126, 34, 0.1);
+    color: #e67e22;
+}
+
+.category-icon.admin {
+    background-color: rgba(52, 73, 94, 0.1);
+    color: #34495e;
+}
+
+.category-icon.driver {
+    background-color: rgba(46, 204, 113, 0.1);
+    color: #2ecc71;
+}
+
+.category-icon.advance {
+    background-color: rgba(241, 196, 15, 0.1);
+    color: #f1c40f;
+}
+
+.category-details {
+    flex: 1;
+}
+
+.category-details h3 {
+    margin: 0 0 5px 0;
+    font-size: 14px;
+    color: #7f8c8d;
+    font-weight: 500;
+}
+
+.category-amount {
+    font-size: 18px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 3px;
+}
+
+.category-count {
+    font-size: 12px;
+    color: #95a5a6;
+}
+
+/* Recent Section */
+.recent-section {
+    margin-bottom: 30px;
+}
+
+.recent-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+}
+
+.recent-card {
+    background-color: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.recent-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.recent-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: #2c3e50;
+}
+
+.view-all {
+    color: #3498db;
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.view-all:hover {
+    text-decoration: underline;
+}
+
+.recent-list {
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.recent-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.recent-item:last-child {
+    border-bottom: none;
+}
+
+.recent-item-info {
+    flex: 1;
+}
+
+.recent-item-title {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 3px;
+    font-size: 14px;
+}
+
+.recent-item-subtitle {
+    font-size: 12px;
+    color: #7f8c8d;
+}
+
+.recent-item-amount {
+    font-weight: 600;
+    margin-left: 10px;
+}
+
+.recent-item-amount.income {
+    color: #2ecc71;
+}
+
+.recent-item-amount.expense {
+    color: #e74c3c;
+}
+
+/* Monthly Section */
+.monthly-section {
+    background-color: white;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.year-select {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    background-color: white;
+    cursor: pointer;
+}
+
+.monthly-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.monthly-table th {
+    background-color: #f8f9fa;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+    color: #34495e;
+    border-bottom: 2px solid #e0e0e0;
+    font-size: 14px;
+}
+
+.monthly-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #ecf0f1;
+    color: #2c3e50;
+    font-size: 14px;
+}
+
+.monthly-table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.monthly-table .text-center {
+    text-align: center;
+}
+
+.monthly-table .profit-positive {
+    color: #2ecc71;
+    font-weight: 600;
+}
+
+.monthly-table .profit-negative {
+    color: #e74c3c;
+    font-weight: 600;
+}
+
+/* Loading State */
+.loading {
+    text-align: center;
+    padding: 30px;
+    color: #95a5a6;
+    font-style: italic;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .net-worth-section {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .summary-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .categories-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .recent-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .net-worth-section {
+        grid-template-columns: 1fr;
+    }
+    
+    .summary-cards {
+        grid-template-columns: 1fr;
+    }
+    
+    .categories-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .recent-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .date-range-container {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .date-range-tabs {
+        flex-wrap: wrap;
+    }
+    
+    .chart-legend {
+        flex-direction: column;
+        gap: 5px;
+    }
+}

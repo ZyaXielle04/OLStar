@@ -100,7 +100,98 @@ body {
 }
 
 /* ===============================
-   COLLAPSIBLE SUBMENU
+   DROPDOWN MENU STYLES
+================================= */
+.nav-dropdown {
+    position: relative;
+    width: 100%;
+}
+
+.dropdown-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: var(--border-radius);
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--font-color-light);
+    text-decoration: none;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.dropdown-toggle:hover {
+    background-color: var(--secondary-color);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.dropdown-toggle i {
+    font-size: 12px;
+    transition: transform 0.3s ease;
+}
+
+.dropdown-toggle.active i {
+    transform: rotate(180deg);
+}
+
+.dropdown-menu {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: var(--border-radius);
+    margin: 2px 0 2px 15px;
+    padding-left: 5px;
+}
+
+.dropdown-menu.show {
+    max-height: 300px; /* Adjust based on number of items */
+    transition: max-height 0.4s ease-in;
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: var(--border-radius);
+    font-weight: 400;
+    font-size: 0.9rem;
+    color: var(--font-color-secondary);
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.dropdown-item i {
+    width: 18px;
+    font-size: 14px;
+    color: var(--font-color-secondary);
+}
+
+.dropdown-item:hover {
+    background-color: var(--secondary-color);
+    color: var(--font-color-light);
+    padding-left: 20px;
+}
+
+.dropdown-item:hover i {
+    color: var(--font-color-light);
+}
+
+.dropdown-item.active {
+    background-color: var(--secondary-color);
+    color: var(--font-color-light);
+    border-left: 3px solid #fff;
+}
+
+.dropdown-item.active i {
+    color: var(--font-color-light);
+}
+
+/* ===============================
+   COLLAPSIBLE SUBMENU (Alternative)
 ================================= */
 .nav-group summary {
     list-style: none;
@@ -155,6 +246,7 @@ details[open] .nav-submenu {
     font-size: 0.9rem;
     color: var(--font-color-secondary);
     transition: all 0.2s ease;
+    text-decoration: none;
 }
 
 .nav-sublink:hover,
@@ -269,6 +361,21 @@ details[open] .nav-submenu {
         width: 100%;
         padding: 70px 20px 20px 20px !important;
     }
+
+    /* Mobile dropdown adjustments */
+    .dropdown-menu {
+        margin-left: 10px;
+    }
+    
+    .dropdown-item {
+        padding: 8px 14px;
+        font-size: 0.85rem;
+    }
+    
+    .dropdown-item i {
+        width: 16px;
+        font-size: 12px;
+    }
 }
 
 /* Small phones */
@@ -284,6 +391,15 @@ details[open] .nav-submenu {
     
     .content {
         padding: 60px 12px 16px 12px !important;
+    }
+    
+    .dropdown-toggle {
+        padding: 10px 14px;
+        font-size: 0.9rem;
+    }
+    
+    .dropdown-item {
+        padding: 8px 12px 8px 10px;
     }
 }
 
@@ -313,6 +429,8 @@ button,
 .btn,
 .nav-link,
 .nav-sublink,
+.dropdown-toggle,
+.dropdown-item,
 input[type="submit"] {
     min-height: 44px;
     min-width: 44px;
@@ -323,4 +441,32 @@ input[type="submit"] {
 .modal-content,
 .cards {
     -webkit-overflow-scrolling: touch;
+}
+
+/* ===============================
+   TRANSACTION ICONS
+================================= */
+.fa-gas-pump {
+    color: #f39c12;
+}
+
+.fa-id-card {
+    color: #3498db;
+}
+
+.fa-tools {
+    color: #e74c3c;
+}
+
+.dropdown-item:hover .fa-gas-pump,
+.dropdown-item:hover .fa-id-card,
+.dropdown-item:hover .fa-tools {
+    color: white;
+}
+
+/* Active state icons */
+.dropdown-item.active .fa-gas-pump,
+.dropdown-item.active .fa-id-card,
+.dropdown-item.active .fa-tools {
+    color: white;
 }

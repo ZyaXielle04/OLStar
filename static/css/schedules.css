@@ -1302,3 +1302,63 @@ textarea {
     100% { transform: rotate(0deg); }
 }
 
+/* History Button */
+.btn-history {
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background-color 0.2s;
+    margin-left: 5px;
+}
+
+.btn-history:hover {
+    background-color: #5a6268;
+}
+
+/* History Modal */
+#scheduleHistoryModal .modal-content {
+    max-width: 800px;
+    width: 90%;
+    max-height: 80vh;
+    overflow: hidden;
+}
+
+#historyContent {
+    max-height: 500px;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+/* History Entry Styles */
+.history-entry {
+    margin-bottom: 15px;
+    transition: transform 0.2s;
+}
+
+.history-entry:hover {
+    transform: translateX(5px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.history-entry table {
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.history-entry th {
+    font-weight: 600;
+    font-size: 0.9em;
+}
+
+.history-entry td {
+    transition: background-color 0.2s;
+}
+
+.history-entry tr:hover td {
+    background-color: rgba(0,123,255,0.05);
+}

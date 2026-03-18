@@ -22,6 +22,9 @@
   <!-- Firebase SDK (compat for easier usage) -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
 
@@ -41,7 +44,48 @@
       <!-- Operations (exposed) -->
       <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
       <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link">Track Drivers</a>
-      <a href="{{ url_for('pages.bookings_transactions') }}" class="nav-link">Transaction History</a>
+      
+      <!-- Transactions Dropdown using details/summary (works without JS) -->
+      <details class="nav-group" open>
+        <summary>
+            <span>Transactions</span>
+        </summary>
+        <div class="nav-submenu">
+            <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">
+                <i class="fas fa-gas-pump"></i> Gas Transactions
+            </a>
+            <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink">
+                <i class="fas fa-id-card"></i> RFID Transactions
+            </a>
+            <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink">
+                <i class="fas fa-tools"></i> Maintenance
+            </a>
+        </div>
+      </details>
+
+      <!-- General Ledger Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>General Ledger</span>
+          </summary>
+          <div class="nav-submenu">
+                <a href="{{ url_for('pages.gl_overview') }}" class="nav-sublink">
+                    <i class="fas fa-chart-pie" style="color:yellow;"></i> Overview
+                </a>
+                <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink">
+                    <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary
+                </a>
+                <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink">
+                    <i class="fas fa-truck" style="color:green;"></i> Drivers Salary
+                </a>
+                <a href="{{ url_for('pages.gl_advances') }}" class="nav-sublink">
+                    <i class="fas fa-hand-holding-usd" style="color:orange;"></i> Advances
+                </a>
+                <a href="{{ url_for('pages.gl_deductions') }}" class="nav-sublink">
+                    <i class="fas fa-minus-circle" style="color:red;"></i> Deductions
+                </a>
+            </div>
+      </details>
 
       <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
     </nav>
@@ -96,7 +140,7 @@
       <button onclick="window.location.href='{{ url_for('pages.admin_users') }}'">Add / Manage Users</button>
       <button onclick="window.location.href='{{ url_for('pages.bookings_schedules') }}'">Upload Schedules</button>
       <button onclick="window.location.href='{{ url_for('pages.bookings_track_drivers') }}'">Track Drivers</button>
-      <button onclick="window.location.href='{{ url_for('pages.bookings_transactions') }}'">View Requests</button>
+      <button onclick="window.location.href='{{ url_for('pages.gas_transactions') }}'">View Requests</button>
     </section>
 
     <!-- Recent Requests -->

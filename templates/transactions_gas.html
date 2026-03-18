@@ -2,16 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>OLStar | Admin Settings</title>
+  <title>OLStar | Transaction Requests</title>
 
-  <!-- Base & Page Styles -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_dashboard.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_settings.css') }}">
-  
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/operations_transactions.css') }}">
+
   <!-- Font Awesome for icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
@@ -36,20 +33,20 @@
       
       <!-- Transactions Dropdown using details/summary (works without JS) -->
       <details class="nav-group" open>
-        <summary>
-            <span>Transactions</span>
-        </summary>
-        <div class="nav-submenu">
-            <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">
-                <i class="fas fa-gas-pump"></i> Gas Transactions
-            </a>
-            <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink">
-                <i class="fas fa-id-card"></i> RFID Transactions
-            </a>
-            <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink">
-                <i class="fas fa-tools"></i> Maintenance
-            </a>
-        </div>
+          <summary>
+              <span>Transactions</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink active">
+                  <i class="fas fa-gas-pump"></i> Gas Transactions
+              </a>
+              <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-id-card"></i> RFID Transactions
+              </a>
+              <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-tools"></i> Maintenance
+              </a>
+          </div>
       </details>
 
       <!-- General Ledger Dropdown -->
@@ -76,7 +73,7 @@
           </div>
       </details>
 
-      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link active">Settings</a>
+      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
     </nav>
 
     <div class="sidebar-footer">
@@ -84,28 +81,29 @@
     </div>
   </aside>
 
-  <!-- Main Content -->
+  <!-- Main -->
   <main class="content">
-
-    <!-- Page Header -->
     <header class="page-header">
       <button id="btnToggleSidebar" class="hamburger">☰</button>
-      <div class="page-header-text">
-        <h1>Settings</h1>
-        <p class="subtitle">Manage your admin preferences and account settings.</p>
+      <div class="header-with-badge">
+        <h1>Gas Requests</h1>
+        <span class="superadmin-badge">
+          <i class="fas fa-shield-alt"></i> Superadmin Only
+        </span>
       </div>
+      <p class="subtitle">All driver reimbursement & payment requests</p>
     </header>
 
-    <!-- Under Development Message -->
-    <section class="settings-placeholder">
-      <div class="placeholder-message">
-        <h2>Page Under Development</h2>
-        <p>This page is under development. Contents will be displayed once deployed.</p>
-      </div>
+    <section class="cards-section">
+      <div id="requestsContainer" class="requests-grid"></div>
     </section>
-
   </main>
+
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
+<script src="{{ url_for('static', filename='js/operations_transactions.js') }}"></script>
 
 </body>
 </html>

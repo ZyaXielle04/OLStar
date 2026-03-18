@@ -11,6 +11,9 @@
   <!-- External CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/schedules.css') }}">
+  
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
 
@@ -30,11 +33,51 @@
           <!-- Operations (exposed) -->
           <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link active">Schedules</a>
           <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link">Track Drivers</a>
-          <a href="{{ url_for('pages.bookings_transactions') }}" class="nav-link">Transaction History</a>
+          
+          <!-- Transactions Dropdown using details/summary (works without JS) -->
+          <details class="nav-group" open>
+            <summary>
+                <span>Transactions</span>
+            </summary>
+            <div class="nav-submenu">
+                <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">
+                    <i class="fas fa-gas-pump"></i> Gas Transactions
+                </a>
+                <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink">
+                    <i class="fas fa-id-card"></i> RFID Transactions
+                </a>
+                <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink">
+                    <i class="fas fa-tools"></i> Maintenance
+                </a>
+            </div>
+          </details>
+
+          <!-- General Ledger Dropdown -->
+          <details class="nav-group" open>
+              <summary>
+                  <span>General Ledger</span>
+              </summary>
+              <div class="nav-submenu">
+                  <a href="{{ url_for('pages.gl_overview') }}" class="nav-sublink">
+                      <i class="fas fa-chart-pie" style="color:yellow;"></i> Overview
+                  </a>
+                  <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink">
+                      <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary
+                  </a>
+                  <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink">
+                      <i class="fas fa-truck" style="color:green;"></i> Drivers Salary
+                  </a>
+                  <a href="{{ url_for('pages.gl_advances') }}" class="nav-sublink">
+                      <i class="fas fa-hand-holding-usd" style="color:orange;"></i> Advances
+                  </a>
+                  <a href="{{ url_for('pages.gl_deductions') }}" class="nav-sublink">
+                      <i class="fas fa-minus-circle" style="color:red;"></i> Deductions
+                  </a>
+              </div>
+          </details>
 
           <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
         </nav>
-        <a></a>
 
         <div class="sidebar-footer">
           <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
@@ -261,6 +304,20 @@
       <img id="statusPhotoImg" src="" alt="Status proof" />
       <a id="downloadStatusPhoto" download target="_blank">Download image</a>
     </div>
+  </div>
+
+  <!-- Schedule History Modal -->
+  <div id="scheduleHistoryModal" class="modal">
+      <div class="modal-content" style="max-width: 800px; width: 90%;">
+          <span class="close" id="closeHistoryModal">&times;</span>
+          <h2>Schedule Change History</h2>
+          <div id="historyContent" style="max-height: 500px; overflow-y: auto; padding: 10px;">
+              <!-- History entries will be loaded here -->
+          </div>
+          <div style="text-align: right; margin-top: 20px;">
+              <button class="btn-secondary" id="closeHistoryBtn">Close</button>
+          </div>
+      </div>
   </div>
 
   <!-- Other scripts -->

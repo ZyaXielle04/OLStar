@@ -38,6 +38,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const closeStatusPhotoModal = document.getElementById("closeStatusPhotoModal");
     let selectedScheduleIDs = new Set();
 
+    // Schedule History Modal
+    const scheduleHistoryModal = document.getElementById("scheduleHistoryModal");
+    const historyContent = document.getElementById("historyContent");
+    const closeHistoryModal = document.getElementById("closeHistoryModal");
+    const closeHistoryBtn = document.getElementById("closeHistoryBtn");
 
     function openStatusPhotoModal(photoUrl) {
         if (!photoUrl) {
@@ -61,7 +66,6 @@ document.addEventListener("DOMContentLoaded", () => {
             statusPhotoImg.src = "";
         }
     });
-
 
     // ---------------- Plate Number Auto-fill ----------------
     plateInput.addEventListener("input", () => {
@@ -430,7 +434,178 @@ After that, PHP 150 per succeeding hour.
 This is an automated message. Please do not reply.`;
     }
 
-        function createCalendarEvent(data) {
+    // ---------------- Schedule History Functions ----------------
+    async function viewScheduleHistory(transactionId) {
+        if (!transactionId) {
+            showToast("No transaction ID available", "error");
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/schedules/${transactionId}/history`);
+            const data = await response.json();
+            
+            if (data.success) {
+                displayHistoryModal(data.history, transactionId);
+            } else {
+                showToast("Failed to load history", "error");
+            }
+        } catch (err) {
+            console.error("Error loading history:", err);
+            showToast("Error loading history", "error");
+        }
+    }
+
+    function displayHistoryModal(history, transactionId) {
+        if (!historyContent) return;
+        
+        if (!history || history.length === 0) {
+            historyContent.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: #666;">
+                    <p>No change history available for this schedule.</p>
+                </div>
+            `;
+        } else {
+            // Sort history by timestamp (newest first)
+            const sortedHistory = [...history].sort((a, b) => 
+                new Date(b.timestamp) - new Date(a.timestamp)
+            );
+            
+            let historyHtml = '';
+            
+            sortedHistory.forEach((entry, index) => {
+                const date = new Date(entry.timestamp);
+                const formattedDate = date.toLocaleString();
+                
+                // Get user display name
+                let userDisplay = entry.user || 'System';
+                
+                historyHtml += `
+                    <div class="history-entry" style="
+                        background: ${index === 0 ? '#f0f7ff' : '#f8f9fa'};
+                        border-left: 4px solid ${index === 0 ? '#007bff' : '#6c757d'};
+                        padding: 15px;
+                        margin-bottom: 15px;
+                        border-radius: 6px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    ">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <div>
+                                <strong style="color: ${index === 0 ? '#007bff' : '#495057'}; font-size: 1.1em;">
+                                    ${entry.action === 'created' ? '📝 Created' : '✏️ Updated'}
+                                </strong>
+                            </div>
+                            <span style="color: #666; font-size: 0.9em; background: #e9ecef; padding: 4px 8px; border-radius: 4px;">
+                                🕒 ${formattedDate}
+                            </span>
+                        </div>
+                        
+                        <div style="margin-bottom: 15px; background: #e3f2fd; padding: 8px 12px; border-radius: 4px; display: inline-block; border-left: 3px solid #2196F3;">
+                            <span style="font-size: 1em;">
+                                👤 <strong>Edited by:</strong> 
+                                <span style="color: #0d47a1; font-weight: 600;">${userDisplay}</span>
+                            </span>
+                        </div>
+                        
+                        <div style="margin-top: 15px; border: 1px solid #dee2e6; border-radius: 6px; overflow: hidden;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+                                <thead>
+                                    <tr style="background: #343a40; color: white;">
+                                        <th style="padding: 10px; text-align: left;">Field</th>
+                                        <th style="padding: 10px; text-align: left;">Old Value</th>
+                                        <th style="padding: 10px; text-align: left;">New Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                `;
+                
+                entry.changes.forEach(change => {
+                    let fieldName = change.field;
+                    let oldVal = change.old || '(empty)';
+                    let newVal = change.new || '(empty)';
+                    
+                    // Format field names nicely
+                    const fieldLabels = {
+                        'driverName': 'Driver Name',
+                        'cellPhone': 'Contact #',
+                        'driver_transfer': 'Driver Transfer',
+                        'date': 'Date',
+                        'time': 'Time',
+                        'clientName': 'Client Name',
+                        'contactNumber': 'Client Contact',
+                        'pickup': 'Pickup Location',
+                        'dropOff': 'Drop Off Location',
+                        'pax': 'Pax',
+                        'flightNumber': 'Flight Number',
+                        'note': 'Note/Email',
+                        'unitType': 'Unit Type',
+                        'amount': 'Amount',
+                        'driverRate': 'Driver Rate',
+                        'company': 'Company',
+                        'bookingType': 'Booking Type',
+                        'transportUnit': 'Transport Unit',
+                        'color': 'Color',
+                        'plateNumber': 'Plate Number',
+                        'luggage': 'Luggage',
+                        'tripType': 'Trip Type'
+                    };
+                    
+                    fieldName = fieldLabels[change.field] || change.field;
+                    
+                    // Highlight driver transfers
+                    const isTransfer = change.field === 'driver_transfer';
+                    const rowStyle = isTransfer ? 'background: #fff3cd;' : '';
+                    
+                    // Truncate long values
+                    if (oldVal.length > 50) oldVal = oldVal.substring(0, 50) + '...';
+                    if (newVal.length > 50) newVal = newVal.substring(0, 50) + '...';
+                    
+                    historyHtml += `
+                        <tr style="${rowStyle} border-bottom: 1px solid #dee2e6;">
+                            <td style="padding: 10px; font-weight: 600; background: #f8f9fa;">${fieldName}</td>
+                            <td style="padding: 10px; ${oldVal === '(empty)' ? 'color: #999; font-style: italic;' : ''}">${oldVal}</td>
+                            <td style="padding: 10px; ${newVal === '(empty)' ? 'color: #999; font-style: italic;' : ''}">${newVal}</td>
+                        </tr>
+                    `;
+                });
+                
+                historyHtml += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            historyContent.innerHTML = historyHtml;
+        }
+        
+        // Show modal
+        if (scheduleHistoryModal) {
+            scheduleHistoryModal.style.display = "block";
+        }
+    }
+
+    // History modal close handlers
+    if (closeHistoryModal) {
+        closeHistoryModal.addEventListener("click", () => {
+            scheduleHistoryModal.style.display = "none";
+        });
+    }
+
+    if (closeHistoryBtn) {
+        closeHistoryBtn.addEventListener("click", () => {
+            scheduleHistoryModal.style.display = "none";
+        });
+    }
+
+    window.addEventListener("click", (e) => {
+        if (e.target === scheduleHistoryModal) {
+            scheduleHistoryModal.style.display = "none";
+        }
+    });
+
+    function createCalendarEvent(data) {
         const event = document.createElement("div");
         event.classList.add("calendar-event");
 
@@ -543,6 +718,7 @@ This is an automated message. Please do not reply.`;
                         <div class="action-center">
                             <button class="btn-edit">Edit</button>
                             <button class="btn-delete">Delete</button>
+                            <button class="btn-history" data-transaction="${data.transactionID}">📜 History</button>
                         </div>
                     </div>
 
@@ -748,6 +924,14 @@ This is an automated message. Please do not reply.`;
             
             btnRingDriver.addEventListener("click", () => {
                 ringDriver(data.transactionID, data.current?.driverName);
+            });
+        }
+
+        // Add event listener for history button
+        const btnHistory = event.querySelector(".btn-history");
+        if (btnHistory) {
+            btnHistory.addEventListener("click", () => {
+                viewScheduleHistory(data.transactionID);
             });
         }
 

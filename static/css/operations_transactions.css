@@ -50,13 +50,34 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
+/* Header with Badge */
+.header-with-badge {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.superadmin-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 5px rgba(102, 126, 234, 0.3);
+}
+
+.superadmin-badge i {
+    font-size: 12px;
+}
+
 /* Align header horizontally on medium+ screens */
 @media (min-width: 768px) {
-    .page-header {
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: center;
-    }
 
     .page-header-text {
         gap: 6px;

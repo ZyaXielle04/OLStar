@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>OLStar | Maintenance Transactions</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/transactions_maintenance.css') }}">
+  
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  
+  <!-- Chart.js for analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>Admin Panel</h2>
+    </div>
+
+    <nav class="nav">
+      <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+      <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+      <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link">Transport Units</a>
+
+      <!-- Operations (exposed) -->
+      <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
+      <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link">Track Drivers</a>
+      
+      <!-- Transactions Dropdown using details/summary (works without JS) -->
+      <details class="nav-group" open>
+          <summary>
+              <span>Transactions</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-gas-pump"></i> Gas Transactions
+              </a>
+              <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-id-card"></i> RFID Transactions
+              </a>
+              <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink active">
+                  <i class="fas fa-tools"></i> Maintenance
+              </a>
+          </div>
+      </details>
+
+      <!-- General Ledger Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>General Ledger</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gl_overview') }}" class="nav-sublink">
+                  <i class="fas fa-chart-pie" style="color:yellow;"></i> Overview
+              </a>
+              <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink">
+                  <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary
+              </a>
+              <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink">
+                  <i class="fas fa-truck" style="color:green;"></i> Drivers Salary
+              </a>
+              <a href="{{ url_for('pages.gl_advances') }}" class="nav-sublink">
+                  <i class="fas fa-hand-holding-usd" style="color:orange;"></i> Advances
+              </a>
+              <a href="{{ url_for('pages.gl_deductions') }}" class="nav-sublink">
+                  <i class="fas fa-minus-circle" style="color:red;"></i> Deductions
+              </a>
+          </div>
+      </details>
+
+      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="content">
+    <header class="page-header">
+      <button id="btnToggleSidebar" class="hamburger">☰</button>
+      <div class="header-with-badge">
+        <h1>Maintenance Transactions</h1>
+        <span class="superadmin-badge">
+          <i class="fas fa-shield-alt"></i> Superadmin Only
+        </span>
+      </div>
+      <p class="subtitle">Track and manage vehicle maintenance, repairs, and service history</p>
+    </header>
+
+    <!-- Summary Cards -->
+    <section class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-icon blue">
+          <i class="fas fa-wrench"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Total Maintenance</h3>
+          <div class="summary-value" id="totalMaintenance">—</div>
+          <span class="summary-sub" id="totalMaintenanceCost">₱0 total cost</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon green">
+          <i class="fas fa-check-circle"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Completed</h3>
+          <div class="summary-value" id="completedCount">—</div>
+          <span class="summary-sub" id="completedCost">₱0</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon orange">
+          <i class="fas fa-clock"></i>
+        </div>
+        <div class="summary-details">
+          <h3>In Progress</h3>
+          <div class="summary-value" id="inProgressCount">—</div>
+          <span class="summary-sub" id="inProgressCost">₱0</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon red">
+          <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Pending</h3>
+          <div class="summary-value" id="pendingCount">—</div>
+          <span class="summary-sub" id="pendingCost">₱0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Actions -->
+    <section class="actions-section">
+      <div class="action-buttons">
+        <button class="btn btn-primary" id="addMaintenanceBtn">
+          <i class="fas fa-plus-circle"></i> New Maintenance Record
+        </button>
+        <button class="btn btn-success" id="scheduleMaintenanceBtn">
+          <i class="fas fa-calendar-plus"></i> Schedule Maintenance
+        </button>
+        <button class="btn btn-info" id="exportMaintenanceBtn">
+          <i class="fas fa-download"></i> Export Report
+        </button>
+        <button class="btn btn-warning" id="maintenanceAlertsBtn">
+          <i class="fas fa-bell"></i> Alerts
+          <span class="badge" id="alertBadge" style="display: none;">0</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Filters -->
+    <section class="filters-section">
+      <div class="filters-row">
+        <div class="filter-group">
+          <input type="text" id="searchInput" placeholder="Search unit, service type, or notes..." class="filter-input">
+        </div>
+        <div class="filter-group">
+          <select id="statusFilter" class="filter-select">
+            <option value="all">All Status</option>
+            <option value="completed">Completed</option>
+            <option value="in-progress">In Progress</option>
+            <option value="pending">Pending</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select id="typeFilter" class="filter-select">
+            <option value="all">All Service Types</option>
+            <option value="routine">Routine Maintenance</option>
+            <option value="repair">Repair</option>
+            <option value="emergency">Emergency</option>
+            <option value="inspection">Inspection</option>
+            <option value="oil-change">Oil Change</option>
+            <option value="tire">Tire Service</option>
+            <option value="engine">Engine Service</option>
+            <option value="brake">Brake Service</option>
+            <option value="electrical">Electrical</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select id="unitFilter" class="filter-select">
+            <option value="">All Transport Units</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- Date Filter Row -->
+      <div class="filters-row date-filters-row">
+        <div class="filter-group">
+          <label for="dateRangeFilter" class="filter-label">Date Range:</label>
+          <select id="dateRangeFilter" class="filter-select" style="width: auto;">
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="this_week">This Week</option>
+            <option value="last_week">Last Week</option>
+            <option value="this_month">This Month</option>
+            <option value="last_month">Last Month</option>
+            <option value="this_quarter">This Quarter</option>
+            <option value="last_quarter">Last Quarter</option>
+            <option value="this_year">This Year</option>
+            <option value="last_year">Last Year</option>
+            <option value="custom">Custom Range</option>
+          </select>
+        </div>
+        
+        <div class="filter-group custom-date-range" id="customDateRange" style="display: none;">
+          <input type="date" id="startDate" class="filter-input" style="width: 150px;">
+          <span style="margin: 0 5px;">to</span>
+          <input type="date" id="endDate" class="filter-input" style="width: 150px;">
+          <button id="applyDateFilter" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+        
+        <div class="filter-group">
+          <button id="refreshDataBtn" class="btn btn-sm btn-info">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Analytics Dashboard -->
+    <section class="analytics-section" id="analyticsSection">
+      <div class="analytics-header">
+        <h3>Maintenance Analytics</h3>
+        <button id="toggleAnalyticsBtn" class="btn btn-sm btn-secondary">
+          <i class="fas fa-chart-line"></i> Hide
+        </button>
+      </div>
+      
+      <div class="analytics-grid">
+        <!-- Cost by Type Chart -->
+        <div class="chart-card">
+          <h4>Cost by Service Type</h4>
+          <canvas id="costByTypeChart" height="200"></canvas>
+        </div>
+        
+        <!-- Monthly Trend Chart -->
+        <div class="chart-card">
+          <h4>Monthly Maintenance Cost</h4>
+          <canvas id="monthlyTrendChart" height="200"></canvas>
+        </div>
+        
+        <!-- Status Distribution -->
+        <div class="chart-card">
+          <h4>Status Distribution</h4>
+          <canvas id="statusChart" height="200"></canvas>
+        </div>
+        
+        <!-- Top Units by Maintenance -->
+        <div class="chart-card">
+          <h4>Top Units by Maintenance Cost</h4>
+          <div class="top-units-list" id="topUnitsList">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Maintenance Schedule Alerts -->
+    <section class="alerts-section" id="alertsSection" style="display: none;">
+      <div class="alerts-header">
+        <h3><i class="fas fa-bell"></i> Maintenance Alerts</h3>
+        <button id="closeAlertsBtn" class="btn btn-sm btn-secondary">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="alerts-list" id="alertsList">
+        <!-- Alerts will be populated here -->
+      </div>
+    </section>
+
+    <!-- Maintenance Records Table -->
+    <section class="records-section">
+      <div class="table-header">
+        <h3>Maintenance Records</h3>
+        <div class="table-actions">
+          <span class="record-count" id="recordCount">0 records</span>
+        </div>
+      </div>
+      
+      <div class="table-responsive">
+        <table class="maintenance-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Transport Unit</th>
+              <th>Plate Number</th>
+              <th>Service Type</th>
+              <th>Description</th>
+              <th>Cost (₱)</th>
+              <th>Status</th>
+              <th>Mechanic/Shop</th>
+              <th>Next Due</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="maintenanceTableBody">
+            <tr>
+              <td colspan="10" class="text-center">Loading maintenance records...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- Pagination -->
+      <div class="pagination" id="pagination">
+        <button class="page-btn" id="prevPage" disabled>Previous</button>
+        <span class="page-info" id="pageInfo">Page 1 of 1</span>
+        <button class="page-btn" id="nextPage" disabled>Next</button>
+      </div>
+    </section>
+
+  </main>
+
+</div>
+
+<!-- Add/Edit Maintenance Modal -->
+<div id="maintenanceModal" class="modal">
+  <div class="modal-content large-modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">New Maintenance Record</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="maintenanceForm">
+      <input type="hidden" id="recordId" name="recordId">
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label for="maintenanceDate">Date *</label>
+          <input type="date" id="maintenanceDate" name="date" required>
+        </div>
+
+        <div class="form-group">
+          <label for="transportUnit">Transport Unit *</label>
+          <select id="transportUnit" name="unitId" required>
+            <option value="">— Select Transport Unit —</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="serviceType">Service Type *</label>
+          <select id="serviceType" name="serviceType" required>
+            <option value="">— Select Type —</option>
+            <option value="routine">Routine Maintenance</option>
+            <option value="repair">Repair</option>
+            <option value="emergency">Emergency</option>
+            <option value="inspection">Inspection</option>
+            <option value="oil-change">Oil Change</option>
+            <option value="tire">Tire Service</option>
+            <option value="engine">Engine Service</option>
+            <option value="brake">Brake Service</option>
+            <option value="electrical">Electrical</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="maintenanceStatus">Status *</label>
+          <select id="maintenanceStatus" name="status" required>
+            <option value="pending">Pending</option>
+            <option value="in-progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="description">Description *</label>
+        <textarea id="description" name="description" rows="3" required 
+                  placeholder="Detailed description of maintenance work..."></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="cost">Cost (₱) *</label>
+          <input type="number" id="cost" name="cost" step="0.01" min="0" required placeholder="0.00">
+        </div>
+
+        <div class="form-group">
+          <label for="mechanic">Mechanic/Shop</label>
+          <input type="text" id="mechanic" name="mechanic" placeholder="e.g., Shell Auto Service">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="odometerReading">Odometer Reading (km)</label>
+          <input type="number" id="odometerReading" name="odometerReading" min="0" placeholder="e.g., 50000">
+        </div>
+
+        <div class="form-group">
+          <label for="nextDueDate">Next Due Date</label>
+          <input type="date" id="nextDueDate" name="nextDueDate">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="nextDueOdometer">Next Due Odometer (km)</label>
+          <input type="number" id="nextDueOdometer" name="nextDueOdometer" min="0" placeholder="e.g., 55000">
+        </div>
+
+        <div class="form-group">
+          <label for="attachments">Attachments</label>
+          <input type="file" id="attachments" name="attachments" multiple accept=".pdf,.jpg,.jpeg,.png">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="notes">Additional Notes</label>
+        <textarea id="notes" name="notes" rows="2" 
+                  placeholder="Any additional information..."></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary" id="saveMaintenanceBtn">Save Record</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Schedule Maintenance Modal -->
+<div id="scheduleModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Schedule Maintenance</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="scheduleForm">
+      <div class="form-group">
+        <label for="scheduleUnit">Transport Unit *</label>
+        <select id="scheduleUnit" name="unitId" required>
+          <option value="">— Select Transport Unit —</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="scheduleType">Service Type *</label>
+        <select id="scheduleType" name="serviceType" required>
+          <option value="">— Select Type —</option>
+          <option value="routine">Routine Maintenance</option>
+          <option value="inspection">Inspection</option>
+          <option value="oil-change">Oil Change</option>
+          <option value="tire">Tire Service</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="scheduledDate">Scheduled Date *</label>
+          <input type="date" id="scheduledDate" name="scheduledDate" required>
+        </div>
+
+        <div class="form-group">
+          <label for="scheduledTime">Preferred Time</label>
+          <input type="time" id="scheduledTime" name="scheduledTime">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="scheduleNotes">Notes</label>
+        <textarea id="scheduleNotes" name="notes" rows="2" 
+                  placeholder="Any special instructions..."></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary">Schedule</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- View Details Modal -->
+<div id="detailsModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Maintenance Details</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <div class="details-container" id="detailsContainer">
+      <!-- Details will be populated dynamically -->
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn-secondary close-btn">Close</button>
+      <button class="btn-primary" id="editFromDetailsBtn">Edit Record</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transactions_maintenance.js') }}"></script>
+
+</body>
+</html>

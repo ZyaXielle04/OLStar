@@ -1,0 +1,35 @@
+{
+  "-OnjMorfldws7DtKBj-6": {
+    "amount": 300.0,
+    "cardId": "-OnjKgRY2G1cSSwgXyjh",
+    "cardNumber": "asdfasdfasdf",
+    "newBalance": 100.0,
+    "note": "",
+    "oldBalance": 400.0,
+    "plateNumber": "",
+    "reference": "",
+    "timestamp": 1773542526444,
+    "tollPlaza": "",
+    "type": "subtract",
+    "userEmail": "zyacodesservices@gmail.com",
+    "userId": "Tjx5mdSOy5XjV7ji6nyzm5LCHt62"
+  },
+  "-OnjNGqkJQBICg4bAliJ": {
+    "cardId": "-OnjKk1IJn2V1uKR3ZU3",
+    "cardNumber": "fdsafdsafdsa",
+    "note": "RFID card deleted from system",
+    "timestamp": 1773542645168,
+    "type": "card_deleted",
+    "userEmail": "zyacodesservices@gmail.com",
+    "userId": "Tjx5mdSOy5XjV7ji6nyzm5LCHt62"
+  },
+  "-OnjNHVjcLs7kMrqtlvM": {
+    "cardId": "-OnjKgRY2G1cSSwgXyjh",
+    "cardNumber": "asdfasdfasdf",
+    "note": "RFID card deleted from system",
+    "timestamp": 1773542647855,
+    "type": "card_deleted",
+    "userEmail": "zyacodesservices@gmail.com",
+    "userId": "Tjx5mdSOy5XjV7ji6nyzm5LCHt62"
+  }
+}

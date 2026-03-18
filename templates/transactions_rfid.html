@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>OLStar | RFID Balance Management</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/transactions_rfid.css') }}">
+  
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>Admin Panel</h2>
+    </div>
+
+    <nav class="nav">
+      <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+      <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+      <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link">Transport Units</a>
+
+      <!-- Operations (exposed) -->
+      <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
+      <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link">Track Drivers</a>
+      
+      <!-- Transactions Dropdown using details/summary (works without JS) -->
+      <details class="nav-group" open>
+          <summary>
+              <span>Transactions</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-gas-pump"></i> Gas Transactions
+              </a>
+              <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink active">
+                  <i class="fas fa-id-card"></i> RFID Transactions
+              </a>
+              <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-tools"></i> Maintenance
+              </a>
+          </div>
+      </details>
+
+      <!-- General Ledger Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>General Ledger</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gl_overview') }}" class="nav-sublink">
+                  <i class="fas fa-chart-pie" style="color:yellow;"></i> Overview
+              </a>
+              <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink">
+                  <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary
+              </a>
+              <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink">
+                  <i class="fas fa-truck" style="color:green;"></i> Drivers Salary
+              </a>
+              <a href="{{ url_for('pages.gl_advances') }}" class="nav-sublink">
+                  <i class="fas fa-hand-holding-usd" style="color:orange;"></i> Advances
+              </a>
+              <a href="{{ url_for('pages.gl_deductions') }}" class="nav-sublink">
+                  <i class="fas fa-minus-circle" style="color:red;"></i> Deductions
+              </a>
+          </div>
+      </details>
+
+      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="content">
+    <header class="page-header">
+      <button id="btnToggleSidebar" class="hamburger">☰</button>
+      <div class="header-with-badge">
+        <h1>RFID Balance Management</h1>
+        <span class="superadmin-badge">
+          <i class="fas fa-shield-alt"></i> Superadmin Only
+        </span>
+      </div>
+      <p class="subtitle">Track and manage AutoSweep RFID card balances per transport unit</p>
+    </header>
+
+    <!-- Summary Cards -->
+    <section class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-icon blue">
+          <i class="fas fa-id-card"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Total RFID Cards</h3>
+          <div class="summary-value" id="totalCards">—</div>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon green">
+          <i class="fas fa-coins"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Total Balance</h3>
+          <div class="summary-value" id="totalBalance">₱ —</div>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon orange">
+          <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Low Balance (< ₱200)</h3>
+          <div class="summary-value" id="lowBalanceCount">—</div>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon purple">
+          <i class="fas fa-truck"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Assigned Units</h3>
+          <div class="summary-value" id="assignedUnits">—</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Actions -->
+    <section class="actions-section">
+      <div class="action-buttons">
+        <button class="btn btn-primary" id="addNewCardBtn">
+          <i class="fas fa-plus-circle"></i> Add New RFID Card
+        </button>
+        <button class="btn btn-success" id="bulkUpdateBtn">
+          <i class="fas fa-edit"></i> Quick Balance Update
+        </button>
+        <button class="btn btn-info" id="exportDataBtn">
+          <i class="fas fa-download"></i> Export Data
+        </button>
+      </div>
+    </section>
+
+    <!-- Filters -->
+    <section class="filters-section">
+      <div class="filters-row">
+        <div class="filter-group">
+          <input type="text" id="searchInput" placeholder="Search card number or unit..." class="filter-input">
+        </div>
+        <div class="filter-group">
+          <select id="statusFilter" class="filter-select">
+            <option value="all">All Cards</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="low">Low Balance</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select id="unitFilter" class="filter-select">
+            <option value="">All Transport Units</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- Date Filter Row -->
+      <div class="filters-row date-filters-row">
+        <div class="filter-group">
+          <label for="dateRangeFilter" class="filter-label">Date Range:</label>
+          <select id="dateRangeFilter" class="filter-select" style="width: auto;">
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="this_week">This Week</option>
+            <option value="last_week">Last Week</option>
+            <option value="this_month">This Month</option>
+            <option value="last_month">Last Month</option>
+            <option value="this_quarter">This Quarter</option>
+            <option value="last_quarter">Last Quarter</option>
+            <option value="this_year">This Year</option>
+            <option value="last_year">Last Year</option>
+            <option value="custom">Custom Range</option>
+          </select>
+        </div>
+        
+        <div class="filter-group custom-date-range" id="customDateRange" style="display: none;">
+          <input type="date" id="startDate" class="filter-input" style="width: 150px;">
+          <span style="margin: 0 5px;">to</span>
+          <input type="date" id="endDate" class="filter-input" style="width: 150px;">
+          <button id="applyDateFilter" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+        
+        <div class="filter-group">
+          <button id="refreshDataBtn" class="btn btn-sm btn-info">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- History Summary Section -->
+    <section class="history-summary-section" id="historySummarySection" style="display: none;">
+      <div class="summary-header">
+        <h3>Transaction History Summary <span id="summaryPeriod"></span></h3>
+        <button id="hideSummaryBtn" class="btn btn-sm btn-secondary">Hide</button>
+      </div>
+      <div class="summary-cards small">
+        <div class="summary-card">
+          <div class="summary-icon blue">
+            <i class="fas fa-exchange-alt"></i>
+          </div>
+          <div class="summary-details">
+            <h4>Total Transactions</h4>
+            <div class="summary-value" id="totalTransactions">0</div>
+          </div>
+        </div>
+        
+        <div class="summary-card">
+          <div class="summary-icon green">
+            <i class="fas fa-arrow-up"></i>
+          </div>
+          <div class="summary-details">
+            <h4>Total Reloads</h4>
+            <div class="summary-value" id="totalReloads">₱0</div>
+          </div>
+        </div>
+        
+        <div class="summary-card">
+          <div class="summary-icon red">
+            <i class="fas fa-arrow-down"></i>
+          </div>
+          <div class="summary-details">
+            <h4>Total Deductions</h4>
+            <div class="summary-value" id="totalDeductions">₱0</div>
+          </div>
+        </div>
+        
+        <div class="summary-card">
+          <div class="summary-icon purple">
+            <i class="fas fa-chart-line"></i>
+          </div>
+          <div class="summary-details">
+            <h4>Net Change</h4>
+            <div class="summary-value" id="netChange">₱0</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NEW: Transaction History Table -->
+      <div class="history-table-container">
+        <h4 class="history-table-title">
+          <i class="fas fa-list"></i> Filtered Transactions
+          <span class="transaction-count" id="transactionCount"></span>
+        </h4>
+        <div class="table-responsive">
+          <table class="history-table" id="historyTable">
+            <thead>
+              <tr>
+                <th>Date & Time</th>
+                <th>Card Number</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>User</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <tr>
+                <td colspan="6" class="text-center">No transactions found for this period</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- RFID Cards Table -->
+    <section class="cards-table-section">
+      <table class="rfid-table">
+        <thead>
+          <tr>
+            <th>Card Number</th>
+            <th>Transport Unit</th>
+            <th>Plate Number</th>
+            <th>Current Balance</th>
+            <th>Last Updated</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="rfidTableBody">
+          <tr>
+            <td colspan="7" class="text-center">Loading RFID cards...</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+
+</div>
+
+<!-- Add/Edit Card Modal -->
+<div id="cardModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="modalTitle">Add New RFID Card</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="cardForm">
+      <input type="hidden" id="cardId" name="cardId">
+      
+      <div class="form-group">
+        <label for="cardNumber">RFID Card Number *</label>
+        <input type="text" id="cardNumber" name="cardNumber" required 
+               placeholder="e.g., AUTOSWEEP123456789">
+      </div>
+
+      <div class="form-group">
+        <label for="unitSelect">Assign to Transport Unit (Optional)</label>
+        <select id="unitSelect" name="unitId">
+          <option value="">— Unassigned —</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="currentBalance">Current Balance (₱) *</label>
+          <input type="number" id="currentBalance" name="balance" 
+                 step="0.01" min="0" required placeholder="0.00">
+        </div>
+
+        <div class="form-group">
+          <label for="cardStatus">Status</label>
+          <select id="cardStatus" name="status">
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="cardNotes">Notes</label>
+        <textarea id="cardNotes" name="notes" rows="2" 
+                  placeholder="Additional information..."></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary" id="saveCardBtn">Save Card</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Quick Balance Update Modal -->
+<div id="quickBalanceModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Quick Balance Update</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <div id="quickBalanceList" class="quick-balance-list">
+      <!-- Will be populated dynamically -->
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn-primary" id="saveAllBalances">Save All Changes</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script src="{{ url_for('static', filename='js/firebase-config.js') }}"></script>
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transactions_rfid.js') }}"></script>
+
+</body>
+</html>

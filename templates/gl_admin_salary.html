@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>OLStar | Admin Salary</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/gl_admin_salary.css') }}">
+  
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  
+  <!-- Chart.js for analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>Admin Panel</h2>
+    </div>
+
+    <nav class="nav">
+      <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+      <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+      <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link">Transport Units</a>
+
+      <!-- Operations -->
+      <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
+      <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link">Track Drivers</a>
+      
+      <!-- Transactions Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>Transactions</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-gas-pump"></i> Gas Transactions
+              </a>
+              <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-id-card"></i> RFID Transactions
+              </a>
+              <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-tools"></i> Maintenance
+              </a>
+          </div>
+      </details>
+
+      <!-- General Ledger Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>General Ledger</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gl_overview') }}" class="nav-sublink">
+                  <i class="fas fa-chart-pie" style="color:yellow;"></i> Overview
+              </a>
+              <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink active">
+                  <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary
+              </a>
+              <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink">
+                  <i class="fas fa-truck" style="color:green;"></i> Drivers Salary
+              </a>
+              <a href="{{ url_for('pages.gl_advances') }}" class="nav-sublink">
+                  <i class="fas fa-hand-holding-usd" style="color:orange;"></i> Advances
+              </a>
+              <a href="{{ url_for('pages.gl_deductions') }}" class="nav-sublink">
+                  <i class="fas fa-minus-circle" style="color:red;"></i> Deductions
+              </a>
+          </div>
+      </details>
+
+      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="content">
+    <header class="page-header">
+      <button id="btnToggleSidebar" class="hamburger">☰</button>
+      <div class="header-with-badge">
+        <h1>Admin Salary</h1>
+        <span class="superadmin-badge">
+          <i class="fas fa-shield-alt"></i> Superadmin Only
+        </span>
+      </div>
+      <p class="subtitle">Manage and track administrative staff salaries, payments, and payroll</p>
+    </header>
+
+    <!-- Summary Cards -->
+    <section class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-icon blue">
+          <i class="fas fa-users"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Total Staff</h3>
+          <div class="summary-value" id="totalStaff">—</div>
+          <span class="summary-sub">Active administrators</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon green">
+          <i class="fas fa-wallet"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Monthly Payroll</h3>
+          <div class="summary-value" id="monthlyPayroll">—</div>
+          <span class="summary-sub" id="monthlyPayrollPeriod">Current month</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon purple">
+          <i class="fas fa-clock"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Pending Payments</h3>
+          <div class="summary-value" id="pendingPayments">—</div>
+          <span class="summary-sub" id="pendingCount">0 pending</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon orange">
+          <i class="fas fa-chart-line"></i>
+        </div>
+        <div class="summary-details">
+          <h3>YTD Total</h3>
+          <div class="summary-value" id="ytdTotal">—</div>
+          <span class="summary-sub">Year to date</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Actions -->
+    <section class="actions-section">
+      <div class="action-buttons">
+        <button class="btn btn-primary" id="processPayrollBtn">
+          <i class="fas fa-calculator"></i> Process Payroll
+        </button>
+        <button class="btn btn-success" id="addSalaryBtn">
+          <i class="fas fa-plus-circle"></i> Add Salary Record
+        </button>
+        <button class="btn btn-info" id="exportSalaryBtn">
+          <i class="fas fa-download"></i> Export Report
+        </button>
+        <button class="btn btn-secondary" id="generatePayslipBtn">
+          <i class="fas fa-file-pdf"></i> Generate Payslips
+        </button>
+        <button class="btn btn-warning" id="addAdminBtn">
+          <i class="fas fa-user-plus"></i> Add New Admin
+        </button>
+      </div>
+    </section>
+
+    <!-- Filters -->
+    <section class="filters-section">
+      <div class="filters-row">
+        <div class="filter-group">
+          <input type="text" id="searchInput" placeholder="Search by name, position, or department..." class="filter-input">
+        </div>
+        <div class="filter-group">
+          <select id="statusFilter" class="filter-select">
+            <option value="all">All Status</option>
+            <option value="paid">Paid</option>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select id="departmentFilter" class="filter-select">
+            <option value="all">All Departments</option>
+            <option value="operations">Operations</option>
+            <option value="finance">Finance</option>
+            <option value="hr">Human Resources</option>
+            <option value="it">IT</option>
+            <option value="admin">Administration</option>
+            <option value="sales">Sales</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select id="payPeriodFilter" class="filter-select">
+            <option value="all">All Pay Periods</option>
+            <option value="January 2026 - 1st Half">January 2026 - 1st Half</option>
+            <option value="January 2026 - 2nd Half">January 2026 - 2nd Half</option>
+            <option value="February 2026 - 1st Half">February 2026 - 1st Half</option>
+            <option value="February 2026 - 2nd Half">February 2026 - 2nd Half</option>
+            <option value="March 2026 - 1st Half">March 2026 - 1st Half</option>
+            <option value="March 2026 - 2nd Half">March 2026 - 2nd Half</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- Date Filter Row -->
+      <div class="filters-row date-filters-row">
+        <div class="filter-group">
+          <label for="dateRangeFilter" class="filter-label">Payment Date:</label>
+          <select id="dateRangeFilter" class="filter-select" style="width: auto;">
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="this_week">This Week</option>
+            <option value="last_week">Last Week</option>
+            <option value="this_month">This Month</option>
+            <option value="last_month">Last Month</option>
+            <option value="this_quarter">This Quarter</option>
+            <option value="last_quarter">Last Quarter</option>
+            <option value="this_year">This Year</option>
+            <option value="last_year">Last Year</option>
+            <option value="custom">Custom Range</option>
+          </select>
+        </div>
+        
+        <div class="filter-group custom-date-range" id="customDateRange" style="display: none;">
+          <input type="date" id="startDate" class="filter-input" style="width: 150px;">
+          <span style="margin: 0 5px;">to</span>
+          <input type="date" id="endDate" class="filter-input" style="width: 150px;">
+          <button id="applyDateFilter" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+        
+        <div class="filter-group">
+          <button id="refreshDataBtn" class="btn btn-sm btn-info">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Analytics Dashboard -->
+    <section class="analytics-section" id="analyticsSection">
+      <div class="analytics-header">
+        <h3>Salary Analytics</h3>
+        <button id="toggleAnalyticsBtn" class="btn btn-sm btn-secondary">
+          <i class="fas fa-chart-line"></i> Hide
+        </button>
+      </div>
+      
+      <div class="analytics-grid">
+        <!-- Salary by Department Chart -->
+        <div class="chart-card">
+          <h4>Salary by Department</h4>
+          <canvas id="salaryByDeptChart" height="200"></canvas>
+        </div>
+        
+        <!-- Monthly Salary Trend -->
+        <div class="chart-card">
+          <h4>Monthly Salary Trend</h4>
+          <canvas id="monthlyTrendChart" height="200"></canvas>
+        </div>
+        
+        <!-- Payment Status Distribution -->
+        <div class="chart-card">
+          <h4>Payment Status</h4>
+          <canvas id="statusChart" height="200"></canvas>
+        </div>
+        
+        <!-- Top Earners -->
+        <div class="chart-card">
+          <h4>Top Earners</h4>
+          <div class="top-earners-list" id="topEarnersList">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Salary Records Table -->
+    <section class="records-section">
+      <div class="table-header">
+        <h3>Salary Records</h3>
+        <div class="table-actions">
+          <span class="record-count" id="recordCount">0 records</span>
+        </div>
+      </div>
+      
+      <div class="table-responsive">
+        <table class="salary-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Position</th>
+              <th>Department</th>
+              <th>Pay Period</th>
+              <th>Base Salary</th>
+              <th>Earnings</th>
+              <th>Deductions</th>
+              <th>Advances</th>
+              <th>Net Pay</th>
+              <th>Status</th>
+              <th>Payment Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="salaryTableBody">
+            <tr>
+              <td colspan="12" class="text-center">Loading salary records...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- Pagination -->
+      <div class="pagination" id="pagination">
+        <button class="page-btn" id="prevPage" disabled>Previous</button>
+        <span class="page-info" id="pageInfo">Page 1 of 1</span>
+        <button class="page-btn" id="nextPage" disabled>Next</button>
+      </div>
+    </section>
+
+  </main>
+
+</div>
+
+<!-- Add/Edit Salary Modal -->
+<div id="salaryModal" class="modal">
+  <div class="modal-content large-modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">Add Salary Record</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="salaryForm">
+      <input type="hidden" id="recordId" name="recordId">
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label for="employeeId">Employee *</label>
+          <select id="employeeId" name="employeeId" required>
+            <option value="">— Select Employee —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="payPeriod">Pay Period *</label>
+          <select id="payPeriod" name="payPeriod" required>
+            <option value="">— Select Period —</option>
+            <option value="January 2026 - 1st Half">January 2026 - 1st Half (1-15)</option>
+            <option value="January 2026 - 2nd Half">January 2026 - 2nd Half (16-31)</option>
+            <option value="February 2026 - 1st Half">February 2026 - 1st Half (1-15)</option>
+            <option value="February 2026 - 2nd Half">February 2026 - 2nd Half (16-28)</option>
+            <option value="March 2026 - 1st Half">March 2026 - 1st Half (1-15)</option>
+            <option value="March 2026 - 2nd Half">March 2026 - 2nd Half (16-31)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h4>Earnings</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="baseSalary">Base Salary (₱) *</label>
+            <input type="number" id="baseSalary" name="baseSalary" step="0.01" min="0" required placeholder="0.00">
+          </div>
+
+          <div class="form-group">
+            <label for="allowances">Allowances (₱)</label>
+            <input type="number" id="allowances" name="allowances" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="overtimePay">Overtime Pay (₱)</label>
+            <input type="number" id="overtimePay" name="overtimePay" step="0.01" min="0" placeholder="0.00">
+          </div>
+
+          <div class="form-group">
+            <label for="bonus">Bonus (₱)</label>
+            <input type="number" id="bonus" name="bonus" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h4>Deductions</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="taxDeduction">Tax Deduction (₱)</label>
+            <input type="number" id="taxDeduction" name="taxDeduction" step="0.01" min="0" placeholder="0.00">
+          </div>
+
+          <div class="form-group">
+            <label for="sssDeduction">SSS Deduction (₱)</label>
+            <input type="number" id="sssDeduction" name="sssDeduction" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="philhealthDeduction">PhilHealth Deduction (₱)</label>
+            <input type="number" id="philhealthDeduction" name="philhealthDeduction" step="0.01" min="0" placeholder="0.00">
+          </div>
+
+          <div class="form-group">
+            <label for="pagibigDeduction">Pag-IBIG Deduction (₱)</label>
+            <input type="number" id="pagibigDeduction" name="pagibigDeduction" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="loanDeduction">Loan Deduction (₱)</label>
+            <input type="number" id="loanDeduction" name="loanDeduction" step="0.01" min="0" placeholder="0.00">
+          </div>
+
+          <div class="form-group">
+            <label for="otherDeductions">Other Deductions (₱)</label>
+            <input type="number" id="otherDeductions" name="otherDeductions" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h4>Advances</h4>
+        <div class="form-group">
+          <label for="advanceDeduction">Advance Deduction (₱)</label>
+          <input type="number" id="advanceDeduction" name="advanceDeduction" step="0.01" min="0" placeholder="0.00">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="totalEarnings">Total Earnings (₱)</label>
+          <input type="number" id="totalEarnings" name="totalEarnings" step="0.01" min="0" readonly placeholder="Auto-calculated">
+        </div>
+
+        <div class="form-group">
+          <label for="totalDeductions">Total Deductions (₱)</label>
+          <input type="number" id="totalDeductions" name="totalDeductions" step="0.01" min="0" readonly placeholder="Auto-calculated">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="netPay">Net Pay (₱)</label>
+          <input type="number" id="netPay" name="netPay" step="0.01" min="0" readonly placeholder="Auto-calculated">
+        </div>
+
+        <div class="form-group">
+          <label for="paymentStatus">Payment Status *</label>
+          <select id="paymentStatus" name="paymentStatus" required>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="paid">Paid</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="paymentDate">Payment Date</label>
+          <input type="date" id="paymentDate" name="paymentDate">
+        </div>
+
+        <div class="form-group">
+          <label for="paymentMethod">Payment Method</label>
+          <select id="paymentMethod" name="paymentMethod">
+            <option value="">— Select Method —</option>
+            <option value="bank-transfer">Bank Transfer</option>
+            <option value="check">Check</option>
+            <option value="cash">Cash</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="salaryNotes">Notes</label>
+        <textarea id="salaryNotes" name="notes" rows="2" 
+                  placeholder="Additional notes..."></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary" id="saveSalaryBtn">Save Record</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add Admin Modal -->
+<div id="addAdminModal" class="modal">
+  <div class="modal-content large-modal">
+    <div class="modal-header">
+      <h2>Add New Admin</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="addAdminForm">
+      <div class="form-section">
+        <h3>Personal Information</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="adminFullName">Full Name *</label>
+            <input type="text" id="adminFullName" name="fullName" required>
+          </div>
+
+          <div class="form-group">
+            <label for="adminEmail">Email *</label>
+            <input type="email" id="adminEmail" name="email" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="adminPhone">Phone Number</label>
+            <input type="tel" id="adminPhone" name="phone">
+          </div>
+
+          <div class="form-group">
+            <label for="adminHireDate">Hire Date</label>
+            <input type="date" id="adminHireDate" name="hireDate">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="adminAddress">Address</label>
+          <textarea id="adminAddress" name="address" rows="2"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="adminEmergencyContact">Emergency Contact</label>
+          <input type="text" id="adminEmergencyContact" name="emergencyContact" 
+                 placeholder="Name: Phone Number">
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>Employment Details</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="adminPosition">Position *</label>
+            <input type="text" id="adminPosition" name="position" required>
+          </div>
+
+          <div class="form-group">
+            <label for="adminDepartment">Department *</label>
+            <select id="adminDepartment" name="department" required>
+              <option value="operations">Operations</option>
+              <option value="finance">Finance</option>
+              <option value="hr">Human Resources</option>
+              <option value="it">IT</option>
+              <option value="admin">Administration</option>
+              <option value="sales">Sales</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="adminStatus">Status</label>
+            <select id="adminStatus" name="status">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="on-leave">On Leave</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>Pay Rate Configuration</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="rateType">Pay Rate Type *</label>
+            <select id="rateType" name="rateType" required>
+              <option value="daily">Daily Rate</option>
+              <option value="cutoff">Cutoff Rate (1st-15th / 16th-end)</option>
+              <option value="monthly">Monthly Rate</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="effectiveDate">Effective Date *</label>
+            <input type="date" id="effectiveDate" name="effectiveDate" required>
+          </div>
+        </div>
+
+        <div id="dailyRateFields" class="rate-fields">
+          <div class="form-group">
+            <label for="dailyRate">Daily Rate (₱) *</label>
+            <input type="number" id="dailyRate" name="dailyRate" step="0.01" min="0">
+          </div>
+        </div>
+
+        <div id="cutoffRateFields" class="rate-fields" style="display: none;">
+          <div class="form-group">
+            <label for="cutoffRate">Cutoff Rate (₱) *</label>
+            <input type="number" id="cutoffRate" name="cutoffRate" step="0.01" min="0">
+            <small class="form-text">Amount for each cutoff period (1st-15th and 16th-end)</small>
+          </div>
+        </div>
+
+        <div id="monthlyRateFields" class="rate-fields" style="display: none;">
+          <div class="form-group">
+            <label for="monthlyRate">Monthly Rate (₱) *</label>
+            <input type="number" id="monthlyRate" name="monthlyRate" step="0.01" min="0">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary">Add Admin</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Process Payroll Modal -->
+<div id="payrollModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Process Payroll</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="payrollForm">
+      <div class="form-group">
+        <label for="payrollPeriod">Pay Period *</label>
+        <select id="payrollPeriod" name="payrollPeriod" required>
+          <option value="">— Select Period —</option>
+          <option value="January 2026 - 1st Half">January 2026 - 1st Half (1-15)</option>
+          <option value="January 2026 - 2nd Half">January 2026 - 2nd Half (16-31)</option>
+          <option value="February 2026 - 1st Half">February 2026 - 1st Half (1-15)</option>
+          <option value="February 2026 - 2nd Half">February 2026 - 2nd Half (16-28)</option>
+          <option value="March 2026 - 1st Half">March 2026 - 1st Half (1-15)</option>
+          <option value="March 2026 - 2nd Half">March 2026 - 2nd Half (16-31)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="payrollDate">Payment Date *</label>
+        <input type="date" id="payrollDate" name="payrollDate" required>
+      </div>
+
+      <div class="form-group">
+        <label for="payrollMethod">Payment Method *</label>
+        <select id="payrollMethod" name="paymentMethod" required>
+          <option value="bank-transfer">Bank Transfer</option>
+          <option value="check">Check</option>
+          <option value="cash">Cash</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Employees to Process</label>
+        <div class="employee-list" id="employeeList">
+          <!-- Will be populated dynamically -->
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary">Process Payroll</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- View Details Modal -->
+<div id="detailsModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Salary Details</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <div class="details-container" id="detailsContainer">
+      <!-- Details will be populated dynamically -->
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn-secondary close-btn">Close</button>
+      <button class="btn-primary" id="editFromDetailsBtn">Edit Record</button>
+      <button class="btn-success" id="generatePayslipDetailsBtn">Generate Payslip</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin Details Modal -->
+<div id="adminDetailsModal" class="modal">
+  <div class="modal-content large-modal">
+    <div class="modal-header">
+      <h2>Admin Details</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <div class="admin-details-tabs">
+      <button class="tab-btn active" data-tab="info">Information</button>
+      <button class="tab-btn" data-tab="salary">Salary History</button>
+      <button class="tab-btn" data-tab="deductions">Deductions</button>
+      <button class="tab-btn" data-tab="advances">Advances</button>
+    </div>
+    
+    <div id="infoTab" class="tab-content active">
+      <div class="details-container" id="adminInfoContainer">
+        <!-- Admin info will be populated here -->
+      </div>
+    </div>
+    
+    <div id="salaryTab" class="tab-content">
+      <div class="table-responsive">
+        <table class="salary-history-table">
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th>Base Pay</th>
+              <th>Earnings</th>
+              <th>Deductions</th>
+              <th>Advances</th>
+              <th>Net Pay</th>
+              <th>Status</th>
+              <th>Payment Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="salaryHistoryBody">
+            <tr><td colspan="9" class="text-center">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    
+    <div id="deductionsTab" class="tab-content">
+      <div class="table-responsive">
+        <table class="deductions-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Period</th>
+              <th>Description</th>
+              <th>Status</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="deductionsHistoryBody">
+            <tr><td colspan="7" class="text-center">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    
+    <div id="advancesTab" class="tab-content">
+      <div class="table-responsive">
+        <table class="advances-table">
+          <thead>
+            <tr>
+              <th>Amount</th>
+              <th>Date Requested</th>
+              <th>Reason</th>
+              <th>Repayment Period</th>
+              <th>Remaining</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="advancesHistoryBody">
+            <tr><td colspan="7" class="text-center">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn-secondary close-btn">Close</button>
+      <button class="btn-primary" id="editAdminInfoBtn">Edit Information</button>
+      <button class="btn-primary" id="processSalaryFromDetailsBtn">Process Salary</button>
+      <button class="btn-success" id="addDeductionFromDetailsBtn">Add Deduction</button>
+      <button class="btn-warning" id="addAdvanceFromDetailsBtn">Request Advance</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Admin Modal -->
+<div id="editAdminModal" class="modal">
+  <div class="modal-content large-modal">
+    <div class="modal-header">
+      <h2>Edit Admin Information</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="editAdminForm">
+      <input type="hidden" id="editAdminId" name="adminId">
+      
+      <div class="form-section">
+        <h3>Personal Information</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="editAdminFullName">Full Name *</label>
+            <input type="text" id="editAdminFullName" name="fullName" required>
+          </div>
+
+          <div class="form-group">
+            <label for="editAdminEmail">Email *</label>
+            <input type="email" id="editAdminEmail" name="email" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="editAdminPhone">Phone Number</label>
+            <input type="tel" id="editAdminPhone" name="phone">
+          </div>
+
+          <div class="form-group">
+            <label for="editAdminHireDate">Hire Date</label>
+            <input type="date" id="editAdminHireDate" name="hireDate">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="editAdminAddress">Address</label>
+          <textarea id="editAdminAddress" name="address" rows="2"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="editAdminEmergencyContact">Emergency Contact</label>
+          <input type="text" id="editAdminEmergencyContact" name="emergencyContact" 
+                 placeholder="Name: Phone Number">
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>Employment Details</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="editAdminPosition">Position *</label>
+            <input type="text" id="editAdminPosition" name="position" required>
+          </div>
+
+          <div class="form-group">
+            <label for="editAdminDepartment">Department *</label>
+            <select id="editAdminDepartment" name="department" required>
+              <option value="operations">Operations</option>
+              <option value="finance">Finance</option>
+              <option value="hr">Human Resources</option>
+              <option value="it">IT</option>
+              <option value="admin">Administration</option>
+              <option value="sales">Sales</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="editAdminStatus">Status</label>
+            <select id="editAdminStatus" name="status">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="on-leave">On Leave</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>Pay Rate Configuration</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="editRateType">Pay Rate Type *</label>
+            <select id="editRateType" name="rateType" required>
+              <option value="daily">Daily Rate</option>
+              <option value="cutoff">Cutoff Rate (1st-15th / 16th-end)</option>
+              <option value="monthly">Monthly Rate</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="editEffectiveDate">Effective Date *</label>
+            <input type="date" id="editEffectiveDate" name="effectiveDate" required>
+          </div>
+        </div>
+
+        <div id="editDailyRateFields" class="rate-fields">
+          <div class="form-group">
+            <label for="editDailyRate">Daily Rate (₱) *</label>
+            <input type="number" id="editDailyRate" name="dailyRate" step="0.01" min="0">
+          </div>
+        </div>
+
+        <div id="editCutoffRateFields" class="rate-fields" style="display: none;">
+          <div class="form-group">
+            <label for="editCutoffRate">Cutoff Rate (₱) *</label>
+            <input type="number" id="editCutoffRate" name="cutoffRate" step="0.01" min="0">
+            <small class="form-text">Amount for each cutoff period (1st-15th and 16th-end)</small>
+          </div>
+        </div>
+
+        <div id="editMonthlyRateFields" class="rate-fields" style="display: none;">
+          <div class="form-group">
+            <label for="editMonthlyRate">Monthly Rate (₱) *</label>
+            <input type="number" id="editMonthlyRate" name="monthlyRate" step="0.01" min="0">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary">Update Admin</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add Deduction Modal -->
+<div id="addDeductionModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Add Deduction</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="addDeductionForm">
+      <input type="hidden" id="deductionAdminId" name="adminId">
+      
+      <div class="form-group">
+        <label for="deductionType">Deduction Type *</label>
+        <select id="deductionType" name="type" required>
+          <option value="sss">SSS</option>
+          <option value="philhealth">PhilHealth</option>
+          <option value="pagibig">Pag-IBIG</option>
+          <option value="tax">Tax (Withholding)</option>
+          <option value="loan">Loan</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="deductionAmount">Amount (₱) *</label>
+        <input type="number" id="deductionAmount" name="amount" step="0.01" min="0" required>
+      </div>
+
+      <div class="form-group">
+        <label for="deductionPeriod">Period *</label>
+        <select id="deductionPeriod" name="period" required>
+          <option value="">— Select Period —</option>
+          <option value="January 2026 - 1st Half">January 2026 - 1st Half</option>
+          <option value="January 2026 - 2nd Half">January 2026 - 2nd Half</option>
+          <option value="February 2026 - 1st Half">February 2026 - 1st Half</option>
+          <option value="February 2026 - 2nd Half">February 2026 - 2nd Half</option>
+          <option value="March 2026 - 1st Half">March 2026 - 1st Half</option>
+          <option value="March 2026 - 2nd Half">March 2026 - 2nd Half</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="deductionDescription">Description</label>
+        <textarea id="deductionDescription" name="description" rows="2"></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary">Add Deduction</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add Advance Modal -->
+<div id="addAdvanceModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Request Advance</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="addAdvanceForm">
+      <input type="hidden" id="advanceAdminId" name="adminId">
+      
+      <div class="form-group">
+        <label for="advanceAmount">Amount (₱) *</label>
+        <input type="number" id="advanceAmount" name="amount" step="0.01" min="0" required>
+      </div>
+
+      <div class="form-group">
+        <label for="advanceReason">Reason *</label>
+        <textarea id="advanceReason" name="reason" rows="3" required></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="repaymentPeriod">Repayment Period *</label>
+        <select id="repaymentPeriod" name="repaymentPeriod" required>
+          <option value="">— Select Period —</option>
+          <option value="February 2026 - 1st Half">February 2026 - 1st Half</option>
+          <option value="February 2026 - 2nd Half">February 2026 - 2nd Half</option>
+          <option value="March 2026 - 1st Half">March 2026 - 1st Half</option>
+          <option value="March 2026 - 2nd Half">March 2026 - 2nd Half</option>
+          <option value="April 2026 - 1st Half">April 2026 - 1st Half</option>
+          <option value="April 2026 - 2nd Half">April 2026 - 2nd Half</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="repaymentAmount">Repayment Amount per Cutoff (₱)</label>
+        <input type="number" id="repaymentAmount" name="repaymentAmount" step="0.01" min="0">
+        <small class="form-text">Leave empty to auto-calculate based on salary</small>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary">Submit Request</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Generate Payslip Modal -->
+<div id="payslipModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Payslip</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <div class="payslip-container" id="payslipContainer">
+      <!-- Payslip will be generated here -->
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn-secondary close-btn">Close</button>
+      <button class="btn-primary" id="downloadPayslipBtn">
+        <i class="fas fa-download"></i> Download PDF
+      </button>
+      <button class="btn-success" id="emailPayslipBtn">
+        <i class="fas fa-envelope"></i> Email
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
+<script src="{{ url_for('static', filename='js/gl_admin_salary.js') }}"></script>
+
+</body>
+</html>

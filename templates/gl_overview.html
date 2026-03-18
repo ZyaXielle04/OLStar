@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>OLStar | General Ledger Overview</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/gl_overview.css') }}">
+  
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  
+  <!-- Chart.js for analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>Admin Panel</h2>
+    </div>
+
+    <nav class="nav">
+      <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+      <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+      <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link">Transport Units</a>
+
+      <!-- Operations -->
+      <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
+      <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link">Track Drivers</a>
+      
+      <!-- Transactions Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>Transactions</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-gas-pump"></i> Gas Transactions
+              </a>
+              <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-id-card"></i> RFID Transactions
+              </a>
+              <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-tools"></i> Maintenance
+              </a>
+          </div>
+      </details>
+
+      <!-- General Ledger Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>General Ledger</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gl_overview') }}" class="nav-sublink active">
+                  <i class="fas fa-chart-pie" style="color:yellow;"></i> Overview
+              </a>
+              <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink">
+                  <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary
+              </a>
+              <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink">
+                  <i class="fas fa-truck" style="color:green;"></i> Drivers Salary
+              </a>
+              <a href="{{ url_for('pages.gl_advances') }}" class="nav-sublink">
+                  <i class="fas fa-hand-holding-usd" style="color:orange;"></i> Advances
+              </a>
+              <a href="{{ url_for('pages.gl_deductions') }}" class="nav-sublink">
+                  <i class="fas fa-minus-circle" style="color:red;"></i> Deductions
+              </a>
+          </div>
+      </details>
+
+      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="content">
+    <header class="page-header">
+      <button id="btnToggleSidebar" class="hamburger">☰</button>
+      <div class="header-with-badge">
+        <h1>General Ledger Overview</h1>
+        <span class="superadmin-badge">
+          <i class="fas fa-shield-alt"></i> Superadmin Only
+        </span>
+      </div>
+      <p class="subtitle">Complete financial overview of the company</p>
+    </header>
+
+    <!-- Date Range Selector -->
+    <section class="date-range-section">
+      <div class="date-range-container">
+        <div class="date-range-tabs">
+          <button class="date-tab active" data-range="today">Today</button>
+          <button class="date-tab" data-range="week">This Week</button>
+          <button class="date-tab" data-range="month">This Month</button>
+          <button class="date-tab" data-range="quarter">This Quarter</button>
+          <button class="date-tab" data-range="year">This Year</button>
+          <button class="date-tab" data-range="custom">Custom</button>
+        </div>
+        <div class="custom-date-range" id="customDateRange" style="display: none;">
+          <input type="date" id="startDate" class="date-input">
+          <span>to</span>
+          <input type="date" id="endDate" class="date-input">
+          <button id="applyDateRange" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+        <button id="refreshOverviewBtn" class="btn btn-sm btn-info">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+      </div>
+    </section>
+
+    <!-- Net Worth & Gross Income Cards -->
+    <section class="net-worth-section">
+      <div class="net-worth-card primary">
+        <div class="net-worth-icon">
+          <i class="fas fa-chart-line"></i>
+        </div>
+        <div class="net-worth-details">
+          <h3>Gross Income</h3>
+          <div class="net-worth-value" id="grossIncome">₱0</div>
+          <span class="net-worth-period" id="grossIncomePeriod">Current Period</span>
+        </div>
+      </div>
+
+      <div class="net-worth-card success">
+        <div class="net-worth-icon">
+          <i class="fas fa-wallet"></i>
+        </div>
+        <div class="net-worth-details">
+          <h3>Total Expenses</h3>
+          <div class="net-worth-value" id="totalExpenses">₱0</div>
+          <span class="net-worth-period">Salaries + Transactions</span>
+        </div>
+      </div>
+
+      <div class="net-worth-card warning">
+        <div class="net-worth-icon">
+          <i class="fas fa-balance-scale"></i>
+        </div>
+        <div class="net-worth-details">
+          <h3>Net Profit</h3>
+          <div class="net-worth-value" id="netProfit">₱0</div>
+          <span class="net-worth-period" id="netProfitPeriod">Income - Expenses</span>
+        </div>
+      </div>
+
+      <div class="net-worth-card info">
+        <div class="net-worth-icon">
+          <i class="fas fa-piggy-bank"></i>
+        </div>
+        <div class="net-worth-details">
+          <h3>Cash Flow</h3>
+          <div class="net-worth-value" id="cashFlow">₱0</div>
+          <span class="net-worth-period">Net Change</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Income vs Expenses Chart -->
+    <section class="chart-section">
+      <div class="section-header">
+        <h2>Income vs Expenses</h2>
+        <div class="chart-legend">
+          <span class="legend-item income"><i class="fas fa-circle"></i> Income</span>
+          <span class="legend-item expenses"><i class="fas fa-circle"></i> Expenses</span>
+          <span class="legend-item profit"><i class="fas fa-circle"></i> Profit</span>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="incomeExpensesChart" height="300"></canvas>
+      </div>
+    </section>
+
+    <!-- Summary Cards for All Transactions -->
+    <section class="summary-cards">
+      <!-- Income from Trips -->
+      <div class="summary-card income-card">
+        <div class="summary-header">
+          <i class="fas fa-truck"></i>
+          <h3>Driver Income</h3>
+        </div>
+        <div class="summary-body">
+          <div class="summary-row">
+            <span>Total Trips:</span>
+            <span class="summary-value" id="totalTrips">0</span>
+          </div>
+          <div class="summary-row">
+            <span>Gross Income:</span>
+            <span class="summary-value" id="tripIncome">₱0</span>
+          </div>
+          <div class="summary-row">
+            <span>Driver Payout:</span>
+            <span class="summary-value" id="driverPayout">₱0</span>
+          </div>
+          <div class="summary-row total">
+            <span>Net Income:</span>
+            <span class="summary-value" id="tripNetIncome">₱0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Salaries -->
+      <div class="summary-card expense-card">
+        <div class="summary-header">
+          <i class="fas fa-user-tie"></i>
+          <h3>Salaries</h3>
+        </div>
+        <div class="summary-body">
+          <div class="summary-row">
+            <span>Admin Salaries:</span>
+            <span class="summary-value" id="adminSalaries">₱0</span>
+          </div>
+          <div class="summary-row">
+            <span>Driver Salaries:</span>
+            <span class="summary-value" id="driverSalaries">₱0</span>
+          </div>
+          <div class="summary-row total">
+            <span>Total Salaries:</span>
+            <span class="summary-value" id="totalSalaries">₱0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Advances -->
+      <div class="summary-card advance-card">
+        <div class="summary-header">
+          <i class="fas fa-hand-holding-usd"></i>
+          <h3>Advances</h3>
+        </div>
+        <div class="summary-body">
+          <div class="summary-row">
+            <span>Total Advanced:</span>
+            <span class="summary-value" id="totalAdvanced">₱0</span>
+          </div>
+          <div class="summary-row">
+            <span>Paid Back:</span>
+            <span class="summary-value" id="advancePaid">₱0</span>
+          </div>
+          <div class="summary-row">
+            <span>Outstanding:</span>
+            <span class="summary-value" id="advanceOutstanding">₱0</span>
+          </div>
+          <div class="summary-row warning">
+            <span>Pending Requests:</span>
+            <span class="summary-value" id="pendingAdvances">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Deductions -->
+      <div class="summary-card deduction-card">
+        <div class="summary-header">
+          <i class="fas fa-minus-circle"></i>
+          <h3>Deductions</h3>
+        </div>
+        <div class="summary-body">
+          <div class="summary-row">
+            <span>SSS:</span>
+            <span class="summary-value" id="deductionsSSS">₱0</span>
+          </div>
+          <div class="summary-row">
+            <span>PhilHealth:</span>
+            <span class="summary-value" id="deductionsPhilHealth">₱0</span>
+          </div>
+          <div class="summary-row">
+            <span>Pag-IBIG:</span>
+            <span class="summary-value" id="deductionsPagIBIG">₱0</span>
+          </div>
+          <div class="summary-row">
+            <span>Tax:</span>
+            <span class="summary-value" id="deductionsTax">₱0</span>
+          </div>
+          <div class="summary-row total">
+            <span>Total Deductions:</span>
+            <span class="summary-value" id="totalDeductions">₱0</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Transaction Categories -->
+    <section class="categories-section">
+      <div class="section-header">
+        <h2>Transaction Categories</h2>
+      </div>
+      <div class="categories-grid">
+        <!-- Gas Transactions -->
+        <div class="category-card">
+          <div class="category-icon gas">
+            <i class="fas fa-gas-pump"></i>
+          </div>
+          <div class="category-details">
+            <h3>Gas Transactions</h3>
+            <div class="category-amount" id="gasTotal">₱0</div>
+            <div class="category-count" id="gasCount">0 transactions</div>
+          </div>
+        </div>
+
+        <!-- RFID Transactions -->
+        <div class="category-card">
+          <div class="category-icon rfid">
+            <i class="fas fa-id-card"></i>
+          </div>
+          <div class="category-details">
+            <h3>RFID Transactions</h3>
+            <div class="category-amount" id="rfidTotal">₱0</div>
+            <div class="category-count" id="rfidCount">0 transactions</div>
+          </div>
+        </div>
+
+        <!-- Maintenance -->
+        <div class="category-card">
+          <div class="category-icon maintenance">
+            <i class="fas fa-tools"></i>
+          </div>
+          <div class="category-details">
+            <h3>Maintenance</h3>
+            <div class="category-amount" id="maintenanceTotal">₱0</div>
+            <div class="category-count" id="maintenanceCount">0 records</div>
+          </div>
+        </div>
+
+        <!-- Admin Salaries (already in summary) -->
+        <div class="category-card">
+          <div class="category-icon admin">
+            <i class="fas fa-user-tie"></i>
+          </div>
+          <div class="category-details">
+            <h3>Admin Payroll</h3>
+            <div class="category-amount" id="adminPayrollTotal">₱0</div>
+            <div class="category-count" id="adminPayrollCount">0 employees</div>
+          </div>
+        </div>
+
+        <!-- Driver Salaries (already in summary) -->
+        <div class="category-card">
+          <div class="category-icon driver">
+            <i class="fas fa-truck"></i>
+          </div>
+          <div class="category-details">
+            <h3>Driver Payroll</h3>
+            <div class="category-amount" id="driverPayrollTotal">₱0</div>
+            <div class="category-count" id="driverPayrollCount">0 drivers</div>
+          </div>
+        </div>
+
+        <!-- Advances (already in summary) -->
+        <div class="category-card">
+          <div class="category-icon advance">
+            <i class="fas fa-hand-holding-usd"></i>
+          </div>
+          <div class="category-details">
+            <h3>Active Advances</h3>
+            <div class="category-amount" id="activeAdvancesTotal">₱0</div>
+            <div class="category-count" id="activeAdvancesCount">0 advances</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Recent Transactions & Top Performers -->
+    <section class="recent-section">
+      <div class="recent-grid">
+        <!-- Recent Income (Completed Trips) -->
+        <div class="recent-card">
+          <div class="recent-header">
+            <h3>Recent Completed Trips</h3>
+            <a href="{{ url_for('pages.gl_drivers_salary') }}" class="view-all">View All</a>
+          </div>
+          <div class="recent-list" id="recentTripsList">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+
+        <!-- Recent Expenses -->
+        <div class="recent-card">
+          <div class="recent-header">
+            <h3>Recent Expenses</h3>
+            <a href="{{ url_for('pages.gas_transactions') }}" class="view-all">View All</a>
+          </div>
+          <div class="recent-list" id="recentExpensesList">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+
+        <!-- Top Earning Drivers -->
+        <div class="recent-card">
+          <div class="recent-header">
+            <h3>Top Earning Drivers</h3>
+            <a href="{{ url_for('pages.gl_drivers_salary') }}" class="view-all">View All</a>
+          </div>
+          <div class="recent-list" id="topDriversList">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+
+        <!-- Pending Items -->
+        <div class="recent-card">
+          <div class="recent-header">
+            <h3>Pending Items</h3>
+          </div>
+          <div class="recent-list" id="pendingItemsList">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Monthly Breakdown -->
+    <section class="monthly-section">
+      <div class="section-header">
+        <h2>Monthly Breakdown</h2>
+        <select id="yearSelect" class="year-select">
+          <option value="2026">2026</option>
+          <option value="2025">2025</option>
+          <option value="2024">2024</option>
+        </select>
+      </div>
+      <div class="table-responsive">
+        <table class="monthly-table">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Income (Trips)</th>
+              <th>Driver Payout</th>
+              <th>Salaries</th>
+              <th>Expenses</th>
+              <th>Net Profit</th>
+            </tr>
+          </thead>
+          <tbody id="monthlyBreakdownBody">
+            <tr>
+              <td colspan="6" class="text-center">Loading monthly data...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
+<script src="{{ url_for('static', filename='js/gl_overview.js') }}"></script>
+
+</body>
+</html>

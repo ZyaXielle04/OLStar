@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>OLStar | Driver Salary</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/gl_drivers_salary.css') }}">
+  
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  
+  <!-- Chart.js for analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>Admin Panel</h2>
+    </div>
+
+    <nav class="nav">
+      <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+      <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+      <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link">Transport Units</a>
+
+      <!-- Operations -->
+      <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
+      <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link">Track Drivers</a>
+      
+      <!-- Transactions Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>Transactions</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-gas-pump"></i> Gas Transactions
+              </a>
+              <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-id-card"></i> RFID Transactions
+              </a>
+              <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-tools"></i> Maintenance
+              </a>
+          </div>
+      </details>
+
+      <!-- General Ledger Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>General Ledger</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gl_overview') }}" class="nav-sublink">
+                  <i class="fas fa-chart-pie" style="color:yellow;"></i> Overview
+              </a>
+              <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink">
+                  <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary
+              </a>
+              <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink active">
+                  <i class="fas fa-truck" style="color:green;"></i> Drivers Salary
+              </a>
+              <a href="{{ url_for('pages.gl_advances') }}" class="nav-sublink">
+                  <i class="fas fa-hand-holding-usd" style="color:orange;"></i> Advances
+              </a>
+              <a href="{{ url_for('pages.gl_deductions') }}" class="nav-sublink">
+                  <i class="fas fa-minus-circle" style="color:red;"></i> Deductions
+              </a>
+          </div>
+      </details>
+
+      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="content">
+    <header class="page-header">
+      <button id="btnToggleSidebar" class="hamburger">☰</button>
+      <div class="header-with-badge">
+        <h1>Driver Salary</h1>
+        <span class="superadmin-badge">
+          <i class="fas fa-shield-alt"></i> Superadmin Only
+        </span>
+      </div>
+      <p class="subtitle">Manage driver salaries from completed schedules</p>
+    </header>
+
+    <!-- Summary Cards -->
+    <section class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-icon blue">
+          <i class="fas fa-users"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Active Drivers</h3>
+          <div class="summary-value" id="totalDrivers">—</div>
+          <span class="summary-sub">With completed trips</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon green">
+          <i class="fas fa-wallet"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Total Payout (MTD)</h3>
+          <div class="summary-value" id="monthlyPayout">—</div>
+          <span class="summary-sub" id="monthlyPeriod">Current month</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon orange">
+          <i class="fas fa-clock"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Pending Payouts</h3>
+          <div class="summary-value" id="pendingPayouts">—</div>
+          <span class="summary-sub" id="pendingCount">0 pending</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon purple">
+          <i class="fas fa-chart-line"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Completed Trips</h3>
+          <div class="summary-value" id="completedTrips">—</div>
+          <span class="summary-sub">This period</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Actions -->
+    <section class="actions-section">
+      <div class="action-buttons">
+        <button class="btn btn-primary" id="processDriverPayrollBtn">
+          <i class="fas fa-calculator"></i> Process Payroll
+        </button>
+        <button class="btn btn-success" id="addDriverSalaryBtn">
+          <i class="fas fa-plus-circle"></i> Add Salary Record
+        </button>
+        <button class="btn btn-info" id="exportDriverSalaryBtn">
+          <i class="fas fa-download"></i> Export Report
+        </button>
+        <button class="btn btn-warning" id="viewCompletedSchedulesBtn">
+          <i class="fas fa-calendar-check"></i> View Completed Trips
+        </button>
+      </div>
+    </section>
+
+    <!-- Filters -->
+    <section class="filters-section">
+      <div class="filters-row">
+        <div class="filter-group">
+          <input type="text" id="searchInput" placeholder="Search by driver name..." class="filter-input">
+        </div>
+        <div class="filter-group">
+          <select id="statusFilter" class="filter-select">
+            <option value="all">All Status</option>
+            <option value="paid">Paid</option>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select id="driverFilter" class="filter-select">
+            <option value="all">All Drivers</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select id="payPeriodFilter" class="filter-select">
+            <option value="all">All Pay Periods</option>
+            <option value="January 2026 - 1st Half">January 2026 - 1st Half</option>
+            <option value="January 2026 - 2nd Half">January 2026 - 2nd Half</option>
+            <option value="February 2026 - 1st Half">February 2026 - 1st Half</option>
+            <option value="February 2026 - 2nd Half">February 2026 - 2nd Half</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- Date Filter Row -->
+      <div class="filters-row date-filters-row">
+        <div class="filter-group">
+          <label for="dateRangeFilter" class="filter-label">Payment Date:</label>
+          <select id="dateRangeFilter" class="filter-select" style="width: auto;">
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="this_week">This Week</option>
+            <option value="last_week">Last Week</option>
+            <option value="this_month">This Month</option>
+            <option value="last_month">Last Month</option>
+            <option value="this_quarter">This Quarter</option>
+            <option value="last_quarter">Last Quarter</option>
+            <option value="this_year">This Year</option>
+            <option value="last_year">Last Year</option>
+            <option value="custom">Custom Range</option>
+          </select>
+        </div>
+        
+        <div class="filter-group custom-date-range" id="customDateRange" style="display: none;">
+          <input type="date" id="startDate" class="filter-input" style="width: 150px;">
+          <span style="margin: 0 5px;">to</span>
+          <input type="date" id="endDate" class="filter-input" style="width: 150px;">
+          <button id="applyDateFilter" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+        
+        <div class="filter-group">
+          <button id="refreshDataBtn" class="btn btn-sm btn-info">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Analytics Dashboard -->
+    <section class="analytics-section" id="analyticsSection">
+      <div class="analytics-header">
+        <h3>Driver Salary Analytics</h3>
+        <button id="toggleAnalyticsBtn" class="btn btn-sm btn-secondary">
+          <i class="fas fa-chart-line"></i> Hide
+        </button>
+      </div>
+      
+      <div class="analytics-grid">
+        <!-- Top Drivers by Earnings -->
+        <div class="chart-card">
+          <h4>Top Drivers by Earnings</h4>
+          <div class="top-drivers-list" id="topDriversList">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+        
+        <!-- Monthly Payout Trend -->
+        <div class="chart-card">
+          <h4>Monthly Payout Trend</h4>
+          <canvas id="monthlyTrendChart" height="200"></canvas>
+        </div>
+        
+        <!-- Payment Status Distribution -->
+        <div class="chart-card">
+          <h4>Payment Status</h4>
+          <canvas id="statusChart" height="200"></canvas>
+        </div>
+        
+        <!-- Recent Completed Trips -->
+        <div class="chart-card">
+          <h4>Recent Completed Trips</h4>
+          <div class="recent-trips-list" id="recentTripsList">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Driver Salary Records Table -->
+    <section class="records-section">
+      <div class="table-header">
+        <h3>Driver Salary Records</h3>
+        <div class="table-actions">
+          <span class="record-count" id="recordCount">0 records</span>
+        </div>
+      </div>
+      
+      <div class="table-responsive">
+        <table class="salary-table">
+          <thead>
+            <tr>
+              <th>Driver</th>
+              <th>Pay Period</th>
+              <th>Trips</th>
+              <th>Gross Earnings</th>
+              <th>Deductions</th>
+              <th>Advances</th>
+              <th>Net Pay</th>
+              <th>Status</th>
+              <th>Payment Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="salaryTableBody">
+            <tr>
+              <td colspan="10" class="text-center">Loading salary records...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- Pagination -->
+      <div class="pagination" id="pagination">
+        <button class="page-btn" id="prevPage" disabled>Previous</button>
+        <span class="page-info" id="pageInfo">Page 1 of 1</span>
+        <button class="page-btn" id="nextPage" disabled>Next</button>
+      </div>
+    </section>
+
+  </main>
+
+</div>
+
+<!-- Add/Edit Driver Salary Modal -->
+<div id="salaryModal" class="modal">
+  <div class="modal-content large-modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">Add Driver Salary Record</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="salaryForm">
+      <input type="hidden" id="recordId" name="recordId">
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label for="driverId">Driver *</label>
+          <select id="driverId" name="driverId" required>
+            <option value="">— Select Driver —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="payPeriod">Pay Period *</label>
+          <select id="payPeriod" name="payPeriod" required>
+            <option value="">— Select Period —</option>
+            <option value="January 2026 - 1st Half">January 2026 - 1st Half (1-15)</option>
+            <option value="January 2026 - 2nd Half">January 2026 - 2nd Half (16-31)</option>
+            <option value="February 2026 - 1st Half">February 2026 - 1st Half (1-15)</option>
+            <option value="February 2026 - 2nd Half">February 2026 - 2nd Half (16-28)</option>
+            <option value="March 2026 - 1st Half">March 2026 - 1st Half (1-15)</option>
+            <option value="March 2026 - 2nd Half">March 2026 - 2nd Half (16-31)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Completed Trips Selection -->
+      <div class="form-section">
+        <h4>Completed Trips</h4>
+        <div class="trips-selection">
+          <div class="trips-header">
+            <button type="button" class="btn btn-sm btn-primary" id="selectAllTrips">Select All</button>
+            <button type="button" class="btn btn-sm btn-secondary" id="deselectAllTrips">Deselect All</button>
+            <span class="selected-count" id="selectedTripsCount">0 trips selected</span>
+          </div>
+          <div class="trips-list" id="completedTripsList">
+            <!-- Trips will be populated dynamically -->
+            <div class="loading">Loading completed trips...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h4>Earnings Summary</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="totalTrips">Total Trips</label>
+            <input type="number" id="totalTrips" name="totalTrips" readonly>
+          </div>
+
+          <div class="form-group">
+            <label for="grossEarnings">Gross Earnings (₱)</label>
+            <input type="number" id="grossEarnings" name="grossEarnings" step="0.01" readonly>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h4>Deductions</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="taxDeduction">Tax Deduction (₱)</label>
+            <input type="number" id="taxDeduction" name="taxDeduction" step="0.01" min="0" placeholder="0.00">
+          </div>
+
+          <div class="form-group">
+            <label for="sssDeduction">SSS Deduction (₱)</label>
+            <input type="number" id="sssDeduction" name="sssDeduction" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="philhealthDeduction">PhilHealth Deduction (₱)</label>
+            <input type="number" id="philhealthDeduction" name="philhealthDeduction" step="0.01" min="0" placeholder="0.00">
+          </div>
+
+          <div class="form-group">
+            <label for="pagibigDeduction">Pag-IBIG Deduction (₱)</label>
+            <input type="number" id="pagibigDeduction" name="pagibigDeduction" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="loanDeduction">Loan Deduction (₱)</label>
+            <input type="number" id="loanDeduction" name="loanDeduction" step="0.01" min="0" placeholder="0.00">
+          </div>
+
+          <div class="form-group">
+            <label for="otherDeductions">Other Deductions (₱)</label>
+            <input type="number" id="otherDeductions" name="otherDeductions" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h4>Advances</h4>
+        <div class="form-group">
+          <label for="advanceDeduction">Advance Deduction (₱)</label>
+          <input type="number" id="advanceDeduction" name="advanceDeduction" step="0.01" min="0" placeholder="0.00">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="totalDeductions">Total Deductions (₱)</label>
+          <input type="number" id="totalDeductions" name="totalDeductions" step="0.01" readonly placeholder="Auto-calculated">
+        </div>
+
+        <div class="form-group">
+          <label for="netPay">Net Pay (₱)</label>
+          <input type="number" id="netPay" name="netPay" step="0.01" readonly placeholder="Auto-calculated">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="paymentStatus">Payment Status *</label>
+          <select id="paymentStatus" name="paymentStatus" required>
+            <option value="pending">Pending</option>
+            <option value="processing">Processing</option>
+            <option value="paid">Paid</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="paymentDate">Payment Date</label>
+          <input type="date" id="paymentDate" name="paymentDate">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="paymentMethod">Payment Method</label>
+        <select id="paymentMethod" name="paymentMethod">
+          <option value="">— Select Method —</option>
+          <option value="bank-transfer">Bank Transfer</option>
+          <option value="check">Check</option>
+          <option value="cash">Cash</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="salaryNotes">Notes</label>
+        <textarea id="salaryNotes" name="notes" rows="2" 
+                  placeholder="Additional notes..."></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary" id="saveSalaryBtn">Save Record</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- View Completed Schedules Modal -->
+<div id="completedSchedulesModal" class="modal">
+  <div class="modal-content large-modal">
+    <div class="modal-header">
+      <h2>Completed Trips</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <div class="filters-row" style="margin-bottom: 15px;">
+      <div class="filter-group">
+        <input type="text" id="tripSearchInput" placeholder="Search by driver..." class="filter-input">
+      </div>
+      <div class="filter-group">
+        <select id="tripDriverFilter" class="filter-select">
+          <option value="all">All Drivers</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <select id="tripPeriodFilter" class="filter-select">
+          <option value="all">All Periods</option>
+        </select>
+      </div>
+    </div>
+    
+    <div class="table-responsive">
+      <table class="trips-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Driver</th>
+            <th>Client Amount</th>
+            <th>Driver Rate</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="completedTripsTableBody">
+          <tr>
+            <td colspan="7" class="text-center">Loading completed trips...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn-secondary close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- View Details Modal -->
+<div id="detailsModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Salary Details</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <div class="details-container" id="detailsContainer">
+      <!-- Details will be populated dynamically -->
+    </div>
+    
+    <div class="trips-included" id="tripsIncluded" style="display: none;">
+      <h3>Trips Included</h3>
+      <div class="table-responsive">
+        <table class="trips-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Driver Rate</th>
+            </tr>
+          </thead>
+          <tbody id="tripsIncludedBody"></tbody>
+        </table>
+      </div>
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn-secondary close-btn">Close</button>
+      <button class="btn-primary" id="editFromDetailsBtn">Edit Record</button>
+      <button class="btn-success" id="generatePayslipDetailsBtn">Generate Payslip</button>
+    </div>
+  </div>
+</div>
+
+<!-- Generate Payslip Modal -->
+<div id="payslipModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Driver Payslip</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <div class="payslip-container" id="payslipContainer">
+      <!-- Payslip will be generated here -->
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn-secondary close-btn">Close</button>
+      <button class="btn-primary" id="downloadPayslipBtn">
+        <i class="fas fa-download"></i> Download PDF
+      </button>
+      <button class="btn-success" id="emailPayslipBtn">
+        <i class="fas fa-envelope"></i> Email
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
+<script src="{{ url_for('static', filename='js/gl_drivers_salary.js') }}"></script>
+
+</body>
+</html>

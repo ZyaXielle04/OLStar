@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>OLStar | Deductions</title>
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/gl_deductions.css') }}">
+  
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  
+  <!-- Chart.js for analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <h2>Admin Panel</h2>
+    </div>
+
+    <nav class="nav">
+      <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+      <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+      <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link">Transport Units</a>
+
+      <!-- Operations -->
+      <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
+      <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link">Track Drivers</a>
+      
+      <!-- Transactions Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>Transactions</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-gas-pump"></i> Gas Transactions
+              </a>
+              <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-id-card"></i> RFID Transactions
+              </a>
+              <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink">
+                  <i class="fas fa-tools"></i> Maintenance
+              </a>
+          </div>
+      </details>
+
+      <!-- General Ledger Dropdown -->
+      <details class="nav-group" open>
+          <summary>
+              <span>General Ledger</span>
+          </summary>
+          <div class="nav-submenu">
+              <a href="{{ url_for('pages.gl_overview') }}" class="nav-sublink">
+                  <i class="fas fa-chart-pie" style="color:yellow;"></i> Overview
+              </a>
+              <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink">
+                  <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary
+              </a>
+              <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink">
+                  <i class="fas fa-truck" style="color:green;"></i> Drivers Salary
+              </a>
+              <a href="{{ url_for('pages.gl_advances') }}" class="nav-sublink">
+                  <i class="fas fa-hand-holding-usd" style="color:orange;"></i> Advances
+              </a>
+              <a href="{{ url_for('pages.gl_deductions') }}" class="nav-sublink active">
+                  <i class="fas fa-minus-circle" style="color:red;"></i> Deductions
+              </a>
+          </div>
+      </details>
+
+      <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="content">
+    <header class="page-header">
+      <button id="btnToggleSidebar" class="hamburger">☰</button>
+      <div class="header-with-badge">
+        <h1>Deductions Management</h1>
+        <span class="superadmin-badge">
+          <i class="fas fa-shield-alt"></i> Superadmin Only
+        </span>
+      </div>
+      <p class="subtitle">Manage employee deductions (SSS, PhilHealth, Pag-IBIG, Tax, Loans, etc.)</p>
+    </header>
+
+    <!-- Summary Cards -->
+    <section class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-icon blue">
+          <i class="fas fa-calculator"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Total Deductions</h3>
+          <div class="summary-value" id="totalDeductions">—</div>
+          <span class="summary-sub">Current period</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon green">
+          <i class="fas fa-percent"></i>
+        </div>
+        <div class="summary-details">
+          <h3>SSS</h3>
+          <div class="summary-value" id="sssTotal">—</div>
+          <span class="summary-sub" id="sssCount">0 employees</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon purple">
+          <i class="fas fa-heartbeat"></i>
+        </div>
+        <div class="summary-details">
+          <h3>PhilHealth</h3>
+          <div class="summary-value" id="philhealthTotal">—</div>
+          <span class="summary-sub" id="philhealthCount">0 employees</span>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon orange">
+          <i class="fas fa-home"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Pag-IBIG</h3>
+          <div class="summary-value" id="pagibigTotal">—</div>
+          <span class="summary-sub" id="pagibigCount">0 employees</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Actions -->
+    <section class="actions-section">
+      <div class="action-buttons">
+        <button class="btn btn-primary" id="addDeductionBtn">
+          <i class="fas fa-plus-circle"></i> Add Deduction
+        </button>
+        <button class="btn btn-success" id="bulkDeductionBtn">
+          <i class="fas fa-layer-group"></i> Bulk Add
+        </button>
+        <button class="btn btn-info" id="exportDeductionsBtn">
+          <i class="fas fa-download"></i> Export Report
+        </button>
+        <button class="btn btn-warning" id="calculateDeductionsBtn">
+          <i class="fas fa-calculator"></i> Calculate All
+        </button>
+      </div>
+    </section>
+
+    <!-- Filters -->
+    <section class="filters-section">
+      <div class="filters-row">
+        <div class="filter-group">
+          <input type="text" id="searchInput" placeholder="Search by employee, type..." class="filter-input">
+        </div>
+        <div class="filter-group">
+          <select id="typeFilter" class="filter-select">
+            <option value="all">All Types</option>
+            <option value="sss">SSS</option>
+            <option value="philhealth">PhilHealth</option>
+            <option value="pagibig">Pag-IBIG</option>
+            <option value="tax">Tax</option>
+            <option value="loan">Loan</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select id="employeeFilter" class="filter-select">
+            <option value="all">All Employees</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select id="periodFilter" class="filter-select">
+            <option value="all">All Periods</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- Date Filter Row -->
+      <div class="filters-row date-filters-row">
+        <div class="filter-group">
+          <label for="dateRangeFilter" class="filter-label">Deduction Date:</label>
+          <select id="dateRangeFilter" class="filter-select" style="width: auto;">
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="this_week">This Week</option>
+            <option value="last_week">Last Week</option>
+            <option value="this_month">This Month</option>
+            <option value="last_month">Last Month</option>
+            <option value="this_quarter">This Quarter</option>
+            <option value="last_quarter">Last Quarter</option>
+            <option value="this_year">This Year</option>
+            <option value="last_year">Last Year</option>
+            <option value="custom">Custom Range</option>
+          </select>
+        </div>
+        
+        <div class="filter-group custom-date-range" id="customDateRange" style="display: none;">
+          <input type="date" id="startDate" class="filter-input" style="width: 150px;">
+          <span style="margin: 0 5px;">to</span>
+          <input type="date" id="endDate" class="filter-input" style="width: 150px;">
+          <button id="applyDateFilter" class="btn btn-sm btn-primary">Apply</button>
+        </div>
+        
+        <div class="filter-group">
+          <button id="refreshDataBtn" class="btn btn-sm btn-info">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Analytics Dashboard -->
+    <section class="analytics-section" id="analyticsSection">
+      <div class="analytics-header">
+        <h3>Deductions Analytics</h3>
+        <button id="toggleAnalyticsBtn" class="btn btn-sm btn-secondary">
+          <i class="fas fa-chart-line"></i> Hide
+        </button>
+      </div>
+      
+      <div class="analytics-grid">
+        <!-- Deductions by Type Chart -->
+        <div class="chart-card">
+          <h4>Deductions by Type</h4>
+          <canvas id="typeChart" height="200"></canvas>
+        </div>
+        
+        <!-- Monthly Deductions Trend -->
+        <div class="chart-card">
+          <h4>Monthly Deductions Trend</h4>
+          <canvas id="monthlyTrendChart" height="200"></canvas>
+        </div>
+        
+        <!-- Deductions by Department -->
+        <div class="chart-card">
+          <h4>Deductions by Department</h4>
+          <canvas id="departmentChart" height="200"></canvas>
+        </div>
+        
+        <!-- Top Deductions -->
+        <div class="chart-card">
+          <h4>Top Individual Deductions</h4>
+          <div class="top-deductions-list" id="topDeductionsList">
+            <div class="loading">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Deductions Table -->
+    <section class="records-section">
+      <div class="table-header">
+        <h3>Deduction Records</h3>
+        <div class="table-actions">
+          <span class="record-count" id="recordCount">0 records</span>
+        </div>
+      </div>
+      
+      <div class="table-responsive">
+        <table class="deductions-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Department</th>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Period</th>
+              <th>Description</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Linked To</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="deductionsTableBody">
+            <tr>
+              <td colspan="10" class="text-center">Loading deduction records...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- Pagination -->
+      <div class="pagination" id="pagination">
+        <button class="page-btn" id="prevPage" disabled>Previous</button>
+        <span class="page-info" id="pageInfo">Page 1 of 1</span>
+        <button class="page-btn" id="nextPage" disabled>Next</button>
+      </div>
+    </section>
+
+  </main>
+
+</div>
+
+<!-- Add Deduction Modal -->
+<div id="addDeductionModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Add Deduction</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="addDeductionForm">
+      <div class="form-group">
+        <label for="deductionEmployeeId">Employee *</label>
+        <select id="deductionEmployeeId" name="employeeId" required>
+          <option value="">— Select Employee —</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="deductionType">Deduction Type *</label>
+          <select id="deductionType" name="type" required>
+            <option value="">— Select Type —</option>
+            <option value="sss">SSS</option>
+            <option value="philhealth">PhilHealth</option>
+            <option value="pagibig">Pag-IBIG</option>
+            <option value="tax">Tax (Withholding)</option>
+            <option value="loan">Loan</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="deductionAmount">Amount (₱) *</label>
+          <input type="number" id="deductionAmount" name="amount" step="0.01" min="0" required>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="deductionPeriod">Period *</label>
+          <select id="deductionPeriod" name="period" required>
+            <option value="">— Select Period —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="deductionDate">Date *</label>
+          <input type="date" id="deductionDate" name="date" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="deductionDescription">Description</label>
+        <textarea id="deductionDescription" name="description" rows="2" 
+                  placeholder="Additional details about the deduction..."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="deductionLinkedTo">Linked To (Salary Record/Advance)</label>
+        <input type="text" id="deductionLinkedTo" name="linkedTo" 
+               placeholder="Salary record ID or Advance ID">
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary">Add Deduction</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Bulk Add Deduction Modal -->
+<div id="bulkDeductionModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Bulk Add Deductions</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <form id="bulkDeductionForm">
+      <div class="form-group">
+        <label for="bulkType">Deduction Type *</label>
+        <select id="bulkType" name="type" required>
+          <option value="">— Select Type —</option>
+          <option value="sss">SSS</option>
+          <option value="philhealth">PhilHealth</option>
+          <option value="pagibig">Pag-IBIG</option>
+          <option value="tax">Tax (Withholding)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="bulkPeriod">Period *</label>
+        <select id="bulkPeriod" name="period" required>
+          <option value="">— Select Period —</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="bulkDate">Date *</label>
+        <input type="date" id="bulkDate" name="date" required>
+      </div>
+
+      <div class="form-group">
+        <label>Select Employees</label>
+        <div class="employee-checklist" id="employeeChecklist">
+          <!-- Will be populated dynamically -->
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="bulkAmount">Amount (if fixed)</label>
+        <input type="number" id="bulkAmount" name="fixedAmount" step="0.01" min="0" 
+               placeholder="Leave empty to use employee's standard rate">
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary">Apply to Selected</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- View Details Modal -->
+<div id="detailsModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Deduction Details</h2>
+      <span class="close-modal">&times;</span>
+    </div>
+    
+    <div class="details-container" id="detailsContainer">
+      <!-- Details will be populated dynamically -->
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn-secondary close-btn">Close</button>
+      <button class="btn-primary" id="editDeductionBtn">Edit</button>
+      <button class="btn-danger" id="deleteDeductionBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
+<script src="{{ url_for('static', filename='js/gl_deductions.js') }}"></script>
+
+</body>
+</html>
