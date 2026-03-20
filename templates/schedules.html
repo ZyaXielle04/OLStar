@@ -37,7 +37,7 @@
           <!-- Transactions Dropdown using details/summary (works without JS) -->
           <details class="nav-group" open>
             <summary>
-                <span>Transactions</span>
+                <span>Expenses</span>
             </summary>
             <div class="nav-submenu">
                 <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">
@@ -55,11 +55,11 @@
           <!-- General Ledger Dropdown -->
           <details class="nav-group" open>
               <summary>
-                  <span>General Ledger</span>
+                  <span>Accounting</span>
               </summary>
               <div class="nav-submenu">
                   <a href="{{ url_for('pages.gl_overview') }}" class="nav-sublink">
-                      <i class="fas fa-chart-pie" style="color:yellow;"></i> Overview
+                      <i class="fas fa-chart-pie" style="color:yellow;"></i> General Ledger
                   </a>
                   <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink">
                       <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary

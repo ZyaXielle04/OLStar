@@ -50,21 +50,21 @@ def bookings_track_drivers():
 
 @pages_bp.route("/admin/transactions/gas")
 @login_required
-@superadmin_required
+@admin_required
 def gas_transactions():
     """Gas Transactions"""
     return render_template("transactions_gas.html")
 
 @pages_bp.route("/admin/transactions/rfid")
 @login_required
-@superadmin_required  # Since it has the superadmin badge
+@admin_required
 def rfid_transactions():
     """RFID Balance Management page - Superadmin only"""
     return render_template("transactions_rfid.html")
 
 @pages_bp.route("/admin/transactions/maintenance")
 @login_required
-@superadmin_required
+@admin_required
 def maintenance_transactions():
     """Maintenance Transactions - Superadmin only"""
     return render_template("transactions_maintenance.html")
@@ -78,14 +78,14 @@ def gl_overview():
 
 @pages_bp.route("/admin/transactions/gl-admin-salary")
 @login_required
-@superadmin_required
+@admin_required
 def gl_admin_salary():
     """Admin Salary - Superadmin only"""
     return render_template("gl_admin_salary.html")
 
 @pages_bp.route("/admin/transactions/gl-drivers-salary")
 @login_required
-@superadmin_required
+@admin_required
 def gl_drivers_salary():
     """Drivers Salary - Superadmin only"""
     return render_template("gl_drivers_salary.html")
