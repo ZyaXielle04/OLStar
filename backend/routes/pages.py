@@ -90,20 +90,6 @@ def gl_drivers_salary():
     """Drivers Salary - Superadmin only"""
     return render_template("gl_drivers_salary.html")
 
-@pages_bp.route("/admin/transactions/gl-advances")
-@login_required
-@superadmin_required
-def gl_advances():
-    """Advances - Superadmin only"""
-    return render_template("gl_advances.html")
-
-@pages_bp.route("/admin/transactions/gl-deductions")
-@login_required
-@superadmin_required
-def gl_deductions():
-    """Deductions - Superadmin only"""
-    return render_template("gl_deductions.html")
-
 @pages_bp.route("/admin/settings")
 @login_required
 @admin_required
