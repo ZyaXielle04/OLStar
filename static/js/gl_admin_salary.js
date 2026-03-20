@@ -1,683 +1,963 @@
-// General Ledger - Admin Salary JavaScript
-
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize the page
-    loadEmployees();
-    loadSalaryRecords();
-    loadCharts();
-    setupEventListeners();
-    updateSummaryCards();
-});
-
-// Global variables
+// ==================== Global Variables ====================
 let currentPage = 1;
 let totalPages = 1;
-let salaryRecords = [];
-let employees = [];
-let charts = {};
+let currentDTR = {
+    adminId: null,
+    cutoff: null,
+    entries: {},
+    dailyRate: 560, // Default daily rate for 8 hours
+    hourlyRate: 70, // 70 per hour
+    otRate: 14, // 20% of hourly rate = ₱14 per hour
+    nightDiffRate: 10, // ₱10 per hour for night differential
+    otherAdvances: {
+        totalUtang: 0,
+        totalPaid: 0,
+        balanceUtang: 0,
+        transactions: {}
+    }
+};
 let currentAdminId = null;
 
-// Setup event listeners
+// ==================== Document Ready ====================
+document.addEventListener('DOMContentLoaded', function() {
+    initializePage();
+});
+
+function initializePage() {
+    loadEmployees();
+    loadCutoffs();
+    loadDTRRecords();
+    loadSummary();
+    setupEventListeners();
+}
+
+// ==================== Event Listeners ====================
 function setupEventListeners() {
     // Toggle sidebar
-    const toggleBtn = document.getElementById('btnToggleSidebar');
-    if (toggleBtn) {
-        toggleBtn.addEventListener('click', toggleSidebar);
-    }
-
-    // Filter events
-    document.getElementById('searchInput')?.addEventListener('input', debounce(loadSalaryRecords, 500));
-    document.getElementById('statusFilter')?.addEventListener('change', loadSalaryRecords);
-    document.getElementById('departmentFilter')?.addEventListener('change', loadSalaryRecords);
-    document.getElementById('payPeriodFilter')?.addEventListener('change', loadSalaryRecords);
-    document.getElementById('dateRangeFilter')?.addEventListener('change', handleDateRangeChange);
-    document.getElementById('applyDateFilter')?.addEventListener('click', loadSalaryRecords);
-    document.getElementById('refreshDataBtn')?.addEventListener('click', refreshData);
-
+    document.getElementById('btnToggleSidebar')?.addEventListener('click', toggleSidebar);
+    
     // Action buttons
-    document.getElementById('processPayrollBtn')?.addEventListener('click', openPayrollModal);
-    document.getElementById('addSalaryBtn')?.addEventListener('click', () => openSalaryModal());
-    document.getElementById('exportSalaryBtn')?.addEventListener('click', exportReport);
-    document.getElementById('generatePayslipBtn')?.addEventListener('click', generateBulkPayslips);
-    document.getElementById('toggleAnalyticsBtn')?.addEventListener('click', toggleAnalytics);
+    document.getElementById('newDTRBtn')?.addEventListener('click', openDTRModal);
+    document.getElementById('batchApproveBtn')?.addEventListener('click', batchApprove);
+    document.getElementById('exportCutoffBtn')?.addEventListener('click', exportCutoff);
+    document.getElementById('refreshBtn')?.addEventListener('click', refreshData);
     document.getElementById('addAdminBtn')?.addEventListener('click', openAddAdminModal);
-
-    // Pagination
-    document.getElementById('prevPage')?.addEventListener('click', () => changePage('prev'));
-    document.getElementById('nextPage')?.addEventListener('click', () => changePage('next'));
-
+    document.getElementById('manageAdminsBtn')?.addEventListener('click', openManageAdminsModal);
+    document.getElementById('confirmDeleteBtn')?.addEventListener('click', confirmDeleteAdmin);
+    
+    // Filters
+    document.getElementById('employeeFilter')?.addEventListener('change', loadDTRRecords);
+    document.getElementById('cutoffFilter')?.addEventListener('change', loadDTRRecords);
+    document.getElementById('statusFilter')?.addEventListener('change', loadDTRRecords);
+    
+    // Select all checkbox
+    document.getElementById('selectAll')?.addEventListener('change', toggleSelectAll);
+    
     // Modal close buttons
     document.querySelectorAll('.close-modal, .cancel-btn, .close-btn').forEach(btn => {
         btn.addEventListener('click', closeAllModals);
     });
-
-    document.getElementById('employeeId')?.addEventListener('change', function() {
-        // Only fetch if modal is open and period is selected
-        const modal = document.getElementById('salaryModal');
-        if (modal.style.display === 'block') {
-            fetchPendingForSalary();
-        }
-    });
-
-    document.getElementById('payPeriod')?.addEventListener('change', function() {
-        // Only fetch if modal is open and employee is selected
-        const modal = document.getElementById('salaryModal');
-        if (modal.style.display === 'block') {
-            fetchPendingForSalary();
-        }
-    });
-
-    const originalOpenSalaryModal = openSalaryModal;
-    openSalaryModal = function(recordId = null) {
-        originalOpenSalaryModal(recordId);
-        if (!recordId) {
-            // Small delay to ensure DOM is updated
-            setTimeout(() => {
-                fetchPendingForSalary();
-            }, 100);
-        }
-    };
-
-    // Forms
-    document.getElementById('salaryForm')?.addEventListener('submit', saveSalaryRecord);
-    document.getElementById('payrollForm')?.addEventListener('submit', processPayroll);
-    document.getElementById('addAdminForm')?.addEventListener('submit', saveAdmin);
-    document.getElementById('addDeductionForm')?.addEventListener('submit', saveDeduction);
-    document.getElementById('addAdvanceForm')?.addEventListener('submit', saveAdvance);
-    document.getElementById('editAdminForm')?.addEventListener('submit', updateAdmin);
     
-    // Calculate net pay on input change
-    ['baseSalary', 'allowances', 'overtimePay', 'bonus', 'taxDeduction', 
-     'sssDeduction', 'philhealthDeduction', 'pagibigDeduction', 'loanDeduction', 
-     'otherDeductions', 'advanceDeduction'].forEach(id => {
-        document.getElementById(id)?.addEventListener('input', calculateTotals);
+    // Form submission
+    document.getElementById('dtrForm')?.addEventListener('submit', saveDTR);
+    document.getElementById('addAdminForm')?.addEventListener('submit', saveAdmin);
+    document.getElementById('editAdminForm')?.addEventListener('submit', updateAdmin);
+    document.getElementById('utangForm')?.addEventListener('submit', saveUtangTransaction);
+    
+    // Calculate button
+    document.getElementById('calculateBtn')?.addEventListener('click', calculateAll);
+    
+    // Employee selection change
+    document.getElementById('employeeId')?.addEventListener('change', loadEmployeeRates);
+    document.getElementById('cutoffSelect')?.addEventListener('change', generateDTRGrid);
+    
+    // Deduction inputs
+    ['sssDeduction', 'philhealthDeduction', 'pagibigDeduction', 'otherDeductions'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', calculateNetTotal);
     });
-
-    // Rate type change
+    
+    // Utang buttons
+    document.getElementById('addUtangBtn')?.addEventListener('click', () => openUtangModal('utang'));
+    document.getElementById('addPaymentBtn')?.addEventListener('click', () => openUtangModal('payment'));
+    
+    // Approve/Paid buttons
+    document.getElementById('approveBtn')?.addEventListener('click', approveDTR);
+    document.getElementById('markPaidBtn')?.addEventListener('click', markAsPaid);
+    
+    // Pagination
+    document.getElementById('prevPage')?.addEventListener('click', () => changePage('prev'));
+    document.getElementById('nextPage')?.addEventListener('click', () => changePage('next'));
+    
+    // Rate type change in add admin
     document.getElementById('rateType')?.addEventListener('change', handleRateTypeChange);
     document.getElementById('editRateType')?.addEventListener('change', handleEditRateTypeChange);
-
-    // Tab buttons
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const tab = this.dataset.tab;
-            switchTab(tab);
-        });
-    });
-
-    // Details buttons
-    document.getElementById('editFromDetailsBtn')?.addEventListener('click', editFromDetails);
-    document.getElementById('generatePayslipDetailsBtn')?.addEventListener('click', generatePayslipFromDetails);
-    document.getElementById('processSalaryFromDetailsBtn')?.addEventListener('click', processSalaryFromDetails);
-    document.getElementById('addDeductionFromDetailsBtn')?.addEventListener('click', addDeductionFromDetails);
-    document.getElementById('addAdvanceFromDetailsBtn')?.addEventListener('click', addAdvanceFromDetails);
-    document.getElementById('downloadPayslipBtn')?.addEventListener('click', downloadPayslip);
-    document.getElementById('emailPayslipBtn')?.addEventListener('click', emailPayslip);
     
     // Admin edit button
     document.getElementById('editAdminInfoBtn')?.addEventListener('click', openEditAdminModal);
+
+    setupCutoffListener();
 }
 
-// Toggle sidebar
+// ==================== Sidebar ====================
 function toggleSidebar() {
     document.querySelector('.sidebar').classList.toggle('collapsed');
     document.querySelector('.content').classList.toggle('expanded');
 }
 
-// Fetch pending deductions and advances for an employee
-function fetchPendingDeductionsAndAdvances(employeeId, period) {
-    return Promise.all([
-        fetch(`/api/admin-salary/pending-deductions/${employeeId}?period=${encodeURIComponent(period)}`).then(res => res.json()),
-        fetch(`/api/admin-salary/pending-advances/${employeeId}?period=${encodeURIComponent(period)}`).then(res => res.json())
-    ]);
-}
-
-function fetchPendingForSalary() {
-    const employeeId = document.getElementById('employeeId').value;
-    const period = document.getElementById('payPeriod').value;
-    
-    if (!employeeId || !period) {
-        return; // Don't fetch if either is missing
-    }
-    
-    // Show loading
-    Swal.fire({
-        title: 'Loading pending deductions and advances...',
-        text: 'Please wait',
-        allowOutsideClick: false,
-        didOpen: () => {
-            Swal.showLoading();
-        }
-    });
-    
-    // Fetch pending deductions and advances
-    fetchPendingDeductionsAndAdvances(employeeId, period)
-        .then(([deductionsData, advancesData]) => {
-            Swal.close();
-            
-            if (deductionsData.success) {
-                const deductions = deductionsData.data;
-                // Auto-fill deduction fields
-                document.getElementById('taxDeduction').value = deductions.tax || 0;
-                document.getElementById('sssDeduction').value = deductions.sss || 0;
-                document.getElementById('philhealthDeduction').value = deductions.philhealth || 0;
-                document.getElementById('pagibigDeduction').value = deductions.pagibig || 0;
-                document.getElementById('loanDeduction').value = deductions.loan || 0;
-                document.getElementById('otherDeductions').value = deductions.other || 0;
-            }
-            
-            if (advancesData.success) {
-                // Auto-fill advance deduction
-                document.getElementById('advanceDeduction').value = advancesData.data.totalAdvance || 0;
-            }
-            
-            // Recalculate totals
-            calculateTotals();
-            
-            // Show summary if there are any pending items
-            let message = '';
-            if (deductionsData.success && deductionsData.data.total > 0) {
-                message += `Total pending deductions: ₱${deductionsData.data.total.toLocaleString()}\n`;
-            }
-            if (advancesData.success && advancesData.data.totalAdvance > 0) {
-                message += `Total advance repayment: ₱${advancesData.data.totalAdvance.toLocaleString()}`;
-            }
-            
-            if (message) {
-                Swal.fire({
-                    icon: 'info',
-                    title: 'Pending Deductions & Advances',
-                    text: message,
-                    timer: 3000,
-                    showConfirmButton: true
-                });
-            }
-        })
-        .catch(error => {
-            Swal.close();
-            console.error('Error fetching pending data:', error);
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: 'Failed to load pending deductions and advances.'
-            });
-        });
-}
-
-// Debounce function for search input
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-// Handle date range change
-function handleDateRangeChange() {
-    const range = document.getElementById('dateRangeFilter').value;
-    const customRange = document.getElementById('customDateRange');
-    
-    if (range === 'custom') {
-        customRange.style.display = 'flex';
-    } else {
-        customRange.style.display = 'none';
-        loadSalaryRecords();
-    }
-}
-
-// Handle rate type change
-function handleRateTypeChange() {
-    const rateType = document.getElementById('rateType').value;
-    
-    document.getElementById('dailyRateFields').style.display = 'none';
-    document.getElementById('cutoffRateFields').style.display = 'none';
-    document.getElementById('monthlyRateFields').style.display = 'none';
-    
-    if (rateType === 'daily') {
-        document.getElementById('dailyRateFields').style.display = 'block';
-        document.getElementById('dailyRate').required = true;
-        document.getElementById('cutoffRate').required = false;
-        document.getElementById('monthlyRate').required = false;
-    } else if (rateType === 'cutoff') {
-        document.getElementById('cutoffRateFields').style.display = 'block';
-        document.getElementById('dailyRate').required = false;
-        document.getElementById('cutoffRate').required = true;
-        document.getElementById('monthlyRate').required = false;
-    } else if (rateType === 'monthly') {
-        document.getElementById('monthlyRateFields').style.display = 'block';
-        document.getElementById('dailyRate').required = false;
-        document.getElementById('cutoffRate').required = false;
-        document.getElementById('monthlyRate').required = true;
-    }
-}
-
-// Handle edit rate type change
-function handleEditRateTypeChange() {
-    const rateType = document.getElementById('editRateType').value;
-    
-    document.getElementById('editDailyRateFields').style.display = 'none';
-    document.getElementById('editCutoffRateFields').style.display = 'none';
-    document.getElementById('editMonthlyRateFields').style.display = 'none';
-    
-    if (rateType === 'daily') {
-        document.getElementById('editDailyRateFields').style.display = 'block';
-        document.getElementById('editDailyRate').required = true;
-        document.getElementById('editCutoffRate').required = false;
-        document.getElementById('editMonthlyRate').required = false;
-    } else if (rateType === 'cutoff') {
-        document.getElementById('editCutoffRateFields').style.display = 'block';
-        document.getElementById('editDailyRate').required = false;
-        document.getElementById('editCutoffRate').required = true;
-        document.getElementById('editMonthlyRate').required = false;
-    } else if (rateType === 'monthly') {
-        document.getElementById('editMonthlyRateFields').style.display = 'block';
-        document.getElementById('editDailyRate').required = false;
-        document.getElementById('editCutoffRate').required = false;
-        document.getElementById('editMonthlyRate').required = true;
-    }
-}
-
-// Switch tabs in admin details modal
-function switchTab(tab) {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-    
-    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-    document.getElementById(`${tab}Tab`).classList.add('active');
-}
-
-// Load employees from API
+// ==================== Data Loading ====================
 function loadEmployees() {
-    showLoading();
-    
     fetch('/api/admin-salary/employees')
-        .then(response => response.json())
+        .then(res => res.json())
         .then(data => {
             if (data.success) {
-                employees = data.data;
-                populateEmployeeSelects();
-            } else {
-                console.error('Failed to load employees:', data.error);
+                const employeeSelect = document.getElementById('employeeId');
+                const employeeFilter = document.getElementById('employeeFilter');
+                
+                employeeSelect.innerHTML = '<option value="">— Select Employee —</option>';
+                employeeFilter.innerHTML = '<option value="all">All Employees</option>';
+                
+                data.data.forEach(emp => {
+                    if (emp.status === 'active') {
+                        employeeSelect.innerHTML += `<option value="${emp.id}">${emp.name} - ${emp.position}</option>`;
+                        employeeFilter.innerHTML += `<option value="${emp.id}">${emp.name}</option>`;
+                    }
+                });
             }
-        })
-        .catch(error => {
-            console.error('Error loading employees:', error);
-        })
-        .finally(() => {
-            hideLoading();
         });
 }
 
-// Populate employee selects
-function populateEmployeeSelects() {
-    const employeeSelect = document.getElementById('employeeId');
-    const employeeList = document.getElementById('employeeList');
-    
-    if (employeeSelect) {
-        employeeSelect.innerHTML = '<option value="">— Select Employee —</option>';
-        employees.forEach(emp => {
-            employeeSelect.innerHTML += `<option value="${emp.id}">${emp.name} - ${emp.position}</option>`;
-        });
-    }
-    
-    if (employeeList) {
-        employeeList.innerHTML = '';
-        employees.forEach(emp => {
-            if (emp.status === 'active') {
-                employeeList.innerHTML += `
-                    <div class="employee-item">
-                        <input type="checkbox" id="emp_${emp.id}" value="${emp.id}" checked>
-                        <div class="employee-info">
-                            <span class="employee-name">${emp.name}</span>
-                            <span class="employee-position">${emp.position}</span>
-                        </div>
-                        <span class="employee-salary">₱${emp.baseSalary.toLocaleString()}</span>
-                    </div>
-                `;
+function loadCutoffs() {
+    fetch('/api/admin-salary/cutoffs')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const cutoffSelect = document.getElementById('cutoffSelect');
+                const cutoffFilter = document.getElementById('cutoffFilter');
+                
+                cutoffSelect.innerHTML = '<option value="">— Select Cutoff —</option>';
+                cutoffFilter.innerHTML = '<option value="all">All Cutoffs</option>';
+                
+                const periods = Array.isArray(data.data) ? data.data : [data.data];
+                
+                periods.forEach(period => {
+                    if (period['1st_half']) {
+                        cutoffSelect.innerHTML += `<option value="${period['1st_half'].name}">${period['1st_half'].name}</option>`;
+                        cutoffFilter.innerHTML += `<option value="${period['1st_half'].name}">${period['1st_half'].name}</option>`;
+                    }
+                    if (period['2nd_half']) {
+                        cutoffSelect.innerHTML += `<option value="${period['2nd_half'].name}">${period['2nd_half'].name}</option>`;
+                        cutoffFilter.innerHTML += `<option value="${period['2nd_half'].name}">${period['2nd_half'].name}</option>`;
+                    }
+                });
             }
         });
-    }
 }
 
-// Load salary records
-function loadSalaryRecords() {
-    showLoading();
+function loadDTRRecords() {
+    const employee = document.getElementById('employeeFilter').value;
+    const cutoff = document.getElementById('cutoffFilter').value;
+    const status = document.getElementById('statusFilter').value;
     
-    // Build query parameters
     const params = new URLSearchParams({
-        search: document.getElementById('searchInput')?.value || '',
-        status: document.getElementById('statusFilter')?.value || 'all',
-        department: document.getElementById('departmentFilter')?.value || 'all',
-        payPeriod: document.getElementById('payPeriodFilter')?.value || 'all',
-        dateRange: document.getElementById('dateRangeFilter')?.value || 'all',
-        startDate: document.getElementById('startDate')?.value || '',
-        endDate: document.getElementById('endDate')?.value || '',
+        adminId: employee,
+        cutoff: cutoff,
+        status: status,
         page: currentPage,
         limit: 10
     });
     
     fetch(`/api/admin-salary/records?${params.toString()}`)
-        .then(response => response.json())
+        .then(res => res.json())
         .then(data => {
             if (data.success) {
-                salaryRecords = data.data;
+                renderDTRTable(data.data);
                 totalPages = data.total_pages;
-                renderSalaryTable(salaryRecords);
                 updatePagination();
-                updateRecordCount(data.total);
-                updateCharts(salaryRecords);
-            } else {
-                console.error('Failed to load records:', data.error);
+                document.getElementById('recordCount').textContent = `${data.total} records`;
             }
-        })
-        .catch(error => {
-            console.error('Error loading records:', error);
-        })
-        .finally(() => {
-            hideLoading();
         });
 }
 
-// Render salary table
-function renderSalaryTable(records) {
-    const tbody = document.getElementById('salaryTableBody');
+function loadSummary() {
+    fetch('/api/admin-salary/summary')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('activeEmployees').textContent = data.data.activeEmployees;
+                document.getElementById('pendingApproval').textContent = data.data.pendingApproval;
+                document.getElementById('pendingPayment').textContent = data.data.pendingPayment;
+                document.getElementById('currentPayroll').textContent = `₱${data.data.currentPayroll.toLocaleString()}`;
+                document.getElementById('currentCutoff').textContent = data.data.currentCutoff;
+            }
+        });
+}
+
+function loadEmployeeRates() {
+    const adminId = document.getElementById('employeeId').value;
+    if (!adminId) return;
+    
+    fetch(`/api/admin-salary/employees/${adminId}/rates`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                currentDTR.adminId = adminId;
+                currentDTR.dailyRate = data.data.dailyRate || 560;
+                currentDTR.hourlyRate = data.data.hourlyRate || 70;
+                currentDTR.otRate = 14;
+                currentDTR.nightDiffRate = 10;
+                
+                // Store employee deduction values
+                currentDTR.employeeSSS = data.data.sss || 0;
+                currentDTR.employeePhilhealth = data.data.philhealth || 0;
+                currentDTR.employeePagibig = data.data.pagibig || 0;
+                
+                console.log('Rates loaded:', {
+                    dailyRate: currentDTR.dailyRate,
+                    hourlyRate: currentDTR.hourlyRate,
+                    otRate: currentDTR.otRate,
+                    nightDiffRate: currentDTR.nightDiffRate,
+                    sss: currentDTR.employeeSSS,
+                    philhealth: currentDTR.employeePhilhealth,
+                    pagibig: currentDTR.employeePagibig
+                });
+                
+                // Check if current cutoff is 2nd half to apply deductions
+                const cutoffValue = document.getElementById('cutoffSelect').value;
+                if (cutoffValue && isSecondHalfCutoff(cutoffValue)) {
+                    // Apply deductions for 2nd cutoff
+                    document.getElementById('sssDeduction').value = currentDTR.employeeSSS;
+                    document.getElementById('philhealthDeduction').value = currentDTR.employeePhilhealth;
+                    document.getElementById('pagibigDeduction').value = currentDTR.employeePagibig;
+                } else {
+                    // Set to 0 for 1st cutoff
+                    document.getElementById('sssDeduction').value = 0;
+                    document.getElementById('philhealthDeduction').value = 0;
+                    document.getElementById('pagibigDeduction').value = 0;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error loading employee rates:', error);
+        });
+}
+
+// ==================== Time Calculation Functions ====================
+
+function parseTime(timeStr) {
+    if (!timeStr) return null;
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return { hours, minutes, totalMinutes: hours * 60 + minutes };
+}
+
+function calculateHours(startTime, endTime) {
+    if (!startTime || !endTime) return 0;
+    
+    const start = parseTime(startTime);
+    const end = parseTime(endTime);
+    
+    if (!start || !end) return 0;
+    
+    let minutes = end.totalMinutes - start.totalMinutes;
+    
+    // Handle overnight shifts (end time is next day)
+    if (minutes < 0) {
+        minutes += 24 * 60;
+    }
+    
+    return minutes / 60;
+}
+
+function calculateOT(startTime, endTime) {
+    const hours = calculateHours(startTime, endTime);
+    
+    // Standard work day is 8 hours
+    // OT is any hours beyond 8
+    if (hours > 8) {
+        const otHours = hours - 8;
+        return Math.round(otHours * 10) / 10;
+    }
+    return 0;
+}
+
+function calculateNightDiff(startTime, endTime) {
+    if (!startTime || !endTime) return 0;
+    
+    const start = parseTime(startTime);
+    const end = parseTime(endTime);
+    
+    if (!start || !end) return 0;
+    
+    // Night differential hours: 10:00 PM (22:00) to 6:00 AM
+    const NIGHT_START = 22; // 10 PM
+    const NIGHT_END = 6; // 6 AM
+    
+    let startHour = start.hours;
+    let startMinute = start.minutes;
+    let endHour = end.hours;
+    let endMinute = end.minutes;
+    
+    // Convert to decimal hours
+    let startDecimal = startHour + startMinute / 60;
+    let endDecimal = endHour + endMinute / 60;
+    
+    // Handle overnight shifts
+    if (endDecimal <= startDecimal) {
+        endDecimal += 24;
+    }
+    
+    let nightDiffHours = 0;
+    
+    // Check each hour segment
+    for (let hour = Math.floor(startDecimal); hour < Math.ceil(endDecimal); hour++) {
+        let currentHour = hour % 24;
+        
+        // Check if this hour falls within night diff period (10 PM to 6 AM)
+        if (currentHour >= NIGHT_START || currentHour < NIGHT_END) {
+            // Calculate overlap with this hour
+            let segmentStart = Math.max(startDecimal, hour);
+            let segmentEnd = Math.min(endDecimal, hour + 1);
+            if (segmentEnd > segmentStart) {
+                nightDiffHours += (segmentEnd - segmentStart);
+            }
+        }
+    }
+    
+    return Math.round(nightDiffHours * 10) / 10;
+}
+
+// ==================== DTR Grid ====================
+function generateDTRGrid() {
+    const cutoff = document.getElementById('cutoffSelect').value;
+    if (!cutoff) return;
+    
+    currentDTR.cutoff = cutoff;
+    
+    // Parse cutoff to get dates
+    const cutoffParts = cutoff.split(' - ');
+    const monthYear = cutoffParts[0].split(' ');
+    const month = monthYear[0];
+    const year = parseInt(monthYear[1]);
+    const period = cutoffParts[1];
+    
+    let startDay = 1;
+    let endDay = 15;
+    
+    if (period === '2nd Half') {
+        startDay = 16;
+        const lastDay = new Date(year, getMonthNumber(month) + 1, 0).getDate();
+        endDay = lastDay;
+    }
+    
+    // Update deduction fields based on cutoff
+    if (currentDTR.adminId) {
+        if (isSecondHalfCutoff(cutoff)) {
+            // Apply deductions for 2nd cutoff
+            document.getElementById('sssDeduction').value = currentDTR.employeeSSS || 0;
+            document.getElementById('philhealthDeduction').value = currentDTR.employeePhilhealth || 0;
+            document.getElementById('pagibigDeduction').value = currentDTR.employeePagibig || 0;
+        } else {
+            // Set to 0 for 1st cutoff
+            document.getElementById('sssDeduction').value = 0;
+            document.getElementById('philhealthDeduction').value = 0;
+            document.getElementById('pagibigDeduction').value = 0;
+        }
+        calculateNetTotal();
+    }
+    
+    // Generate grid rows
+    const tbody = document.getElementById('dtrGridBody');
+    let html = '';
+    
+    for (let day = startDay; day <= endDay; day++) {
+        const date = `${year}-${String(getMonthNumber(month) + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dayName = new Date(date).toLocaleDateString('en-US', { weekday: 'short' });
+        
+        const entry = currentDTR.entries[date] || {};
+        
+        html += `
+            <tr data-date="${date}">
+                <td>${month} ${day}, ${year}</td>
+                <td>${dayName}</td>
+                <td><input type="time" class="time-in" value="${entry.timeIn || ''}" onchange="updateDTRRow('${date}')"></td>
+                <td><input type="time" class="time-out" value="${entry.timeOut || ''}" onchange="updateDTRRow('${date}')"></td>
+                <td><input type="number" class="ot-hours" step="0.5" min="0" value="${entry.ot || 0}" readonly style="background-color:#f0f0f0;"></td>
+                <td><input type="number" class="night-diff" step="0.5" min="0" value="${entry.nightDiff || 0}" readonly style="background-color:#f0f0f0;"></td>
+                <td><input type="number" class="advance" step="0.01" min="0" value="${entry.advance || 0}" onchange="updateDTRRow('${date}')"></td>
+                <td>
+                    <select class="status" onchange="updateDTRRow('${date}')">
+                        <option value="present" ${entry.status === 'present' ? 'selected' : ''}>Present</option>
+                        <option value="absent" ${entry.status === 'absent' ? 'selected' : ''}>Absent</option>
+                        <option value="leave" ${entry.status === 'leave' ? 'selected' : ''}>Leave</option>
+                        <option value="holiday" ${entry.status === 'holiday' ? 'selected' : ''}>Holiday</option>
+                    </select>
+                </td>
+                <td><button type="button" class="btn-sm btn-danger" onclick="clearDTRRow('${date}')"><i class="fas fa-times"></i></button></td>
+            </tr>
+        `;
+    }
+    
+    tbody.innerHTML = html;
+}
+
+function updateDTRRow(date) {
+    const row = document.querySelector(`tr[data-date="${date}"]`);
+    if (!row) return;
+    
+    const timeIn = row.querySelector('.time-in')?.value || '';
+    const timeOut = row.querySelector('.time-out')?.value || '';
+    const status = row.querySelector('.status')?.value || 'present';
+    
+    let ot = 0;
+    let nightDiff = 0;
+    
+    if (status === 'present' && timeIn && timeOut) {
+        ot = calculateOT(timeIn, timeOut);
+        nightDiff = calculateNightDiff(timeIn, timeOut);
+        
+        // Calculate the daily gross for debugging
+        const totalHours = calculateHours(timeIn, timeOut);
+        const regularHours = Math.min(totalHours, 8);
+        const regularPay = regularHours * currentDTR.hourlyRate;
+        const otPay = ot * currentDTR.otRate;
+        const nightDiffPay = nightDiff * currentDTR.nightDiffRate;
+        const dailyGross = regularPay + otPay + nightDiffPay;
+        
+        console.log(`Day ${date}:`, {
+            timeIn, timeOut,
+            totalHours: totalHours.toFixed(1),
+            regularHours: regularHours,
+            regularPay: regularPay,
+            ot: ot,
+            otPay: otPay,
+            nightDiff: nightDiff,
+            nightDiffPay: nightDiffPay,
+            dailyGross: dailyGross
+        });
+        
+        // Update the input fields with calculated values
+        row.querySelector('.ot-hours').value = ot;
+        row.querySelector('.night-diff').value = nightDiff;
+    } else {
+        row.querySelector('.ot-hours').value = 0;
+        row.querySelector('.night-diff').value = 0;
+    }
+    
+    const advance = parseFloat(row.querySelector('.advance')?.value) || 0;
+    
+    currentDTR.entries[date] = {
+        date: date,
+        timeIn: timeIn,
+        timeOut: timeOut,
+        ot: ot,
+        nightDiff: nightDiff,
+        advance: advance,
+        status: status
+    };
+    
+    calculateTotals();
+}
+
+function clearDTRRow(date) {
+    const row = document.querySelector(`tr[data-date="${date}"]`);
+    if (!row) return;
+    
+    row.querySelector('.time-in').value = '';
+    row.querySelector('.time-out').value = '';
+    row.querySelector('.ot-hours').value = 0;
+    row.querySelector('.night-diff').value = 0;
+    row.querySelector('.advance').value = 0;
+    row.querySelector('.status').value = 'present';
+    
+    delete currentDTR.entries[date];
+    calculateTotals();
+}
+
+function calculateTotals() {
+    let totalOT = 0;
+    let totalNightDiff = 0;
+    let totalAdvances = 0;
+    
+    Object.values(currentDTR.entries).forEach(entry => {
+        if (entry.status === 'present') {
+            totalOT += entry.ot || 0;
+            totalNightDiff += entry.nightDiff || 0;
+            totalAdvances += entry.advance || 0;
+        }
+    });
+    
+    document.getElementById('totalOT').textContent = totalOT.toFixed(1);
+    document.getElementById('totalNightDiff').textContent = totalNightDiff.toFixed(1);
+    document.getElementById('totalAdvances').textContent = `₱${totalAdvances.toLocaleString()}`;
+    document.getElementById('advancesTotal').textContent = `₱${totalAdvances.toLocaleString()}`;
+    
+    calculateGrossSalary();
+}
+
+function calculateGrossSalary() {
+    let totalRegularPay = 0;
+    let totalOTPay = 0;
+    let totalNightDiffPay = 0;
+    
+    Object.values(currentDTR.entries).forEach(entry => {
+        if (entry.status === 'present') {
+            const totalHours = entry.timeIn && entry.timeOut ? calculateHours(entry.timeIn, entry.timeOut) : 8;
+            const regularHours = Math.min(totalHours, 8);
+            const regularPay = regularHours * currentDTR.hourlyRate;
+            const otPay = (entry.ot || 0) * currentDTR.otRate;
+            const nightDiffPay = (entry.nightDiff || 0) * currentDTR.nightDiffRate;
+            
+            totalRegularPay += regularPay;
+            totalOTPay += otPay;
+            totalNightDiffPay += nightDiffPay;
+        }
+    });
+    
+    const grossSalary = totalRegularPay + totalOTPay + totalNightDiffPay;
+    
+    console.log('Salary Summary:', {
+        totalRegularPay: totalRegularPay,
+        totalOTPay: totalOTPay,
+        totalNightDiffPay: totalNightDiffPay,
+        grossSalary: grossSalary
+    });
+    
+    document.getElementById('grossSalary').textContent = `₱${grossSalary.toLocaleString()}`;
+    
+    calculateNetTotal();
+}
+
+function calculateNetTotal() {
+    const grossText = document.getElementById('grossSalary').textContent;
+    const gross = parseFloat(grossText.replace('₱', '').replace(/,/g, '')) || 0;
+    
+    const advances = parseFloat(document.getElementById('advancesTotal').textContent.replace('₱', '').replace(/,/g, '')) || 0;
+    const otherDeductions = parseFloat(document.getElementById('otherDeductions').value) || 0;
+    const sss = parseFloat(document.getElementById('sssDeduction').value) || 0;
+    const philhealth = parseFloat(document.getElementById('philhealthDeduction').value) || 0;
+    const pagibig = parseFloat(document.getElementById('pagibigDeduction').value) || 0;
+    
+    const totalDeductions = advances + otherDeductions + sss + philhealth + pagibig;
+    const netTotal = gross - totalDeductions;
+    
+    document.getElementById('netTotal').textContent = `₱${netTotal.toLocaleString()}`;
+}
+
+function calculateAll() {
+    // Trigger recalculation for all rows
+    Object.keys(currentDTR.entries).forEach(date => {
+        updateDTRRow(date);
+    });
+    
+    Swal.fire({
+        icon: 'success',
+        title: 'Calculated',
+        text: 'Salary calculations updated',
+        timer: 1500,
+        showConfirmButton: false
+    });
+}
+
+// ==================== DTR CRUD ====================
+function openDTRModal(recordId = null) {
+    const modal = document.getElementById('dtrModal');
+    
+    if (!recordId) {
+        document.getElementById('modalTitle').textContent = 'New DTR Record';
+        document.getElementById('dtrForm').reset();
+        document.getElementById('recordId').value = '';
+        document.getElementById('approveBtn').style.display = 'none';
+        document.getElementById('markPaidBtn').style.display = 'none';
+        document.getElementById('saveDTRBtn').style.display = 'inline-block';
+        
+        currentDTR = {
+            adminId: null,
+            cutoff: null,
+            entries: {},
+            dailyRate: 560,
+            hourlyRate: 70,
+            otRate: 14,
+            nightDiffRate: 10,
+            otherAdvances: {
+                totalUtang: 0,
+                totalPaid: 0,
+                balanceUtang: 0,
+                transactions: {}
+            }
+        };
+        
+        document.getElementById('dtrGridBody').innerHTML = '';
+    } else {
+        loadDTRRecord(recordId);
+    }
+    
+    modal.style.display = 'block';
+}
+
+function loadDTRRecord(recordId) {
+    fetch(`/api/admin-salary/records/${recordId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const record = data.data;
+                
+                document.getElementById('modalTitle').textContent = `DTR: ${record.adminName}`;
+                document.getElementById('recordId').value = recordId;
+                document.getElementById('employeeId').value = record.adminId;
+                document.getElementById('cutoffSelect').value = record.cutoff;
+                
+                // Store employee deduction values from record
+                currentDTR.employeeSSS = record.summary?.sss || 0;
+                currentDTR.employeePhilhealth = record.summary?.philhealth || 0;
+                currentDTR.employeePagibig = record.summary?.pagibig || 0;
+                
+                currentDTR = {
+                    adminId: record.adminId,
+                    cutoff: record.cutoff,
+                    entries: record.entries || {},
+                    dailyRate: record.dailyRate || 560,
+                    hourlyRate: record.hourlyRate || 70,
+                    otRate: 14,
+                    nightDiffRate: 10,
+                    employeeSSS: record.summary?.sss || 0,
+                    employeePhilhealth: record.summary?.philhealth || 0,
+                    employeePagibig: record.summary?.pagibig || 0,
+                    otherAdvances: record.otherAdvances || {
+                        totalUtang: 0,
+                        totalPaid: 0,
+                        balanceUtang: 0,
+                        transactions: {}
+                    }
+                };
+                
+                generateDTRGrid();
+                
+                if (record.summary) {
+                    // Load the stored deduction values (which are already correct for the cutoff)
+                    document.getElementById('sssDeduction').value = record.summary.sss || 0;
+                    document.getElementById('philhealthDeduction').value = record.summary.philhealth || 0;
+                    document.getElementById('pagibigDeduction').value = record.summary.pagibig || 0;
+                    document.getElementById('otherDeductions').value = record.summary.otherDeductions || 0;
+                }
+                
+                renderUtangTransactions(currentDTR.otherAdvances.transactions);
+                calculateTotals();
+                calculateGrossSalary();
+                calculateNetTotal();
+                
+                if (record.status === 'draft') {
+                    document.getElementById('approveBtn').style.display = 'inline-block';
+                    document.getElementById('markPaidBtn').style.display = 'none';
+                    document.getElementById('saveDTRBtn').style.display = 'inline-block';
+                } else if (record.status === 'approved') {
+                    document.getElementById('approveBtn').style.display = 'none';
+                    document.getElementById('markPaidBtn').style.display = 'inline-block';
+                    document.getElementById('saveDTRBtn').style.display = 'none';
+                } else {
+                    document.getElementById('approveBtn').style.display = 'none';
+                    document.getElementById('markPaidBtn').style.display = 'none';
+                    document.getElementById('saveDTRBtn').style.display = 'none';
+                }
+            }
+        });
+}
+
+function saveDTR(e) {
+    e.preventDefault();
+    
+    const adminId = document.getElementById('employeeId').value;
+    const cutoff = document.getElementById('cutoffSelect').value;
+    const recordId = document.getElementById('recordId').value;
+    
+    if (!adminId || !cutoff) {
+        Swal.fire({ icon: 'error', title: 'Missing Fields', text: 'Please select employee and cutoff' });
+        return;
+    }
+    
+    if (Object.keys(currentDTR.entries).length === 0) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'No Entries',
+            text: 'Please add at least one DTR entry'
+        });
+        return;
+    }
+    
+    const summary = {
+        totalDays: Object.values(currentDTR.entries).filter(e => e.status === 'present').length,
+        totalOT: parseFloat(document.getElementById('totalOT').textContent) || 0,
+        totalNightDiff: parseFloat(document.getElementById('totalNightDiff').textContent) || 0,
+        totalAdvances: parseFloat(document.getElementById('advancesTotal').textContent.replace('₱', '').replace(/,/g, '')) || 0,
+        grossSalary: parseFloat(document.getElementById('grossSalary').textContent.replace('₱', '').replace(/,/g, '')) || 0,
+        otherDeductions: parseFloat(document.getElementById('otherDeductions').value) || 0,
+        sss: parseFloat(document.getElementById('sssDeduction').value) || 0,
+        philhealth: parseFloat(document.getElementById('philhealthDeduction').value) || 0,
+        pagibig: parseFloat(document.getElementById('pagibigDeduction').value) || 0,
+        benefitsDeduction: (parseFloat(document.getElementById('sssDeduction').value) || 0) +
+                          (parseFloat(document.getElementById('philhealthDeduction').value) || 0) +
+                          (parseFloat(document.getElementById('pagibigDeduction').value) || 0),
+        netTotal: parseFloat(document.getElementById('netTotal').textContent.replace('₱', '').replace(/,/g, '')) || 0
+    };
+    
+    const formData = {
+        adminId: adminId,
+        cutoff: cutoff,
+        entries: currentDTR.entries,
+        summary: summary,
+        otherAdvances: currentDTR.otherAdvances
+    };
+    
+    const url = recordId ? `/api/admin-salary/records/${recordId}` : '/api/admin-salary/records';
+    const method = recordId ? 'PUT' : 'POST';
+    
+    Swal.fire({
+        title: 'Saving...',
+        text: 'Please wait',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+    
+    fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Saved!',
+                text: 'DTR record saved successfully',
+                timer: 1500,
+                showConfirmButton: false
+            });
+            
+            closeAllModals();
+            loadDTRRecords();
+            loadSummary();
+        } else {
+            Swal.fire({ icon: 'error', title: 'Error', text: data.error });
+        }
+    });
+}
+
+function approveDTR() {
+    const recordId = document.getElementById('recordId').value;
+    if (!recordId) return;
+    
+    Swal.fire({
+        title: 'Approve DTR?',
+        text: 'This will mark the record as approved',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#3498db',
+        confirmButtonText: 'Yes, Approve'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            fetch(`/api/admin-salary/records/${recordId}/approve`, {
+                method: 'POST'
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire('Approved!', 'DTR record has been approved', 'success');
+                    closeAllModals();
+                    loadDTRRecords();
+                    loadSummary();
+                }
+            });
+        }
+    });
+}
+
+function markAsPaid() {
+    const recordId = document.getElementById('recordId').value;
+    if (!recordId) return;
+    
+    Swal.fire({
+        title: 'Mark as Paid',
+        text: 'Select payment method',
+        input: 'select',
+        inputOptions: {
+            'bank-transfer': 'Bank Transfer',
+            'check': 'Check',
+            'cash': 'Cash'
+        },
+        inputValue: 'bank-transfer',
+        showCancelButton: true,
+        confirmButtonColor: '#27ae60',
+        confirmButtonText: 'Confirm Payment'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            fetch(`/api/admin-salary/records/${recordId}/pay`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paymentMethod: result.value })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire('Paid!', 'Payment recorded successfully', 'success');
+                    closeAllModals();
+                    loadDTRRecords();
+                    loadSummary();
+                }
+            });
+        }
+    });
+}
+
+function deleteDTRRecord(recordId) {
+    Swal.fire({
+        title: 'Delete Record?',
+        text: 'This action cannot be undone',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#e74c3c',
+        confirmButtonText: 'Yes, Delete'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            fetch(`/api/admin-salary/records/${recordId}`, {
+                method: 'DELETE'
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire('Deleted!', 'Record has been deleted', 'success');
+                    loadDTRRecords();
+                }
+            });
+        }
+    });
+}
+
+// ==================== Utang Transactions ====================
+function openUtangModal(type) {
+    if (!document.getElementById('recordId').value) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Save First',
+            text: 'Please save the DTR record first before adding utang transactions.'
+        });
+        return;
+    }
+    
+    document.getElementById('utangType').value = type;
+    document.getElementById('utangAmount').value = '';
+    document.getElementById('utangDescription').value = '';
+    document.getElementById('utangModal').style.display = 'block';
+}
+
+function saveUtangTransaction(e) {
+    e.preventDefault();
+    
+    const dtrId = document.getElementById('recordId').value;
+    const type = document.getElementById('utangType').value;
+    const amount = parseFloat(document.getElementById('utangAmount').value);
+    const description = document.getElementById('utangDescription').value;
+    
+    if (!amount || amount <= 0) {
+        Swal.fire({ icon: 'error', title: 'Invalid Amount', text: 'Please enter a valid amount' });
+        return;
+    }
+    
+    fetch('/api/admin-salary/advances', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            adminId: currentDTR.adminId,
+            amount: amount,
+            type: type,
+            cutoff: currentDTR.cutoff,
+            description: description,
+            dtrRecordId: dtrId
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Transaction Added',
+                text: `${type === 'utang' ? 'Utang' : 'Payment'} recorded successfully`,
+                timer: 1500,
+                showConfirmButton: false
+            });
+            
+            closeAllModals();
+            loadDTRRecord(dtrId);
+        }
+    });
+}
+
+function deleteTransaction(transactionId) {
+    const dtrId = document.getElementById('recordId').value;
+    
+    Swal.fire({
+        title: 'Delete Transaction?',
+        text: 'This action cannot be undone',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#e74c3c',
+        confirmButtonText: 'Yes, Delete'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            fetch(`/api/admin-salary/advances/${transactionId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dtrRecordId: dtrId })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire('Deleted!', 'Transaction deleted', 'success');
+                    loadDTRRecord(dtrId);
+                }
+            });
+        }
+    });
+}
+
+function renderUtangTransactions(transactions) {
+    const tbody = document.getElementById('utangTransactionsBody');
     if (!tbody) return;
     
-    if (records.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="12" class="text-center">No salary records found</td></tr>';
+    if (!transactions || Object.keys(transactions).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">No transactions</td></tr>';
         return;
     }
     
     let html = '';
-    records.forEach(record => {
-        const totalEarnings = (record.baseSalary || 0) + (record.allowances || 0) + 
-                             (record.overtimePay || 0) + (record.bonus || 0);
-        const totalDeductions = (record.taxDeduction || 0) + (record.sssDeduction || 0) + 
-                               (record.philhealthDeduction || 0) + (record.pagibigDeduction || 0) +
-                               (record.loanDeduction || 0) + (record.otherDeductions || 0) +
-                               (record.advanceDeduction || 0);
-        const netPay = totalEarnings - totalDeductions;
+    let totalUtang = 0;
+    let totalPaid = 0;
+    
+    Object.entries(transactions).forEach(([id, trans]) => {
+        const rowClass = trans.type === 'utang' ? 'utang-row' : 'payment-row';
+        const amount = trans.amount || 0;
+        
+        if (trans.type === 'utang') totalUtang += amount;
+        else totalPaid += amount;
         
         html += `
-            <tr>
-                <td>
-                    <div><strong>${record.employeeName}</strong></div>
-                    <div style="font-size:12px; color:#7f8c8d;">ID: ${record.employeeId}</div>
-                </td>
-                <td>${record.position || 'N/A'}</td>
-                <td>${record.department ? record.department.charAt(0).toUpperCase() + record.department.slice(1) : 'N/A'}</td>
-                <td>${record.payPeriod || 'N/A'}</td>
-                <td>₱${(record.baseSalary || 0).toLocaleString()}</td>
-                <td>₱${totalEarnings.toLocaleString()}</td>
-                <td>₱${(record.taxDeduction || 0) + (record.sssDeduction || 0) + (record.philhealthDeduction || 0) + (record.pagibigDeduction || 0) + (record.loanDeduction || 0) + (record.otherDeductions || 0)}</td>
-                <td>₱${(record.advanceDeduction || 0).toLocaleString()}</td>
-                <td><strong>₱${netPay.toLocaleString()}</strong></td>
-                <td><span class="status-badge status-${record.paymentStatus || 'pending'}">${(record.paymentStatus || 'pending').toUpperCase()}</span></td>
-                <td>${record.paymentDate ? new Date(record.paymentDate).toLocaleDateString() : '—'}</td>
-                <td>
-                    <button class="action-btn action-view" onclick="viewSalaryRecord('${record.id}')" title="View Details">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button class="action-btn action-edit" onclick="editSalaryRecord('${record.id}')" title="Edit">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="action-btn action-payslip" onclick="generatePayslip('${record.id}')" title="Generate Payslip">
-                        <i class="fas fa-file-pdf"></i>
-                    </button>
-                    <button class="action-btn action-history" onclick="viewAdminDetails('${record.employeeId}')" title="Admin Details">
-                        <i class="fas fa-user"></i>
-                    </button>
-                    <button class="action-btn action-delete" onclick="deleteSalaryRecord('${record.id}')" title="Delete">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </td>
+            <tr class="${rowClass}">
+                <td>${new Date(trans.date).toLocaleDateString()}</td>
+                <td>${trans.type === 'utang' ? 'UTANG' : 'PAYMENT'}</td>
+                <td>₱${amount.toLocaleString()}</td>
+                <td>${trans.description || '—'}</td>
+                <td><button class="btn-sm btn-danger" onclick="deleteTransaction('${id}')"><i class="fas fa-trash"></i></button></td>
             </tr>
         `;
     });
     
     tbody.innerHTML = html;
-}
-
-// Update pagination
-function updatePagination() {
-    document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
-    document.getElementById('prevPage').disabled = currentPage === 1;
-    document.getElementById('nextPage').disabled = currentPage === totalPages;
-}
-
-// Change page
-function changePage(direction) {
-    if (direction === 'prev' && currentPage > 1) {
-        currentPage--;
-        loadSalaryRecords();
-    } else if (direction === 'next' && currentPage < totalPages) {
-        currentPage++;
-        loadSalaryRecords();
-    }
-}
-
-// Update record count
-function updateRecordCount(count) {
-    document.getElementById('recordCount').textContent = `${count} record${count !== 1 ? 's' : ''}`;
-}
-
-// Calculate totals
-function calculateTotals() {
-    const baseSalary = parseFloat(document.getElementById('baseSalary').value) || 0;
-    const allowances = parseFloat(document.getElementById('allowances').value) || 0;
-    const overtimePay = parseFloat(document.getElementById('overtimePay').value) || 0;
-    const bonus = parseFloat(document.getElementById('bonus').value) || 0;
     
-    const taxDeduction = parseFloat(document.getElementById('taxDeduction').value) || 0;
-    const sssDeduction = parseFloat(document.getElementById('sssDeduction').value) || 0;
-    const philhealthDeduction = parseFloat(document.getElementById('philhealthDeduction').value) || 0;
-    const pagibigDeduction = parseFloat(document.getElementById('pagibigDeduction').value) || 0;
-    const loanDeduction = parseFloat(document.getElementById('loanDeduction').value) || 0;
-    const otherDeductions = parseFloat(document.getElementById('otherDeductions').value) || 0;
-    const advanceDeduction = parseFloat(document.getElementById('advanceDeduction').value) || 0;
-    
-    const totalEarnings = baseSalary + allowances + overtimePay + bonus;
-    const totalDeductions = taxDeduction + sssDeduction + philhealthDeduction + 
-                           pagibigDeduction + loanDeduction + otherDeductions + advanceDeduction;
-    const netPay = totalEarnings - totalDeductions;
-    
-    document.getElementById('totalEarnings').value = totalEarnings.toFixed(2);
-    document.getElementById('totalDeductions').value = totalDeductions.toFixed(2);
-    document.getElementById('netPay').value = netPay.toFixed(2);
+    document.getElementById('totalUtang').value = totalUtang;
+    document.getElementById('totalPaid').value = totalPaid;
+    document.getElementById('balanceUtang').value = totalUtang - totalPaid;
+    document.getElementById('bawas').value = totalPaid;
 }
 
-// Update summary cards
-function updateSummaryCards() {
-    fetch('/api/admin-salary/summary')
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const summary = data.data;
-                document.getElementById('totalStaff').textContent = summary.totalStaff;
-                document.getElementById('monthlyPayroll').textContent = `₱${summary.monthlyPayroll.toLocaleString()}`;
-                document.getElementById('pendingPayments').textContent = `₱${summary.pendingPayments.toLocaleString()}`;
-                document.getElementById('pendingCount').textContent = `${summary.pendingCount} pending`;
-                document.getElementById('ytdTotal').textContent = `₱${summary.ytdTotal.toLocaleString()}`;
-                document.getElementById('monthlyPayrollPeriod').textContent = summary.monthlyPayrollPeriod;
-            }
-        })
-        .catch(error => {
-            console.error('Error loading summary:', error);
-        });
-}
-
-// Load charts
-function loadCharts() {
-    fetch('/api/admin-salary/analytics')
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const analytics = data.data;
-                
-                // Destroy existing charts if they exist
-                if (charts.salaryByDept) charts.salaryByDept.destroy();
-                if (charts.monthlyTrend) charts.monthlyTrend.destroy();
-                if (charts.status) charts.status.destroy();
-                
-                // Salary by Department Chart
-                const deptCtx = document.getElementById('salaryByDeptChart')?.getContext('2d');
-                if (deptCtx && analytics.salaryByDepartment) {
-                    charts.salaryByDept = new Chart(deptCtx, {
-                        type: 'bar',
-                        data: {
-                            labels: analytics.salaryByDepartment.labels || [],
-                            datasets: [{
-                                label: 'Monthly Salary (₱)',
-                                data: analytics.salaryByDepartment.data || [],
-                                backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                                borderColor: 'rgba(54, 162, 235, 1)',
-                                borderWidth: 1
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: true,
-                            aspectRatio: 2,
-                            plugins: {
-                                legend: { display: false }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: {
-                                        callback: function(value) {
-                                            return '₱' + value.toLocaleString();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-                
-                // Monthly Trend Chart
-                const trendCtx = document.getElementById('monthlyTrendChart')?.getContext('2d');
-                if (trendCtx && analytics.monthlyTrend) {
-                    charts.monthlyTrend = new Chart(trendCtx, {
-                        type: 'line',
-                        data: {
-                            labels: analytics.monthlyTrend.labels || [],
-                            datasets: [{
-                                label: 'Monthly Salary Total',
-                                data: analytics.monthlyTrend.data || [],
-                                borderColor: 'rgba(75, 192, 192, 1)',
-                                backgroundColor: 'rgba(75, 192, 192, 0.1)',
-                                tension: 0.4,
-                                fill: true
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: true,
-                            aspectRatio: 2,
-                            plugins: {
-                                legend: { display: false }
-                            },
-                            scales: {
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: {
-                                        callback: function(value) {
-                                            return '₱' + (value/1000) + 'k';
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-                
-                // Status Distribution Chart
-                const statusCtx = document.getElementById('statusChart')?.getContext('2d');
-                if (statusCtx && analytics.statusDistribution) {
-                    charts.status = new Chart(statusCtx, {
-                        type: 'doughnut',
-                        data: {
-                            labels: analytics.statusDistribution.labels || [],
-                            datasets: [{
-                                data: analytics.statusDistribution.data || [],
-                                backgroundColor: [
-                                    'rgba(75, 192, 192, 0.8)',
-                                    'rgba(255, 205, 86, 0.8)',
-                                    'rgba(54, 162, 235, 0.8)',
-                                    'rgba(255, 99, 132, 0.8)'
-                                ],
-                                borderWidth: 0
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: true,
-                            aspectRatio: 2,
-                            plugins: {
-                                legend: { 
-                                    position: 'bottom',
-                                    labels: {
-                                        boxWidth: 12,
-                                        padding: 10
-                                    }
-                                }
-                            }
-                        }
-                    });
-                }
-                
-                // Top Earners List
-                if (analytics.topEarners) {
-                    const container = document.getElementById('topEarnersList');
-                    let html = '';
-                    analytics.topEarners.forEach((earner, index) => {
-                        html += `
-                            <div class="earner-item">
-                                <div class="earner-info">
-                                    <div class="earner-name">${index + 1}. ${earner.name || 'Unknown'}</div>
-                                    <div class="earner-position">${earner.position || 'N/A'}</div>
-                                </div>
-                                <div class="earner-salary">₱${(earner.salary || 0).toLocaleString()}</div>
-                            </div>
-                        `;
-                    });
-                    container.innerHTML = html;
-                }
-            }
-        })
-        .catch(error => {
-            console.error('Error loading charts:', error);
-        });
-}
-
-// Update charts with filtered data
-function updateCharts(records) {
-    if (!records || records.length === 0) return;
-    
-    // Update status chart
-    if (charts.status) {
-        const statusCounts = { paid: 0, pending: 0, processing: 0, cancelled: 0 };
-        records.forEach(record => {
-            if (statusCounts.hasOwnProperty(record.paymentStatus)) {
-                statusCounts[record.paymentStatus]++;
-            }
-        });
-        charts.status.data.datasets[0].data = Object.values(statusCounts);
-        charts.status.update();
-    }
-}
-
-// Open add admin modal
+// ==================== Admin Management ====================
 function openAddAdminModal() {
     const modal = document.getElementById('addAdminModal');
     document.getElementById('addAdminForm').reset();
@@ -685,7 +965,6 @@ function openAddAdminModal() {
     modal.style.display = 'block';
 }
 
-// Save admin
 function saveAdmin(e) {
     e.preventDefault();
     
@@ -701,9 +980,12 @@ function saveAdmin(e) {
         status: document.getElementById('adminStatus').value,
         rateType: document.getElementById('rateType').value,
         effectiveDate: document.getElementById('effectiveDate').value,
-        dailyRate: parseFloat(document.getElementById('dailyRate').value) || 0,
+        dailyRate: parseFloat(document.getElementById('dailyRate').value) || 560,
         cutoffRate: parseFloat(document.getElementById('cutoffRate').value) || 0,
-        monthlyRate: parseFloat(document.getElementById('monthlyRate').value) || 0
+        monthlyRate: parseFloat(document.getElementById('monthlyRate').value) || 0,
+        sss: parseFloat(document.getElementById('adminSSS').value) || 0,
+        philhealth: parseFloat(document.getElementById('adminPhilhealth').value) || 0,
+        pagibig: parseFloat(document.getElementById('adminPagibig').value) || 0
     };
     
     Swal.fire({
@@ -718,293 +1000,29 @@ function saveAdmin(e) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
     })
-    .then(response => response.json())
+    .then(res => res.json())
     .then(data => {
         if (data.success) {
             Swal.fire({
                 icon: 'success',
                 title: 'Admin Added!',
-                text: 'New admin has been added successfully.',
                 timer: 2000,
                 showConfirmButton: false
             });
             closeAllModals();
             loadEmployees();
-            updateSummaryCards();
+            loadSummary();
         } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: data.error || 'Failed to add admin.'
-            });
+            Swal.fire({ icon: 'error', title: 'Error', text: data.error });
         }
-    })
-    .catch(error => {
-        console.error('Error adding admin:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Connection Error',
-            text: 'Failed to connect to server.'
-        });
     });
 }
 
-// Update openSalaryModal function
-function openSalaryModal(recordId = null) {
-    const modal = document.getElementById('salaryModal');
-    const title = document.getElementById('modalTitle');
-    const form = document.getElementById('salaryForm');
-    
-    if (!recordId) {
-        title.textContent = 'Add Salary Record';
-        form.reset();
-        document.getElementById('recordId').value = '';
-        document.getElementById('paymentDate').valueAsDate = new Date();
-        
-        // Don't auto-fetch here - wait for both selections
-        // Clear any existing values
-        document.getElementById('taxDeduction').value = 0;
-        document.getElementById('sssDeduction').value = 0;
-        document.getElementById('philhealthDeduction').value = 0;
-        document.getElementById('pagibigDeduction').value = 0;
-        document.getElementById('loanDeduction').value = 0;
-        document.getElementById('otherDeductions').value = 0;
-        document.getElementById('advanceDeduction').value = 0;
-        
-        calculateTotals();
-    } else {
-        title.textContent = 'Edit Salary Record';
-        fetch(`/api/admin-salary/records/${recordId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    populateSalaryForm(data.data);
-                }
-            });
-    }
-    
-    modal.style.display = 'block';
-}
-
-// Populate salary form
-function populateSalaryForm(record) {
-    document.getElementById('recordId').value = record.id;
-    document.getElementById('employeeId').value = record.employeeId;
-    document.getElementById('payPeriod').value = record.payPeriod || '';
-    document.getElementById('baseSalary').value = record.baseSalary || 0;
-    document.getElementById('allowances').value = record.allowances || 0;
-    document.getElementById('overtimePay').value = record.overtimePay || 0;
-    document.getElementById('bonus').value = record.bonus || 0;
-    document.getElementById('taxDeduction').value = record.taxDeduction || 0;
-    document.getElementById('sssDeduction').value = record.sssDeduction || 0;
-    document.getElementById('philhealthDeduction').value = record.philhealthDeduction || 0;
-    document.getElementById('pagibigDeduction').value = record.pagibigDeduction || 0;
-    document.getElementById('loanDeduction').value = record.loanDeduction || 0;
-    document.getElementById('otherDeductions').value = record.otherDeductions || 0;
-    document.getElementById('advanceDeduction').value = record.advanceDeduction || 0;
-    document.getElementById('paymentStatus').value = record.paymentStatus || 'pending';
-    document.getElementById('paymentDate').value = record.paymentDate || '';
-    document.getElementById('paymentMethod').value = record.paymentMethod || '';
-    document.getElementById('salaryNotes').value = record.notes || '';
-    
-    calculateTotals();
-}
-
-// Save salary record
-function saveSalaryRecord(e) {
-    e.preventDefault();
-    
-    const formData = {
-        employeeId: document.getElementById('employeeId').value,
-        payPeriod: document.getElementById('payPeriod').value,
-        baseSalary: parseFloat(document.getElementById('baseSalary').value) || 0,
-        allowances: parseFloat(document.getElementById('allowances').value) || 0,
-        overtimePay: parseFloat(document.getElementById('overtimePay').value) || 0,
-        bonus: parseFloat(document.getElementById('bonus').value) || 0,
-        taxDeduction: parseFloat(document.getElementById('taxDeduction').value) || 0,
-        sssDeduction: parseFloat(document.getElementById('sssDeduction').value) || 0,
-        philhealthDeduction: parseFloat(document.getElementById('philhealthDeduction').value) || 0,
-        pagibigDeduction: parseFloat(document.getElementById('pagibigDeduction').value) || 0,
-        loanDeduction: parseFloat(document.getElementById('loanDeduction').value) || 0,
-        otherDeductions: parseFloat(document.getElementById('otherDeductions').value) || 0,
-        advanceDeduction: parseFloat(document.getElementById('advanceDeduction').value) || 0,
-        paymentStatus: document.getElementById('paymentStatus').value,
-        paymentDate: document.getElementById('paymentDate').value,
-        paymentMethod: document.getElementById('paymentMethod').value,
-        notes: document.getElementById('salaryNotes').value
-    };
-    
-    const recordId = document.getElementById('recordId').value;
-    const url = recordId ? `/api/admin-salary/records/${recordId}` : '/api/admin-salary/records';
-    const method = recordId ? 'PUT' : 'POST';
-    
-    Swal.fire({
-        title: recordId ? 'Updating Record...' : 'Saving Record...',
-        text: 'Please wait',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
-    });
-    
-    fetch(url, {
-        method: method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            Swal.fire({
-                icon: 'success',
-                title: recordId ? 'Record Updated!' : 'Record Saved!',
-                text: 'The salary record has been successfully saved.',
-                timer: 2000,
-                showConfirmButton: false
-            });
-            closeAllModals();
-            loadSalaryRecords();
-            updateSummaryCards();
-        } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: data.error || 'Failed to save record.'
-            });
-        }
-    })
-    .catch(error => {
-        console.error('Error saving record:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Connection Error',
-            text: 'Failed to connect to server.'
-        });
-    });
-}
-
-// View salary record
-function viewSalaryRecord(recordId) {
-    fetch(`/api/admin-salary/records/${recordId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const record = data.data;
-                const container = document.getElementById('detailsContainer');
-                const modal = document.getElementById('detailsModal');
-                
-                const totalEarnings = (record.baseSalary || 0) + (record.allowances || 0) + 
-                                     (record.overtimePay || 0) + (record.bonus || 0);
-                const totalDeductions = (record.taxDeduction || 0) + (record.sssDeduction || 0) + 
-                                       (record.philhealthDeduction || 0) + (record.pagibigDeduction || 0) +
-                                       (record.loanDeduction || 0) + (record.otherDeductions || 0) +
-                                       (record.advanceDeduction || 0);
-                const netPay = totalEarnings - totalDeductions;
-                
-                container.innerHTML = `
-                    <div class="detail-row">
-                        <span class="detail-label">Employee:</span>
-                        <span class="detail-value">${record.employeeName}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Position:</span>
-                        <span class="detail-value">${record.position || 'N/A'}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Department:</span>
-                        <span class="detail-value">${record.department || 'N/A'}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Pay Period:</span>
-                        <span class="detail-value">${record.payPeriod || 'N/A'}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Base Salary:</span>
-                        <span class="detail-value">₱${(record.baseSalary || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Allowances:</span>
-                        <span class="detail-value">₱${(record.allowances || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Overtime Pay:</span>
-                        <span class="detail-value">₱${(record.overtimePay || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Bonus:</span>
-                        <span class="detail-value">₱${(record.bonus || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Tax Deduction:</span>
-                        <span class="detail-value">₱${(record.taxDeduction || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">SSS:</span>
-                        <span class="detail-value">₱${(record.sssDeduction || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">PhilHealth:</span>
-                        <span class="detail-value">₱${(record.philhealthDeduction || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Pag-IBIG:</span>
-                        <span class="detail-value">₱${(record.pagibigDeduction || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Loan:</span>
-                        <span class="detail-value">₱${(record.loanDeduction || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Other Deductions:</span>
-                        <span class="detail-value">₱${(record.otherDeductions || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Advance Deduction:</span>
-                        <span class="detail-value">₱${(record.advanceDeduction || 0).toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Total Earnings:</span>
-                        <span class="detail-value">₱${totalEarnings.toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Total Deductions:</span>
-                        <span class="detail-value">₱${totalDeductions.toLocaleString()}</span>
-                    </div>
-                    <div class="detail-row" style="border-bottom: 2px solid #3498db;">
-                        <span class="detail-label"><strong>Net Pay:</strong></span>
-                        <span class="detail-value"><strong>₱${netPay.toLocaleString()}</strong></span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Status:</span>
-                        <span class="detail-value"><span class="status-badge status-${record.paymentStatus || 'pending'}">${(record.paymentStatus || 'pending').toUpperCase()}</span></span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Payment Date:</span>
-                        <span class="detail-value">${record.paymentDate ? new Date(record.paymentDate).toLocaleDateString() : '—'}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Payment Method:</span>
-                        <span class="detail-value">${record.paymentMethod ? record.paymentMethod.replace('-', ' ').toUpperCase() : '—'}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Notes:</span>
-                        <span class="detail-value">${record.notes || '—'}</span>
-                    </div>
-                `;
-                
-                document.getElementById('editFromDetailsBtn').dataset.recordId = recordId;
-                document.getElementById('generatePayslipDetailsBtn').dataset.recordId = recordId;
-                
-                modal.style.display = 'block';
-            }
-        });
-}
-
-// View admin details
 function viewAdminDetails(adminId) {
     currentAdminId = adminId;
     
-    // Load admin info
     fetch(`/api/admin-salary/employees/${adminId}`)
-        .then(response => response.json())
+        .then(res => res.json())
         .then(data => {
             if (data.success) {
                 const admin = data.data;
@@ -1013,89 +1031,95 @@ function viewAdminDetails(adminId) {
                 container.innerHTML = `
                     <div class="detail-row">
                         <span class="detail-label">Full Name:</span>
-                        <span class="detail-value">${admin.name}</span>
+                        <span class="detail-value">${escapeHtml(admin.name)}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Email:</span>
-                        <span class="detail-value">${admin.email || 'N/A'}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Phone:</span>
-                        <span class="detail-value">${admin.phone || 'N/A'}</span>
+                        <span class="detail-value">${escapeHtml(admin.email || 'N/A')}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Position:</span>
-                        <span class="detail-value">${admin.position || 'N/A'}</span>
+                        <span class="detail-value">${escapeHtml(admin.position || 'N/A')}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Department:</span>
-                        <span class="detail-value">${admin.department ? admin.department.charAt(0).toUpperCase() + admin.department.slice(1) : 'N/A'}</span>
+                        <span class="detail-value">${escapeHtml(admin.department || 'N/A')}</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Base Salary:</span>
-                        <span class="detail-value">₱${(admin.baseSalary || 0).toLocaleString()}</span>
+                        <span class="detail-label">Daily Rate:</span>
+                        <span class="detail-value">₱${(admin.dailyRate || 560).toLocaleString()}</span>
                     </div>
                     <div class="detail-row">
-                        <span class="detail-label">Hire Date:</span>
-                        <span class="detail-value">${admin.hireDate ? new Date(admin.hireDate).toLocaleDateString() : 'N/A'}</span>
+                        <span class="detail-label">Hourly Rate:</span>
+                        <span class="detail-value">₱${(admin.hourlyRate || 70).toLocaleString()}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">OT Rate:</span>
+                        <span class="detail-value">₱14/hr (20% of hourly)</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Night Diff Rate:</span>
+                        <span class="detail-value">₱10/hr</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">SSS:</span>
+                        <span class="detail-value">₱${(admin.sss || 0).toLocaleString()}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">PhilHealth:</span>
+                        <span class="detail-value">₱${(admin.philhealth || 0).toLocaleString()}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">PAGIBIG:</span>
+                        <span class="detail-value">₱${(admin.pagibig || 0).toLocaleString()}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Status:</span>
                         <span class="detail-value"><span class="status-badge status-${admin.status || 'active'}">${(admin.status || 'active').toUpperCase()}</span></span>
                     </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Address:</span>
-                        <span class="detail-value">${admin.address || 'N/A'}</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="detail-label">Emergency Contact:</span>
-                        <span class="detail-value">${admin.emergencyContact || 'N/A'}</span>
-                    </div>
                 `;
                 
-                // Load salary history
                 loadSalaryHistory(adminId);
-                
-                // Load deductions history
-                loadDeductionsHistory(adminId);
-                
-                // Load advances history
-                loadAdvancesHistory(adminId);
-                
                 document.getElementById('adminDetailsModal').style.display = 'block';
             }
         });
 }
 
-// Open edit admin modal
-function openEditAdminModal() {
-    if (!currentAdminId) {
-        Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: 'No admin selected.'
-        });
-        return;
-    }
-    
-    // Show loading
-    Swal.fire({
-        title: 'Loading...',
-        text: 'Please wait',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
-    });
-    
-    // Fetch current admin data
-    fetch(`/api/admin-salary/employees/${currentAdminId}`)
-        .then(response => response.json())
+function loadSalaryHistory(adminId) {
+    fetch(`/api/admin-salary/history/${adminId}`)
+        .then(res => res.json())
         .then(data => {
-            Swal.close();
-            
+            const tbody = document.getElementById('salaryHistoryBody');
+            if (data.success && data.data.length > 0) {
+                let html = '';
+                data.data.forEach(record => {
+                    const statusClass = `status-${record.status}`;
+                    html += `
+                        <tr>
+                            <td>${record.cutoff || 'N/A'}</td>
+                            <td>₱${(record.grossSalary || 0).toLocaleString()}</td>
+                            <td>₱${(record.netTotal || 0).toLocaleString()}</td>
+                            <td><span class="status-badge ${statusClass}">${(record.status || 'draft').toUpperCase()}</span></td>
+                            <td>${record.paidAt ? new Date(record.paidAt).toLocaleDateString() : record.approvedAt ? new Date(record.approvedAt).toLocaleDateString() : '—'}</td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = html;
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center">No salary history found</td></tr>';
+            }
+        });
+}
+
+function openEditAdminModal() {
+    if (!currentAdminId) return;
+    
+    fetch(`/api/admin-salary/employees/${currentAdminId}`)
+        .then(res => res.json())
+        .then(data => {
             if (data.success) {
                 const admin = data.data;
                 
-                // Populate form
                 document.getElementById('editAdminId').value = currentAdminId;
                 document.getElementById('editAdminFullName').value = admin.name || '';
                 document.getElementById('editAdminEmail').value = admin.email || '';
@@ -1106,44 +1130,24 @@ function openEditAdminModal() {
                 document.getElementById('editAdminPosition').value = admin.position || '';
                 document.getElementById('editAdminDepartment').value = admin.department || 'admin';
                 document.getElementById('editAdminStatus').value = admin.status || 'active';
-                document.getElementById('editRateType').value = admin.rateType || 'monthly';
+                document.getElementById('editRateType').value = admin.rateType || 'daily';
                 document.getElementById('editEffectiveDate').value = admin.effectiveDate || '';
+                document.getElementById('editAdminSSS').value = admin.sss || 0;
+                document.getElementById('editAdminPhilhealth').value = admin.philhealth || 0;
+                document.getElementById('editAdminPagibig').value = admin.pagibig || 0;
                 
-                // Trigger rate type change to show correct fields
                 handleEditRateTypeChange();
                 
-                // Set rate values
-                if (admin.rateType === 'daily') {
-                    document.getElementById('editDailyRate').value = admin.dailyRate || 0;
-                } else if (admin.rateType === 'cutoff') {
-                    document.getElementById('editCutoffRate').value = admin.cutoffRate || 0;
-                } else {
-                    document.getElementById('editMonthlyRate').value = admin.monthlyRate || 0;
-                }
+                document.getElementById('editDailyRate').value = admin.dailyRate || 560;
+                document.getElementById('editCutoffRate').value = admin.cutoffRate || 0;
+                document.getElementById('editMonthlyRate').value = admin.monthlyRate || 0;
                 
-                // Close admin details modal and open edit modal
                 document.getElementById('adminDetailsModal').style.display = 'none';
                 document.getElementById('editAdminModal').style.display = 'block';
-            } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'Failed to load admin data.'
-                });
             }
-        })
-        .catch(error => {
-            Swal.close();
-            console.error('Error loading admin data:', error);
-            Swal.fire({
-                icon: 'error',
-                title: 'Connection Error',
-                text: 'Failed to connect to server.'
-            });
         });
 }
 
-// Update admin
 function updateAdmin(e) {
     e.preventDefault();
     
@@ -1160,9 +1164,12 @@ function updateAdmin(e) {
         status: document.getElementById('editAdminStatus').value,
         rateType: document.getElementById('editRateType').value,
         effectiveDate: document.getElementById('editEffectiveDate').value,
-        dailyRate: parseFloat(document.getElementById('editDailyRate').value) || 0,
+        dailyRate: parseFloat(document.getElementById('editDailyRate').value) || 560,
         cutoffRate: parseFloat(document.getElementById('editCutoffRate').value) || 0,
-        monthlyRate: parseFloat(document.getElementById('editMonthlyRate').value) || 0
+        monthlyRate: parseFloat(document.getElementById('editMonthlyRate').value) || 0,
+        sss: parseFloat(document.getElementById('editAdminSSS').value) || 0,
+        philhealth: parseFloat(document.getElementById('editAdminPhilhealth').value) || 0,
+        pagibig: parseFloat(document.getElementById('editAdminPagibig').value) || 0
     };
     
     Swal.fire({
@@ -1177,688 +1184,412 @@ function updateAdmin(e) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
     })
-    .then(response => response.json())
+    .then(res => res.json())
     .then(data => {
         if (data.success) {
             Swal.fire({
                 icon: 'success',
                 title: 'Admin Updated!',
-                text: 'Admin information has been updated successfully.',
                 timer: 2000,
                 showConfirmButton: false
             });
-            
             closeAllModals();
-            
-            // Refresh admin details if modal is open
             if (currentAdminId) {
-                setTimeout(() => {
-                    viewAdminDetails(currentAdminId);
-                }, 500);
+                setTimeout(() => viewAdminDetails(currentAdminId), 500);
             }
-            
-            // Refresh employees list
             loadEmployees();
-        } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: data.error || 'Failed to update admin.'
-            });
         }
-    })
-    .catch(error => {
-        console.error('Error updating admin:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Connection Error',
-            text: 'Failed to connect to server.'
-        });
     });
 }
 
-// Load salary history
-function loadSalaryHistory(adminId) {
-    fetch(`/api/admin-salary/history/${adminId}`)
-        .then(response => response.json())
-        .then(data => {
-            const tbody = document.getElementById('salaryHistoryBody');
-            if (data.success && data.data.length > 0) {
-                let html = '';
-                data.data.forEach(record => {
-                    html += `
-                        <tr>
-                            <td>${record.payPeriod || 'N/A'}</td>
-                            <td>₱${(record.baseSalary || 0).toLocaleString()}</td>
-                            <td>₱${(record.totalEarnings || 0).toLocaleString()}</td>
-                            <td>₱${(record.totalDeductions || 0).toLocaleString()}</td>
-                            <td>₱${(record.advanceDeduction || 0).toLocaleString()}</td>
-                            <td>₱${(record.netPay || 0).toLocaleString()}</td>
-                            <td><span class="status-badge status-${record.paymentStatus || 'pending'}">${(record.paymentStatus || 'pending').toUpperCase()}</span></td>
-                            <td>${record.paymentDate ? new Date(record.paymentDate).toLocaleDateString() : '—'}</td>
-                            <td>
-                                <button class="action-btn action-view" onclick="viewSalaryRecord('${record.id}')">
-                                    <i class="fas fa-eye"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                });
-                tbody.innerHTML = html;
-            } else {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center">No salary history found</td></tr>';
-            }
-        });
-}
+// ==================== Manage Admins Functions ====================
 
-// Load deductions history
-function loadDeductionsHistory(adminId) {
-    fetch(`/api/admin-salary/deductions/${adminId}`)
-        .then(response => response.json())
-        .then(data => {
-            const tbody = document.getElementById('deductionsHistoryBody');
-            if (data.success && data.data.length > 0) {
-                let html = '';
-                data.data.forEach(deduction => {
-                    const statusClass = deduction.status === 'applied' ? 'status-applied' :
-                                       deduction.status === 'pending' ? 'status-pending' : 'status-cancelled';
-                    
-                    html += `
-                        <tr>
-                            <td>${deduction.type ? deduction.type.toUpperCase() : 'N/A'}</td>
-                            <td>₱${(deduction.amount || 0).toLocaleString()}</td>
-                            <td>${deduction.period || 'N/A'}</td>
-                            <td>${deduction.description || '—'}</td>
-                            <td><span class="status-badge ${statusClass}">${(deduction.status || 'applied').toUpperCase()}</span></td>
-                            <td>${deduction.date ? new Date(deduction.date).toLocaleDateString() : '—'}</td>
-                            <td>
-                                <button class="action-btn action-delete" onclick="deleteDeduction('${deduction.id}')">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                });
-                tbody.innerHTML = html;
-            } else {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center">No deductions found</td></tr>';
-            }
-        });
-}
-
-// Load advances history
-function loadAdvancesHistory(adminId) {
-    fetch(`/api/admin-salary/advances/${adminId}`)
-        .then(response => response.json())
-        .then(data => {
-            const tbody = document.getElementById('advancesHistoryBody');
-            if (data.success && data.data.length > 0) {
-                let html = '';
-                data.data.forEach(advance => {
-                    const statusClass = advance.status === 'paid' ? 'status-paid' :
-                                       advance.status === 'approved' ? 'status-approved' :
-                                       advance.status === 'pending' ? 'status-pending' : 'status-rejected';
-                    
-                    html += `
-                        <tr>
-                            <td>₱${(advance.amount || 0).toLocaleString()}</td>
-                            <td>${advance.dateRequested ? new Date(advance.dateRequested).toLocaleDateString() : '—'}</td>
-                            <td>${advance.reason || '—'}</td>
-                            <td>${advance.repaymentPeriod || '—'}</td>
-                            <td>₱${(advance.remainingBalance || 0).toLocaleString()}</td>
-                            <td><span class="status-badge ${statusClass}">${(advance.status || 'pending').toUpperCase()}</span></td>
-                            <td>
-                                <button class="action-btn action-view" onclick="viewAdvance('${advance.id}')">
-                                    <i class="fas fa-eye"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                });
-                tbody.innerHTML = html;
-            } else {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center">No advances found</td></tr>';
-            }
-        });
-}
-
-// Open payroll modal
-function openPayrollModal() {
-    const modal = document.getElementById('payrollModal');
-    document.getElementById('payrollDate').valueAsDate = new Date();
+function openManageAdminsModal() {
+    const modal = document.getElementById('manageAdminsModal');
+    loadAllAdminsList();
     modal.style.display = 'block';
 }
 
-// Process payroll
-function processPayroll(e) {
-    e.preventDefault();
-    
-    const selectedEmployees = [];
-    document.querySelectorAll('#employeeList input[type="checkbox"]:checked').forEach(cb => {
-        selectedEmployees.push(cb.value);
-    });
-    
-    if (selectedEmployees.length === 0) {
-        Swal.fire({
-            icon: 'error',
-            title: 'No Employees Selected',
-            text: 'Please select at least one employee to process payroll.'
+function loadAllAdminsList() {
+    fetch('/api/admin-salary/employees/all')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                renderAdminsList(data.data);
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: data.error });
+            }
+        })
+        .catch(error => {
+            console.error('Error loading admins:', error);
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to load admins' });
         });
+}
+
+function renderAdminsList(admins) {
+    const tbody = document.getElementById('manageAdminsTableBody');
+    if (!tbody) return;
+    
+    if (!admins || admins.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">No admins found</td></tr>';
         return;
     }
     
-    const formData = {
-        payrollPeriod: document.getElementById('payrollPeriod').value,
-        payrollDate: document.getElementById('payrollDate').value,
-        paymentMethod: document.getElementById('payrollMethod').value,
-        employees: selectedEmployees
-    };
-    
-    Swal.fire({
-        title: 'Processing Payroll...',
-        text: 'Please wait',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
+    let html = '';
+    admins.forEach(admin => {
+        const statusClass = `status-${admin.status || 'active'}`;
+        const statusText = (admin.status || 'active').toUpperCase();
+        
+        html += `
+            <tr data-admin-id="${admin.id}">
+                <td><strong>${escapeHtml(admin.name)}</strong><br><small>${escapeHtml(admin.email || 'No email')}</small></td>
+                <td>${escapeHtml(admin.position || 'N/A')}</td>
+                <td>${escapeHtml(admin.department || 'N/A')}</td>
+                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                <td class="actions-cell">
+                    <button class="action-btn action-view" onclick="viewAdminFromList('${admin.id}')" title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="action-btn action-edit" onclick="editAdminFromList('${admin.id}')" title="Edit Admin">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="action-btn action-delete" onclick="deleteAdminFromList('${admin.id}', '${escapeHtml(admin.name)}')" title="Delete Admin">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
     });
     
-    fetch('/api/admin-salary/process-payroll', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            Swal.fire({
-                icon: 'success',
-                title: 'Payroll Processed!',
-                text: data.message,
-                timer: 2000,
-                showConfirmButton: false
-            });
-            closeAllModals();
-            loadSalaryRecords();
-            updateSummaryCards();
-        } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: data.error || 'Failed to process payroll.'
-            });
-        }
-    })
-    .catch(error => {
-        console.error('Error processing payroll:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Connection Error',
-            text: 'Failed to connect to server.'
-        });
-    });
+    tbody.innerHTML = html;
 }
 
-// Generate payslip
-function generatePayslip(recordId) {
-    fetch(`/api/admin-salary/generate-payslip/${recordId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                displayPayslip(data.data);
-            } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: data.error || 'Failed to generate payslip.'
-                });
-            }
-        });
+function viewAdminFromList(adminId) {
+    closeAllModals();
+    viewAdminDetails(adminId);
 }
 
-// Display payslip
-function displayPayslip(data) {
-    const modal = document.getElementById('payslipModal');
-    const container = document.getElementById('payslipContainer');
+function editAdminFromList(adminId) {
+    currentAdminId = adminId;
+    closeAllModals();
+    openEditAdminModal();
+}
+
+function deleteAdminFromList(adminId, adminName) {
+    const modal = document.getElementById('deleteAdminModal');
+    const detailsDiv = document.getElementById('deleteAdminDetails');
     
-    container.innerHTML = `
-        <div class="payslip-header">
-            <h2>OLStar Transport</h2>
-            <p>Payslip for ${data.payPeriod}</p>
+    detailsDiv.innerHTML = `
+        <div class="detail-row">
+            <span class="detail-label">Name:</span>
+            <span class="detail-value">${adminName}</span>
         </div>
-        
-        <div class="payslip-section">
-            <h3>Employee Information</h3>
-            <div class="payslip-row">
-                <span>Employee Name:</span>
-                <span>${data.employee.name}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Position:</span>
-                <span>${data.employee.position}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Department:</span>
-                <span>${data.employee.department}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Employee ID:</span>
-                <span>${data.employee.id}</span>
-            </div>
-        </div>
-        
-        <div class="payslip-section">
-            <h3>Earnings</h3>
-            <div class="payslip-row">
-                <span>Base Salary:</span>
-                <span>₱${data.earnings.baseSalary.toLocaleString()}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Allowances:</span>
-                <span>₱${data.earnings.allowances.toLocaleString()}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Overtime Pay:</span>
-                <span>₱${data.earnings.overtimePay.toLocaleString()}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Bonus:</span>
-                <span>₱${data.earnings.bonus.toLocaleString()}</span>
-            </div>
-            <div class="payslip-row total">
-                <span>Total Earnings:</span>
-                <span>₱${data.earnings.total.toLocaleString()}</span>
-            </div>
-        </div>
-        
-        <div class="payslip-section">
-            <h3>Deductions</h3>
-            <div class="payslip-row">
-                <span>Tax:</span>
-                <span>₱${data.deductions.tax.toLocaleString()}</span>
-            </div>
-            <div class="payslip-row">
-                <span>SSS:</span>
-                <span>₱${data.deductions.sss.toLocaleString()}</span>
-            </div>
-            <div class="payslip-row">
-                <span>PhilHealth:</span>
-                <span>₱${data.deductions.philhealth.toLocaleString()}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Pag-IBIG:</span>
-                <span>₱${data.deductions.pagibig.toLocaleString()}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Loan:</span>
-                <span>₱${data.deductions.loan || 0}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Other:</span>
-                <span>₱${data.deductions.other || 0}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Advance:</span>
-                <span>₱${data.deductions.advance || 0}</span>
-            </div>
-            <div class="payslip-row total">
-                <span>Total Deductions:</span>
-                <span>₱${data.deductions.total.toLocaleString()}</span>
-            </div>
-        </div>
-        
-        <div class="payslip-section">
-            <div class="payslip-row total">
-                <span>NET PAY:</span>
-                <span>₱${data.netPay.toLocaleString()}</span>
-            </div>
-        </div>
-        
-        <div class="payslip-section">
-            <div class="payslip-row">
-                <span>Payment Date:</span>
-                <span>${data.paymentDate ? new Date(data.paymentDate).toLocaleDateString() : '—'}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Payment Method:</span>
-                <span>${data.paymentMethod ? data.paymentMethod.replace('-', ' ').toUpperCase() : '—'}</span>
-            </div>
-            <div class="payslip-row">
-                <span>Status:</span>
-                <span>${data.status.toUpperCase()}</span>
-            </div>
+        <div class="detail-row">
+            <span class="detail-label">ID:</span>
+            <span class="detail-value">${adminId}</span>
         </div>
     `;
     
+    // Store adminId for confirmation
+    modal.setAttribute('data-admin-id', adminId);
     modal.style.display = 'block';
 }
 
-// Add deduction from details
-function addDeductionFromDetails() {
-    if (!currentAdminId) return;
+function confirmDeleteAdmin() {
+    const modal = document.getElementById('deleteAdminModal');
+    const adminId = modal.getAttribute('data-admin-id');
     
-    document.getElementById('deductionAdminId').value = currentAdminId;
-    document.getElementById('addDeductionModal').style.display = 'block';
-    closeAllModalsExcept('addDeductionModal');
-}
-
-// Save deduction
-function saveDeduction(e) {
-    e.preventDefault();
-    
-    const formData = {
-        adminId: document.getElementById('deductionAdminId').value,
-        type: document.getElementById('deductionType').value,
-        amount: parseFloat(document.getElementById('deductionAmount').value),
-        period: document.getElementById('deductionPeriod').value,
-        description: document.getElementById('deductionDescription').value
-    };
+    if (!adminId) return;
     
     Swal.fire({
-        title: 'Adding Deduction...',
+        title: 'Deleting Admin...',
         text: 'Please wait',
         allowOutsideClick: false,
         didOpen: () => Swal.showLoading()
     });
     
-    fetch('/api/admin-salary/add-deduction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+    fetch(`/api/admin-salary/delete-admin/${adminId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
     })
-    .then(response => response.json())
+    .then(res => res.json())
     .then(data => {
         if (data.success) {
             Swal.fire({
                 icon: 'success',
-                title: 'Deduction Added!',
-                text: 'Deduction has been added successfully.',
+                title: 'Admin Deleted',
+                text: data.message || 'Admin record has been permanently deleted',
                 timer: 2000,
                 showConfirmButton: false
-            });
-            closeAllModals();
-            loadDeductionsHistory(formData.adminId);
-        } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: data.error || 'Failed to add deduction.'
-            });
-        }
-    });
-}
-
-// Add advance from details
-function addAdvanceFromDetails() {
-    if (!currentAdminId) return;
-    
-    document.getElementById('advanceAdminId').value = currentAdminId;
-    document.getElementById('addAdvanceModal').style.display = 'block';
-    closeAllModalsExcept('addAdvanceModal');
-}
-
-// Save advance
-function saveAdvance(e) {
-    e.preventDefault();
-    
-    const formData = {
-        adminId: document.getElementById('advanceAdminId').value,
-        amount: parseFloat(document.getElementById('advanceAmount').value),
-        reason: document.getElementById('advanceReason').value,
-        repaymentPeriod: document.getElementById('repaymentPeriod').value,
-        repaymentAmount: parseFloat(document.getElementById('repaymentAmount').value) || null
-    };
-    
-    Swal.fire({
-        title: 'Submitting Advance Request...',
-        text: 'Please wait',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
-    });
-    
-    fetch('/api/admin-salary/add-advance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            Swal.fire({
-                icon: 'success',
-                title: 'Advance Request Submitted!',
-                text: 'Your advance request has been submitted.',
-                timer: 2000,
-                showConfirmButton: false
-            });
-            closeAllModals();
-            loadAdvancesHistory(formData.adminId);
-        } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: data.error || 'Failed to submit advance request.'
-            });
-        }
-    });
-}
-
-// Edit from details
-function editFromDetails() {
-    const recordId = document.getElementById('editFromDetailsBtn').dataset.recordId;
-    closeAllModals();
-    openSalaryModal(recordId);
-}
-
-// Generate payslip from details
-function generatePayslipFromDetails() {
-    const recordId = document.getElementById('generatePayslipDetailsBtn').dataset.recordId;
-    closeAllModals();
-    generatePayslip(recordId);
-}
-
-// Process salary from details
-function processSalaryFromDetails() {
-    if (!currentAdminId) return;
-    closeAllModals();
-    openSalaryModal();
-    document.getElementById('employeeId').value = currentAdminId;
-}
-
-// Edit salary record
-function editSalaryRecord(recordId) {
-    openSalaryModal(recordId);
-}
-
-// Delete salary record
-function deleteSalaryRecord(recordId) {
-    Swal.fire({
-        title: 'Are you sure?',
-        text: "You won't be able to revert this!",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#e74c3c',
-        cancelButtonColor: '#95a5a6',
-        confirmButtonText: 'Yes, delete it!'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            fetch(`/api/admin-salary/records/${recordId}`, { method: 'DELETE' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        Swal.fire('Deleted!', 'The salary record has been deleted.', 'success');
-                        loadSalaryRecords();
-                        updateSummaryCards();
-                    } else {
-                        Swal.fire({ icon: 'error', title: 'Error', text: data.error });
-                    }
-                });
-        }
-    });
-}
-
-// Generate bulk payslips
-function generateBulkPayslips() {
-    Swal.fire({
-        title: 'Generate Bulk Payslips',
-        text: 'Select pay period to generate payslips',
-        input: 'select',
-        inputOptions: {
-            'January 2026 - 1st Half': 'January 2026 - 1st Half',
-            'January 2026 - 2nd Half': 'January 2026 - 2nd Half',
-            'February 2026 - 1st Half': 'February 2026 - 1st Half',
-            'February 2026 - 2nd Half': 'February 2026 - 2nd Half',
-            'March 2026 - 1st Half': 'March 2026 - 1st Half',
-            'March 2026 - 2nd Half': 'March 2026 - 2nd Half'
-        },
-        inputPlaceholder: 'Select pay period',
-        showCancelButton: true,
-        confirmButtonText: 'Generate',
-        cancelButtonText: 'Cancel'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            Swal.fire({
-                title: 'Generating Payslips...',
-                text: 'Please wait',
-                allowOutsideClick: false,
-                didOpen: () => Swal.showLoading()
             });
             
-            setTimeout(() => {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Payslips Generated!',
-                    text: 'All payslips have been generated successfully.',
-                    timer: 2000,
-                    showConfirmButton: false
-                });
-            }, 2000);
+            closeAllModals();
+            loadEmployees();
+            loadSummary();
+            
+            // If currently viewing details of deleted admin, close that modal
+            if (currentAdminId === adminId) {
+                document.getElementById('adminDetailsModal').style.display = 'none';
+                currentAdminId = null;
+            }
+            
+            // Refresh the manage admins list if it's open
+            const manageModal = document.getElementById('manageAdminsModal');
+            if (manageModal.style.display === 'block') {
+                loadAllAdminsList();
+            }
+        } else {
+            Swal.fire({ icon: 'error', title: 'Error', text: data.error });
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting admin:', error);
+        Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to delete admin' });
+    });
+}
+
+// ==================== Rate Type Handlers ====================
+function handleRateTypeChange() {
+    const rateType = document.getElementById('rateType').value;
+    
+    document.getElementById('dailyRateFields').style.display = 'none';
+    document.getElementById('cutoffRateFields').style.display = 'none';
+    document.getElementById('monthlyRateFields').style.display = 'none';
+    
+    if (rateType === 'daily') {
+        document.getElementById('dailyRateFields').style.display = 'block';
+        document.getElementById('dailyRate').required = true;
+        document.getElementById('dailyRate').value = 560;
+    } else if (rateType === 'cutoff') {
+        document.getElementById('cutoffRateFields').style.display = 'block';
+        document.getElementById('cutoffRate').required = true;
+    } else if (rateType === 'monthly') {
+        document.getElementById('monthlyRateFields').style.display = 'block';
+        document.getElementById('monthlyRate').required = true;
+    }
+}
+
+function handleEditRateTypeChange() {
+    const rateType = document.getElementById('editRateType').value;
+    
+    document.getElementById('editDailyRateFields').style.display = 'none';
+    document.getElementById('editCutoffRateFields').style.display = 'none';
+    document.getElementById('editMonthlyRateFields').style.display = 'none';
+    
+    if (rateType === 'daily') {
+        document.getElementById('editDailyRateFields').style.display = 'block';
+        document.getElementById('editDailyRate').required = true;
+    } else if (rateType === 'cutoff') {
+        document.getElementById('editCutoffRateFields').style.display = 'block';
+        document.getElementById('editCutoffRate').required = true;
+    } else if (rateType === 'monthly') {
+        document.getElementById('editMonthlyRateFields').style.display = 'block';
+        document.getElementById('editMonthlyRate').required = true;
+    }
+}
+
+// ==================== Table Rendering ====================
+function renderDTRTable(records) {
+    const tbody = document.getElementById('dtrTableBody');
+    if (!tbody) return;
+    
+    if (records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center">No DTR records found</td></tr>';
+        return;
+    }
+    
+    let html = '';
+    records.forEach(record => {
+        const summary = record.summary || {};
+        const statusClass = `status-${record.status || 'draft'}`;
+        
+        html += `
+            <tr>
+                <td><input type="checkbox" class="record-checkbox" value="${record.id}"></td>
+                <td><strong>${escapeHtml(record.adminName)}</strong><br><small>${escapeHtml(record.adminPosition || '')}</small></td>
+                <td>${escapeHtml(record.cutoff || '—')}</td>
+                <td>${summary.totalDays || 0}</td>
+                <td>${(summary.totalOT || 0).toFixed(1)} hrs</td>
+                <td>${(summary.totalNightDiff || 0).toFixed(1)} hrs</td>
+                <td>₱${(summary.totalAdvances || 0).toLocaleString()}</td>
+                <td>₱${(summary.grossSalary || 0).toLocaleString()}</td>
+                <td><strong>₱${(summary.netTotal || 0).toLocaleString()}</strong></td>
+                <td><span class="status-badge ${statusClass}">${(record.status || 'draft').toUpperCase()}</span></td>
+                <td>
+                    <button class="action-btn action-view" onclick="openDTRModal('${record.id}')" title="View"><i class="fas fa-eye"></i></button>
+                    ${record.status === 'draft' ? 
+                        `<button class="action-btn action-edit" onclick="openDTRModal('${record.id}')" title="Edit"><i class="fas fa-edit"></i></button>` : ''}
+                    <button class="action-btn action-payslip" onclick="viewAdminDetails('${record.adminId}')" title="Admin"><i class="fas fa-user"></i></button>
+                    ${record.status === 'draft' ? 
+                        `<button class="action-btn action-delete" onclick="deleteDTRRecord('${record.id}')" title="Delete"><i class="fas fa-trash"></i></button>` : ''}
+                </td>
+            </tr>
+        `;
+    });
+    
+    tbody.innerHTML = html;
+}
+
+// ==================== Batch Operations ====================
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll').checked;
+    document.querySelectorAll('.record-checkbox').forEach(cb => {
+        cb.checked = selectAll;
+    });
+}
+
+function batchApprove() {
+    const selected = [];
+    document.querySelectorAll('.record-checkbox:checked').forEach(cb => {
+        selected.push(cb.value);
+    });
+    
+    if (selected.length === 0) {
+        Swal.fire({ icon: 'warning', title: 'No Selection', text: 'Please select records to approve' });
+        return;
+    }
+    
+    Swal.fire({
+        title: `Approve ${selected.length} records?`,
+        text: 'This will mark all selected DTR records as approved',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Approve All'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            let approved = 0;
+            let failed = 0;
+            
+            selected.forEach(id => {
+                fetch(`/api/admin-salary/records/${id}/approve`, { method: 'POST' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) approved++;
+                        else failed++;
+                        
+                        if (approved + failed === selected.length) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Batch Approve Complete',
+                                text: `Approved: ${approved}, Failed: ${failed}`
+                            });
+                            loadDTRRecords();
+                        }
+                    });
+            });
         }
     });
 }
 
-// Export report
-function exportReport() {
+function exportCutoff() {
+    const options = {};
+    document.querySelectorAll('#cutoffFilter option').forEach(opt => {
+        if (opt.value !== 'all') {
+            options[opt.value] = opt.value;
+        }
+    });
+    
     Swal.fire({
-        title: 'Export Report',
-        text: 'Select export format:',
-        icon: 'question',
+        title: 'Export Cutoff',
+        text: 'Select cutoff period to export',
+        input: 'select',
+        inputOptions: options,
+        inputPlaceholder: 'Select cutoff',
         showCancelButton: true,
-        confirmButtonText: 'PDF',
-        cancelButtonText: 'Excel',
-        showDenyButton: true,
-        denyButtonText: 'CSV'
+        confirmButtonText: 'Export'
     }).then((result) => {
-        let format = 'PDF';
-        if (result.isDenied) format = 'CSV';
-        else if (!result.isConfirmed) format = 'Excel';
-        
-        Swal.fire({
-            title: 'Exporting...',
-            text: `Generating ${format} report`,
-            allowOutsideClick: false,
-            didOpen: () => Swal.showLoading()
-        });
-        
-        setTimeout(() => {
+        if (result.isConfirmed) {
             Swal.fire({
                 icon: 'success',
-                title: 'Export Complete!',
-                text: `Your ${format} report has been generated.`,
+                title: 'Export Started',
+                text: `Exporting ${result.value}`,
                 timer: 1500,
                 showConfirmButton: false
             });
-        }, 2000);
+        }
     });
 }
 
-// Toggle analytics
-function toggleAnalytics() {
-    const section = document.getElementById('analyticsSection');
-    const btn = document.getElementById('toggleAnalyticsBtn');
-    const isHidden = section.style.display === 'none';
-    
-    section.style.display = isHidden ? 'block' : 'none';
-    btn.innerHTML = isHidden ? 
-        '<i class="fas fa-chart-line"></i> Hide' : 
-        '<i class="fas fa-chart-line"></i> Show';
+// ==================== Pagination ====================
+function updatePagination() {
+    document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
+    document.getElementById('prevPage').disabled = currentPage === 1;
+    document.getElementById('nextPage').disabled = currentPage === totalPages;
 }
 
-// Refresh data
+function changePage(direction) {
+    if (direction === 'prev' && currentPage > 1) {
+        currentPage--;
+        loadDTRRecords();
+    } else if (direction === 'next' && currentPage < totalPages) {
+        currentPage++;
+        loadDTRRecords();
+    }
+}
+
+// ==================== Utility Functions ====================
+function getMonthNumber(monthName) {
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                   'July', 'August', 'September', 'October', 'November', 'December'];
+    return months.indexOf(monthName);
+}
+
 function refreshData() {
     Swal.fire({
-        title: 'Refreshing Data...',
+        title: 'Refreshing...',
         text: 'Please wait',
         allowOutsideClick: false,
         didOpen: () => Swal.showLoading()
     });
     
     setTimeout(() => {
-        loadSalaryRecords();
-        updateSummaryCards();
+        loadDTRRecords();
+        loadSummary();
         Swal.close();
     }, 500);
 }
 
-// Download payslip
-function downloadPayslip() {
-    Swal.fire({
-        icon: 'success',
-        title: 'Download Started',
-        text: 'Your payslip is being downloaded.',
-        timer: 1500,
-        showConfirmButton: false
-    });
-}
-
-// Email payslip
-function emailPayslip() {
-    Swal.fire({
-        title: 'Email Payslip',
-        text: 'Enter email address:',
-        input: 'email',
-        inputValue: 'employee@example.com',
-        showCancelButton: true,
-        confirmButtonText: 'Send',
-        cancelButtonText: 'Cancel'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            Swal.fire({
-                icon: 'success',
-                title: 'Email Sent!',
-                text: 'Payslip has been sent successfully.',
-                timer: 1500,
-                showConfirmButton: false
-            });
-        }
-    });
-}
-
-// Show loading
-function showLoading() {
-    // Optional: Add loading spinner
-}
-
-// Hide loading
-function hideLoading() {
-    // Optional: Remove loading spinner
-}
-
-// Close all modals
 function closeAllModals() {
     document.querySelectorAll('.modal').forEach(modal => {
         modal.style.display = 'none';
     });
 }
 
-// Close all modals except one
-function closeAllModalsExcept(modalId) {
-    document.querySelectorAll('.modal').forEach(modal => {
-        if (modal.id !== modalId) {
-            modal.style.display = 'none';
-        }
-    });
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
-// Click outside modal to close
+function isSecondHalfCutoff(cutoffName) {
+    return cutoffName && cutoffName.includes('2nd Half');
+}
+
+function setupCutoffListener() {
+    const cutoffSelect = document.getElementById('cutoffSelect');
+    if (cutoffSelect) {
+        cutoffSelect.addEventListener('change', function() {
+            if (currentDTR.adminId) {
+                const cutoff = this.value;
+                if (isSecondHalfCutoff(cutoff)) {
+                    // Apply deductions for 2nd cutoff
+                    document.getElementById('sssDeduction').value = currentDTR.employeeSSS || 0;
+                    document.getElementById('philhealthDeduction').value = currentDTR.employeePhilhealth || 0;
+                    document.getElementById('pagibigDeduction').value = currentDTR.employeePagibig || 0;
+                } else {
+                    // Set to 0 for 1st cutoff
+                    document.getElementById('sssDeduction').value = 0;
+                    document.getElementById('philhealthDeduction').value = 0;
+                    document.getElementById('pagibigDeduction').value = 0;
+                }
+                calculateNetTotal();
+            }
+        });
+    }
+}
+
+// Click outside modal
 window.onclick = function(event) {
     if (event.target.classList.contains('modal')) {
         event.target.style.display = 'none';

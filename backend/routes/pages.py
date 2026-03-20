@@ -76,11 +76,11 @@ def gl_overview():
     """General Ledger Overview - Superadmin only"""
     return render_template("gl_overview.html")
 
-@pages_bp.route("/admin/transactions/gl-admin-salary")
+@pages_bp.route("/admin/gl-admin-salary")
 @login_required
 @admin_required
 def gl_admin_salary():
-    """Admin Salary - Superadmin only"""
+    """Admin Salary with DTR - Superadmin only"""
     return render_template("gl_admin_salary.html")
 
 @pages_bp.route("/admin/transactions/gl-drivers-salary")
