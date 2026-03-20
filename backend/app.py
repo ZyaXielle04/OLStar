@@ -105,8 +105,6 @@ try:
     from routes.admin_rfid import admin_rfid_api
     from routes.admin_maintenance import maintenance_transactions_bp
     from routes.gl_admin_salary import gl_admin_salary_bp
-    from routes.gl_advances import gl_advances_bp
-    from routes.gl_deductions import gl_deductions_bp
     from routes.gl_drivers_salary import gl_drivers_salary_bp
     from routes.gl_overview import gl_overview_bp
 except ModuleNotFoundError:
@@ -132,8 +130,6 @@ app.register_blueprint(fcm_notifications)
 app.register_blueprint(admin_rfid_api)
 app.register_blueprint(maintenance_transactions_bp)
 app.register_blueprint(gl_admin_salary_bp)
-app.register_blueprint(gl_advances_bp)
-app.register_blueprint(gl_deductions_bp)
 app.register_blueprint(gl_drivers_salary_bp)
 app.register_blueprint(gl_overview_bp)
 
