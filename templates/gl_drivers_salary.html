@@ -3,22 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <title>OLStar | Driver Salary</title>
-
+  <title>OLStar | Driver DTR</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/gl_drivers_salary.css') }}">
-  
-  <!-- Font Awesome for icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  
-  <!-- Chart.js for analytics -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
 <div class="layout">
-
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="sidebar-header">
@@ -62,10 +54,10 @@
                   <i class="fas fa-chart-pie" style="color:yellow;"></i> General Ledger
               </a>
               <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink">
-                  <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary
+                  <i class="fas fa-user-tie" style="color:blue;"></i> Admin DTR
               </a>
               <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink active">
-                  <i class="fas fa-truck" style="color:green;"></i> Drivers Salary
+                  <i class="fas fa-truck" style="color:green;"></i> Drivers DTR
               </a>
           </div>
       </details>
@@ -83,12 +75,9 @@
     <header class="page-header">
       <button id="btnToggleSidebar" class="hamburger">☰</button>
       <div class="header-with-badge">
-        <h1>Driver Salary</h1>
-        <span class="superadmin-badge">
-          <i class="fas fa-shield-alt"></i> Superadmin Only
-        </span>
+        <h1>Driver DTR & Salary Management</h1>
       </div>
-      <p class="subtitle">Manage driver salaries from completed schedules</p>
+      <p class="subtitle">Manage driver daily trip records, advances, deductions, and payroll per cutoff</p>
     </header>
 
     <!-- Summary Cards -->
@@ -99,19 +88,7 @@
         </div>
         <div class="summary-details">
           <h3>Active Drivers</h3>
-          <div class="summary-value" id="totalDrivers">—</div>
-          <span class="summary-sub">With completed trips</span>
-        </div>
-      </div>
-
-      <div class="summary-card">
-        <div class="summary-icon green">
-          <i class="fas fa-wallet"></i>
-        </div>
-        <div class="summary-details">
-          <h3>Total Payout (MTD)</h3>
-          <div class="summary-value" id="monthlyPayout">—</div>
-          <span class="summary-sub" id="monthlyPeriod">Current month</span>
+          <div class="summary-value" id="activeDrivers">—</div>
         </div>
       </div>
 
@@ -120,469 +97,257 @@
           <i class="fas fa-clock"></i>
         </div>
         <div class="summary-details">
-          <h3>Pending Payouts</h3>
-          <div class="summary-value" id="pendingPayouts">—</div>
-          <span class="summary-sub" id="pendingCount">0 pending</span>
+          <h3>Pending Approval</h3>
+          <div class="summary-value" id="pendingApproval">—</div>
         </div>
       </div>
 
       <div class="summary-card">
         <div class="summary-icon purple">
+          <i class="fas fa-wallet"></i>
+        </div>
+        <div class="summary-details">
+          <h3>Pending Payment</h3>
+          <div class="summary-value" id="pendingPayment">—</div>
+        </div>
+      </div>
+
+      <div class="summary-card">
+        <div class="summary-icon green">
           <i class="fas fa-chart-line"></i>
         </div>
         <div class="summary-details">
-          <h3>Completed Trips</h3>
-          <div class="summary-value" id="completedTrips">—</div>
-          <span class="summary-sub">This period</span>
+          <h3>Current Cutoff Payroll</h3>
+          <div class="summary-value" id="currentPayroll">—</div>
+          <span class="summary-sub" id="currentCutoff"></span>
         </div>
       </div>
     </section>
 
-    <!-- Quick Actions -->
-    <section class="actions-section">
-      <div class="action-buttons">
-        <button class="btn btn-primary" id="processDriverPayrollBtn">
-          <i class="fas fa-calculator"></i> Process Payroll
+    <!-- Driver Type Selector -->
+    <section class="driver-type-selector">
+      <div class="type-buttons">
+        <button class="type-btn active" data-type="main">
+          <i class="fas fa-truck"></i> Main Drivers
         </button>
-        <button class="btn btn-success" id="addDriverSalaryBtn">
-          <i class="fas fa-plus-circle"></i> Add Salary Record
+        <button class="type-btn" data-type="direct">
+          <i class="fas fa-handshake"></i> Outsource Direct
         </button>
-        <button class="btn btn-info" id="exportDriverSalaryBtn">
-          <i class="fas fa-download"></i> Export Report
+        <button class="type-btn" data-type="indirect">
+          <i class="fas fa-building"></i> Outsource Indirect
         </button>
-        <button class="btn btn-warning" id="viewCompletedSchedulesBtn">
-          <i class="fas fa-calendar-check"></i> View Completed Trips
+        <button class="type-btn" data-type="others">
+          <i class="fas fa-users"></i> Others
         </button>
       </div>
     </section>
 
-    <!-- Filters -->
-    <section class="filters-section">
-      <div class="filters-row">
-        <div class="filter-group">
-          <input type="text" id="searchInput" placeholder="Search by driver name..." class="filter-input">
-        </div>
-        <div class="filter-group">
-          <select id="statusFilter" class="filter-select">
-            <option value="all">All Status</option>
-            <option value="paid">Paid</option>
-            <option value="pending">Pending</option>
-            <option value="processing">Processing</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <select id="driverFilter" class="filter-select">
-            <option value="all">All Drivers</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <select id="payPeriodFilter" class="filter-select">
-            <option value="all">All Pay Periods</option>
-            <option value="January 2026 - 1st Half">January 2026 - 1st Half</option>
-            <option value="January 2026 - 2nd Half">January 2026 - 2nd Half</option>
-            <option value="February 2026 - 1st Half">February 2026 - 1st Half</option>
-            <option value="February 2026 - 2nd Half">February 2026 - 2nd Half</option>
-          </select>
-        </div>
-      </div>
-      
-      <!-- Date Filter Row -->
-      <div class="filters-row date-filters-row">
-        <div class="filter-group">
-          <label for="dateRangeFilter" class="filter-label">Payment Date:</label>
-          <select id="dateRangeFilter" class="filter-select" style="width: auto;">
-            <option value="all">All Time</option>
-            <option value="today">Today</option>
-            <option value="yesterday">Yesterday</option>
-            <option value="this_week">This Week</option>
-            <option value="last_week">Last Week</option>
-            <option value="this_month">This Month</option>
-            <option value="last_month">Last Month</option>
-            <option value="this_quarter">This Quarter</option>
-            <option value="last_quarter">Last Quarter</option>
-            <option value="this_year">This Year</option>
-            <option value="last_year">Last Year</option>
-            <option value="custom">Custom Range</option>
-          </select>
-        </div>
-        
-        <div class="filter-group custom-date-range" id="customDateRange" style="display: none;">
-          <input type="date" id="startDate" class="filter-input" style="width: 150px;">
-          <span style="margin: 0 5px;">to</span>
-          <input type="date" id="endDate" class="filter-input" style="width: 150px;">
-          <button id="applyDateFilter" class="btn btn-sm btn-primary">Apply</button>
-        </div>
-        
-        <div class="filter-group">
-          <button id="refreshDataBtn" class="btn btn-sm btn-info">
-            <i class="fas fa-sync-alt"></i> Refresh
-          </button>
-        </div>
+    <!-- Cutoff Selector -->
+    <section class="cutoff-selector">
+      <div class="cutoff-group">
+        <label for="cutoffSelect">Select Cutoff Period:</label>
+        <select id="cutoffSelect" class="cutoff-select">
+          <option value="">— Select Cutoff —</option>
+        </select>
       </div>
     </section>
 
-    <!-- Analytics Dashboard -->
-    <section class="analytics-section" id="analyticsSection">
-      <div class="analytics-header">
-        <h3>Driver Salary Analytics</h3>
-        <button id="toggleAnalyticsBtn" class="btn btn-sm btn-secondary">
-          <i class="fas fa-chart-line"></i> Hide
-        </button>
-      </div>
-      
-      <div class="analytics-grid">
-        <!-- Top Drivers by Earnings -->
-        <div class="chart-card">
-          <h4>Top Drivers by Earnings</h4>
-          <div class="top-drivers-list" id="topDriversList">
-            <div class="loading">Loading...</div>
-          </div>
-        </div>
-        
-        <!-- Monthly Payout Trend -->
-        <div class="chart-card">
-          <h4>Monthly Payout Trend</h4>
-          <canvas id="monthlyTrendChart" height="200"></canvas>
-        </div>
-        
-        <!-- Payment Status Distribution -->
-        <div class="chart-card">
-          <h4>Payment Status</h4>
-          <canvas id="statusChart" height="200"></canvas>
-        </div>
-        
-        <!-- Recent Completed Trips -->
-        <div class="chart-card">
-          <h4>Recent Completed Trips</h4>
-          <div class="recent-trips-list" id="recentTripsList">
-            <div class="loading">Loading...</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Driver Salary Records Table -->
+    <!-- Driver DTR Table -->
     <section class="records-section">
       <div class="table-header">
-        <h3>Driver Salary Records</h3>
-        <div class="table-actions">
-          <span class="record-count" id="recordCount">0 records</span>
-        </div>
+        <h3>Driver DTR Records</h3>
+        <span class="record-count" id="recordCount">0 records</span>
       </div>
       
       <div class="table-responsive">
-        <table class="salary-table">
+        <table class="dtr-table">
           <thead>
             <tr>
-              <th>Driver</th>
-              <th>Pay Period</th>
+              <th><input type="checkbox" id="selectAll"></th>
+              <th>Driver Name</th>
+              <th>Phone</th>
               <th>Trips</th>
-              <th>Gross Earnings</th>
-              <th>Deductions</th>
-              <th>Advances</th>
-              <th>Net Pay</th>
+              <th>Total Driver Rate</th>
+              <th>Net Total</th>
               <th>Status</th>
-              <th>Payment Date</th>
               <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="salaryTableBody">
-            <tr>
-              <td colspan="10" class="text-center">Loading salary records...</td>
-            </tr>
+             </thead>
+          <tbody id="dtrTableBody">
+            <tr><td colspan="8" class="text-center">Select cutoff to view DTR records</td></tr>
           </tbody>
         </table>
       </div>
       
       <!-- Pagination -->
-      <div class="pagination" id="pagination">
+      <div class="pagination">
         <button class="page-btn" id="prevPage" disabled>Previous</button>
         <span class="page-info" id="pageInfo">Page 1 of 1</span>
         <button class="page-btn" id="nextPage" disabled>Next</button>
       </div>
+      
+      <!-- Batch Actions -->
+      <div class="batch-actions">
+        <button class="btn btn-success" id="batchApproveBtn" style="display: none;">
+          <i class="fas fa-check-double"></i> Batch Approve
+        </button>
+        <button class="btn btn-info" id="exportCutoffBtn">
+          <i class="fas fa-download"></i> Export Cutoff
+        </button>
+        <button class="btn btn-secondary" id="refreshBtn">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+      </div>
     </section>
-
   </main>
-
 </div>
 
-<!-- Add/Edit Driver Salary Modal -->
-<div id="salaryModal" class="modal">
+<!-- Driver DTR Modal -->
+<div id="driverDTRModal" class="modal">
   <div class="modal-content large-modal">
     <div class="modal-header">
-      <h2 id="modalTitle">Add Driver Salary Record</h2>
+      <h2 id="modalTitle">Driver DTR</h2>
       <span class="close-modal">&times;</span>
     </div>
     
-    <form id="salaryForm">
+    <form id="dtrForm">
       <input type="hidden" id="recordId" name="recordId">
+      <input type="hidden" id="driverId" name="driverId">
       
       <div class="form-row">
         <div class="form-group">
-          <label for="driverId">Driver *</label>
-          <select id="driverId" name="driverId" required>
-            <option value="">— Select Driver —</option>
-          </select>
+          <label>Driver Name</label>
+          <input type="text" id="driverName" readonly class="readonly-input">
         </div>
-
         <div class="form-group">
-          <label for="payPeriod">Pay Period *</label>
-          <select id="payPeriod" name="payPeriod" required>
-            <option value="">— Select Period —</option>
-            <option value="January 2026 - 1st Half">January 2026 - 1st Half (1-15)</option>
-            <option value="January 2026 - 2nd Half">January 2026 - 2nd Half (16-31)</option>
-            <option value="February 2026 - 1st Half">February 2026 - 1st Half (1-15)</option>
-            <option value="February 2026 - 2nd Half">February 2026 - 2nd Half (16-28)</option>
-            <option value="March 2026 - 1st Half">March 2026 - 1st Half (1-15)</option>
-            <option value="March 2026 - 2nd Half">March 2026 - 2nd Half (16-31)</option>
-          </select>
+          <label>Phone Number</label>
+          <input type="text" id="driverPhone" readonly class="readonly-input">
         </div>
-      </div>
-
-      <!-- Completed Trips Selection -->
-      <div class="form-section">
-        <h4>Completed Trips</h4>
-        <div class="trips-selection">
-          <div class="trips-header">
-            <button type="button" class="btn btn-sm btn-primary" id="selectAllTrips">Select All</button>
-            <button type="button" class="btn btn-sm btn-secondary" id="deselectAllTrips">Deselect All</button>
-            <span class="selected-count" id="selectedTripsCount">0 trips selected</span>
-          </div>
-          <div class="trips-list" id="completedTripsList">
-            <!-- Trips will be populated dynamically -->
-            <div class="loading">Loading completed trips...</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="form-section">
-        <h4>Earnings Summary</h4>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="totalTrips">Total Trips</label>
-            <input type="number" id="totalTrips" name="totalTrips" readonly>
-          </div>
-
-          <div class="form-group">
-            <label for="grossEarnings">Gross Earnings (₱)</label>
-            <input type="number" id="grossEarnings" name="grossEarnings" step="0.01" readonly>
-          </div>
-        </div>
-      </div>
-
-      <div class="form-section">
-        <h4>Deductions</h4>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="taxDeduction">Tax Deduction (₱)</label>
-            <input type="number" id="taxDeduction" name="taxDeduction" step="0.01" min="0" placeholder="0.00">
-          </div>
-
-          <div class="form-group">
-            <label for="sssDeduction">SSS Deduction (₱)</label>
-            <input type="number" id="sssDeduction" name="sssDeduction" step="0.01" min="0" placeholder="0.00">
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="philhealthDeduction">PhilHealth Deduction (₱)</label>
-            <input type="number" id="philhealthDeduction" name="philhealthDeduction" step="0.01" min="0" placeholder="0.00">
-          </div>
-
-          <div class="form-group">
-            <label for="pagibigDeduction">Pag-IBIG Deduction (₱)</label>
-            <input type="number" id="pagibigDeduction" name="pagibigDeduction" step="0.01" min="0" placeholder="0.00">
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="loanDeduction">Loan Deduction (₱)</label>
-            <input type="number" id="loanDeduction" name="loanDeduction" step="0.01" min="0" placeholder="0.00">
-          </div>
-
-          <div class="form-group">
-            <label for="otherDeductions">Other Deductions (₱)</label>
-            <input type="number" id="otherDeductions" name="otherDeductions" step="0.01" min="0" placeholder="0.00">
-          </div>
-        </div>
-      </div>
-
-      <div class="form-section">
-        <h4>Advances</h4>
         <div class="form-group">
-          <label for="advanceDeduction">Advance Deduction (₱)</label>
-          <input type="number" id="advanceDeduction" name="advanceDeduction" step="0.01" min="0" placeholder="0.00">
+          <label>Cutoff Period</label>
+          <input type="text" id="modalCutoff" readonly class="readonly-input">
         </div>
       </div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label for="totalDeductions">Total Deductions (₱)</label>
-          <input type="number" id="totalDeductions" name="totalDeductions" step="0.01" readonly placeholder="Auto-calculated">
-        </div>
-
-        <div class="form-group">
-          <label for="netPay">Net Pay (₱)</label>
-          <input type="number" id="netPay" name="netPay" step="0.01" readonly placeholder="Auto-calculated">
+      <!-- Daily Trip Grid -->
+      <div class="trips-grid-container">
+        <h3>Daily Trip Records</h3>
+        <div class="table-responsive">
+          <table class="trips-grid" id="tripsGrid">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Day</th>
+                <th>Time</th>
+                <th>Schedule ID</th>
+                <th>Amount</th>
+                <th>Driver Rate</th>
+                <th>Advance</th>
+                <th>Action</th>
+              </thead>
+            <tbody id="tripsGridBody">
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="3"><strong>TOTALS</strong></td>
+                <td id="totalTripsCount">0</td>
+                <td id="totalAmount">₱0</td>
+                <td id="totalDriverRate">₱0</td>
+                <td id="totalAdvances">₱0</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label for="paymentStatus">Payment Status *</label>
-          <select id="paymentStatus" name="paymentStatus" required>
-            <option value="pending">Pending</option>
-            <option value="processing">Processing</option>
-            <option value="paid">Paid</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+      <!-- Deductions Section -->
+      <div class="deductions-container">
+        <h3>Deductions</h3>
+        <div class="deductions-grid">
+          <div class="deduction-item">
+            <label>SSS Contribution</label>
+            <input type="number" id="sssDeduction" class="deduction-input" step="0.01" value="0">
+          </div>
+          <div class="deduction-item">
+            <label>PhilHealth Contribution</label>
+            <input type="number" id="philhealthDeduction" class="deduction-input" step="0.01" value="0">
+          </div>
+          <div class="deduction-item">
+            <label>PAGIBIG Contribution</label>
+            <input type="number" id="pagibigDeduction" class="deduction-input" step="0.01" value="0">
+          </div>
+          <div class="deduction-item">
+            <label>Other Deductions</label>
+            <input type="number" id="otherDeductions" class="deduction-input" step="0.01" value="0">
+          </div>
         </div>
+      </div>
 
-        <div class="form-group">
-          <label for="paymentDate">Payment Date</label>
-          <input type="date" id="paymentDate" name="paymentDate">
+      <!-- Transactions Section -->
+      <div class="transactions-container">
+        <div class="transactions-header">
+          <h3>Utang / Payments</h3>
+          <button type="button" class="btn btn-sm btn-success" id="addPaymentBtn">
+            <i class="fas fa-money-bill"></i> Add Payment
+          </button>
+        </div>
+        
+        <div class="transactions-summary">
+          <div class="transaction-summary-item">
+            <span class="summary-label">Total Utang:</span>
+            <span class="summary-value" id="totalUtang">₱0</span>
+          </div>
+          <div class="transaction-summary-item">
+            <span class="summary-label">Total Paid:</span>
+            <span class="summary-value" id="totalPaid">₱0</span>
+          </div>
+          <div class="transaction-summary-item">
+            <span class="summary-label">Balance:</span>
+            <span class="summary-value" id="balanceUtang">₱0</span>
+          </div>
+        </div>
+        
+        <div class="transactions-list">
+          <h4>Transaction History</h4>
+          <div class="table-responsive">
+            <table class="transactions-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Description</th>
+                  <th>Action</th>
+                 </thead>
+              <tbody id="transactionsListBody">
+                <tr><td colspan="5" class="text-center">No transactions</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      <div class="form-group">
-        <label for="paymentMethod">Payment Method</label>
-        <select id="paymentMethod" name="paymentMethod">
-          <option value="">— Select Method —</option>
-          <option value="bank-transfer">Bank Transfer</option>
-          <option value="check">Check</option>
-          <option value="cash">Cash</option>
-        </select>
+      <!-- Net Total -->
+      <div class="net-total-container">
+        <div class="net-total-row">
+          <h3>NET TOTAL:</h3>
+          <h3 id="netTotal">₱0</h3>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label for="salaryNotes">Notes</label>
-        <textarea id="salaryNotes" name="notes" rows="2" 
-                  placeholder="Additional notes..."></textarea>
-      </div>
-
+      <!-- Form Actions -->
       <div class="form-actions">
         <button type="button" class="btn-secondary cancel-btn">Cancel</button>
-        <button type="submit" class="btn-primary" id="saveSalaryBtn">Save Record</button>
+        <button type="button" class="btn-info" id="calculateBtn"><i class="fas fa-calculator"></i> Calculate</button>
+        <button type="submit" class="btn-primary" id="saveDTRBtn">Save DTR</button>
+        <button type="button" class="btn-success" id="approveBtn" style="display:none;">Approve</button>
+        <button type="button" class="btn-warning" id="markPaidBtn" style="display:none;">Mark as Paid</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- View Completed Schedules Modal -->
-<div id="completedSchedulesModal" class="modal">
-  <div class="modal-content large-modal">
-    <div class="modal-header">
-      <h2>Completed Trips</h2>
-      <span class="close-modal">&times;</span>
-    </div>
-    
-    <div class="filters-row" style="margin-bottom: 15px;">
-      <div class="filter-group">
-        <input type="text" id="tripSearchInput" placeholder="Search by driver..." class="filter-input">
-      </div>
-      <div class="filter-group">
-        <select id="tripDriverFilter" class="filter-select">
-          <option value="all">All Drivers</option>
-        </select>
-      </div>
-      <div class="filter-group">
-        <select id="tripPeriodFilter" class="filter-select">
-          <option value="all">All Periods</option>
-        </select>
-      </div>
-    </div>
-    
-    <div class="table-responsive">
-      <table class="trips-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Time</th>
-            <th>Driver</th>
-            <th>Client Amount</th>
-            <th>Driver Rate</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="completedTripsTableBody">
-          <tr>
-            <td colspan="7" class="text-center">Loading completed trips...</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    
-    <div class="modal-footer">
-      <button class="btn-secondary close-btn">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- View Details Modal -->
-<div id="detailsModal" class="modal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2>Salary Details</h2>
-      <span class="close-modal">&times;</span>
-    </div>
-    
-    <div class="details-container" id="detailsContainer">
-      <!-- Details will be populated dynamically -->
-    </div>
-    
-    <div class="trips-included" id="tripsIncluded" style="display: none;">
-      <h3>Trips Included</h3>
-      <div class="table-responsive">
-        <table class="trips-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Driver Rate</th>
-            </tr>
-          </thead>
-          <tbody id="tripsIncludedBody"></tbody>
-        </table>
-      </div>
-    </div>
-    
-    <div class="modal-footer">
-      <button class="btn-secondary close-btn">Close</button>
-      <button class="btn-primary" id="editFromDetailsBtn">Edit Record</button>
-      <button class="btn-success" id="generatePayslipDetailsBtn">Generate Payslip</button>
-    </div>
-  </div>
-</div>
-
-<!-- Generate Payslip Modal -->
-<div id="payslipModal" class="modal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2>Driver Payslip</h2>
-      <span class="close-modal">&times;</span>
-    </div>
-    
-    <div class="payslip-container" id="payslipContainer">
-      <!-- Payslip will be generated here -->
-    </div>
-    
-    <div class="modal-footer">
-      <button class="btn-secondary close-btn">Close</button>
-      <button class="btn-primary" id="downloadPayslipBtn">
-        <i class="fas fa-download"></i> Download PDF
-      </button>
-      <button class="btn-success" id="emailPayslipBtn">
-        <i class="fas fa-envelope"></i> Email
-      </button>
-    </div>
-  </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="{{ url_for('static', filename='js/base.js') }}"></script>
 <script src="{{ url_for('static', filename='js/gl_drivers_salary.js') }}"></script>
 

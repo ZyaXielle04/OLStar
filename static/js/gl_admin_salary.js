@@ -5,15 +5,15 @@ let currentDTR = {
     adminId: null,
     cutoff: null,
     entries: {},
-    dailyRate: 560, // Default daily rate for 8 hours
-    hourlyRate: 70, // 70 per hour
-    otRate: 14, // 20% of hourly rate = ₱14 per hour
+    dailyRate: 620, // Default daily rate for 9 hours
+    hourlyRate: 68.89, // 620 / 9 = 68.89 per hour
+    otRate: 70, // ₱70 per hour for OT
     nightDiffRate: 10, // ₱10 per hour for night differential
-    otherAdvances: {
+    transactions: {
         totalUtang: 0,
         totalPaid: 0,
         balanceUtang: 0,
-        transactions: {}
+        list: {}
     }
 };
 let currentAdminId = null;
@@ -31,13 +31,121 @@ function initializePage() {
     setupEventListeners();
 }
 
+function loadCarryOverUtang(adminId, currentCutoff) {
+    console.log('%c🔍 LOADING CARRYOVER UTANG', 'color: blue; font-weight: bold');
+    console.log('Admin ID:', adminId);
+    console.log('Current Cutoff:', currentCutoff);
+    
+    return new Promise((resolve, reject) => {
+        const url = `/api/admin-salary/all-previous-utang/${adminId}/${encodeURIComponent(currentCutoff)}`;
+        console.log('Fetching from:', url);
+        
+        fetch(url)
+            .then(res => {
+                console.log('Response status:', res.status);
+                return res.json();
+            })
+            .then(data => {
+                console.log('%c📦 API Response:', 'color: purple; font-weight: bold', data);
+                
+                if (data.success && data.data) {
+                    console.log('Total remaining utang from API:', data.data.totalRemainingUtang);
+                    console.log('Cutoffs list:', data.data.cutoffsList);
+                    
+                    if (data.data.totalRemainingUtang > 0) {
+                        console.log('%c✅ Carryover utang found!', 'color: green; font-weight: bold');
+                        console.log('Amount to carry over: ₱' + data.data.totalRemainingUtang.toLocaleString());
+                        
+                        // Log current state before adding carryover
+                        console.log('%c📊 Current state BEFORE adding carryover:', 'color: orange');
+                        console.log('Current transactions.list:', currentDTR.transactions.list);
+                        console.log('Current totalUtang:', currentDTR.transactions.totalUtang);
+                        console.log('Current totalPaid:', currentDTR.transactions.totalPaid);
+                        
+                        // Clear any existing carryover transactions first
+                        const carryoverIds = Object.keys(currentDTR.transactions.list || {}).filter(id => 
+                            currentDTR.transactions.list[id]?.type === 'utang' && 
+                            currentDTR.transactions.list[id]?.date?.startsWith('Carryover')
+                        );
+                        
+                        console.log('Existing carryover transactions to remove:', carryoverIds);
+                        
+                        carryoverIds.forEach(id => {
+                            delete currentDTR.transactions.list[id];
+                        });
+                        
+                        // Reset totalUtang to remove previous carryovers
+                        let totalFromEntries = 0;
+                        Object.values(currentDTR.entries || {}).forEach(entry => {
+                            totalFromEntries += entry.advance || 0;
+                        });
+                        currentDTR.transactions.totalUtang = totalFromEntries;
+                        
+                        console.log('Total from entries after reset:', totalFromEntries);
+                        
+                        // Add the accumulated carryover utang
+                        if (data.data.totalRemainingUtang > 0) {
+                            const carryOverId = `carryover_${Date.now()}`;
+                            const cutoffListText = data.data.cutoffsList.length > 1 
+                                ? `${data.data.cutoffsList.length} previous cutoffs` 
+                                : data.data.cutoffsList[0];
+                            
+                            const carryoverTransaction = {
+                                id: carryOverId,
+                                date: `Carryover from previous cutoffs`,
+                                amount: data.data.totalRemainingUtang,
+                                type: 'utang',
+                                description: `Total remaining utang from ${cutoffListText}: ₱${data.data.totalRemainingUtang.toLocaleString()}`
+                            };
+                            
+                            console.log('%c➕ Adding carryover transaction:', 'color: green', carryoverTransaction);
+                            
+                            currentDTR.transactions.list[carryOverId] = carryoverTransaction;
+                            currentDTR.transactions.totalUtang = (currentDTR.transactions.totalUtang || 0) + data.data.totalRemainingUtang;
+                        }
+                        
+                        currentDTR.transactions.balanceUtang = currentDTR.transactions.totalUtang - (currentDTR.transactions.totalPaid || 0);
+                        
+                        console.log('%c📊 Current state AFTER adding carryover:', 'color: green');
+                        console.log('Updated transactions.list:', currentDTR.transactions.list);
+                        console.log('Updated totalUtang:', currentDTR.transactions.totalUtang);
+                        console.log('Updated balanceUtang:', currentDTR.transactions.balanceUtang);
+                        
+                        updateTransactionDisplay();
+                        
+                        // Show notification
+                        Swal.fire({
+                            icon: 'info',
+                            title: 'Carryover Utang',
+                            html: `₱${data.data.totalRemainingUtang.toLocaleString()} utang carried over from:<br>${data.data.cutoffsList.join('<br>')}`,
+                            timer: 5000,
+                            showConfirmButton: true,
+                            confirmButtonText: 'OK',
+                            toast: false,
+                            position: 'center'
+                        });
+                    } else {
+                        console.log('%cℹ️ No carryover utang found', 'color: gray');
+                    }
+                } else {
+                    console.log('%c❌ API returned no data or error', 'color: red');
+                }
+                resolve(data);
+            })
+            .catch(error => {
+                console.error('%c❌ Error loading carryover utang:', 'color: red', error);
+                reject(error);
+            });
+    });
+}
+
 // ==================== Event Listeners ====================
 function setupEventListeners() {
     // Toggle sidebar
     document.getElementById('btnToggleSidebar')?.addEventListener('click', toggleSidebar);
     
     // Action buttons
-    document.getElementById('newDTRBtn')?.addEventListener('click', openDTRModal);
+    document.getElementById('newDTRBtn')?.addEventListener('click', () => openDTRModal());
     document.getElementById('batchApproveBtn')?.addEventListener('click', batchApprove);
     document.getElementById('exportCutoffBtn')?.addEventListener('click', exportCutoff);
     document.getElementById('refreshBtn')?.addEventListener('click', refreshData);
@@ -62,7 +170,6 @@ function setupEventListeners() {
     document.getElementById('dtrForm')?.addEventListener('submit', saveDTR);
     document.getElementById('addAdminForm')?.addEventListener('submit', saveAdmin);
     document.getElementById('editAdminForm')?.addEventListener('submit', updateAdmin);
-    document.getElementById('utangForm')?.addEventListener('submit', saveUtangTransaction);
     
     // Calculate button
     document.getElementById('calculateBtn')?.addEventListener('click', calculateAll);
@@ -72,13 +179,12 @@ function setupEventListeners() {
     document.getElementById('cutoffSelect')?.addEventListener('change', generateDTRGrid);
     
     // Deduction inputs
-    ['sssDeduction', 'philhealthDeduction', 'pagibigDeduction', 'otherDeductions'].forEach(id => {
+    ['sssDeduction', 'philhealthDeduction', 'pagibigDeduction', 'otherDeductions', 'bayadUtang'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', calculateNetTotal);
     });
     
-    // Utang buttons
-    document.getElementById('addUtangBtn')?.addEventListener('click', () => openUtangModal('utang'));
-    document.getElementById('addPaymentBtn')?.addEventListener('click', () => openUtangModal('payment'));
+    // Add payment button
+    document.getElementById('addPaymentBtn')?.addEventListener('click', openPaymentModal);
     
     // Approve/Paid buttons
     document.getElementById('approveBtn')?.addEventListener('click', approveDTR);
@@ -193,52 +299,44 @@ function loadSummary() {
 }
 
 function loadEmployeeRates() {
-    const adminId = document.getElementById('employeeId').value;
-    if (!adminId) return;
-    
-    fetch(`/api/admin-salary/employees/${adminId}/rates`)
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                currentDTR.adminId = adminId;
-                currentDTR.dailyRate = data.data.dailyRate || 560;
-                currentDTR.hourlyRate = data.data.hourlyRate || 70;
-                currentDTR.otRate = 14;
-                currentDTR.nightDiffRate = 10;
-                
-                // Store employee deduction values
-                currentDTR.employeeSSS = data.data.sss || 0;
-                currentDTR.employeePhilhealth = data.data.philhealth || 0;
-                currentDTR.employeePagibig = data.data.pagibig || 0;
-                
-                console.log('Rates loaded:', {
-                    dailyRate: currentDTR.dailyRate,
-                    hourlyRate: currentDTR.hourlyRate,
-                    otRate: currentDTR.otRate,
-                    nightDiffRate: currentDTR.nightDiffRate,
-                    sss: currentDTR.employeeSSS,
-                    philhealth: currentDTR.employeePhilhealth,
-                    pagibig: currentDTR.employeePagibig
-                });
-                
-                // Check if current cutoff is 2nd half to apply deductions
-                const cutoffValue = document.getElementById('cutoffSelect').value;
-                if (cutoffValue && isSecondHalfCutoff(cutoffValue)) {
-                    // Apply deductions for 2nd cutoff
-                    document.getElementById('sssDeduction').value = currentDTR.employeeSSS;
-                    document.getElementById('philhealthDeduction').value = currentDTR.employeePhilhealth;
-                    document.getElementById('pagibigDeduction').value = currentDTR.employeePagibig;
-                } else {
-                    // Set to 0 for 1st cutoff
-                    document.getElementById('sssDeduction').value = 0;
-                    document.getElementById('philhealthDeduction').value = 0;
-                    document.getElementById('pagibigDeduction').value = 0;
+    return new Promise((resolve, reject) => {
+        const adminId = document.getElementById('employeeId').value;
+        if (!adminId) {
+            resolve();
+            return;
+        }
+        
+        fetch(`/api/admin-salary/employees/${adminId}/rates`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    currentDTR.adminId = adminId;
+                    currentDTR.dailyRate = data.data.dailyRate || 620;
+                    currentDTR.hourlyRate = (currentDTR.dailyRate / 9) || 68.89;
+                    currentDTR.otRate = 70;
+                    currentDTR.nightDiffRate = 10;
+                    
+                    currentDTR.employeeSSS = data.data.sss || 0;
+                    currentDTR.employeePhilhealth = data.data.philhealth || 0;
+                    currentDTR.employeePagibig = data.data.pagibig || 0;
+                    
+                    console.log('Rates loaded:', {
+                        dailyRate: currentDTR.dailyRate,
+                        hourlyRate: currentDTR.hourlyRate,
+                        otRate: currentDTR.otRate,
+                        nightDiffRate: currentDTR.nightDiffRate,
+                        sss: currentDTR.employeeSSS,
+                        philhealth: currentDTR.employeePhilhealth,
+                        pagibig: currentDTR.employeePagibig
+                    });
                 }
-            }
-        })
-        .catch(error => {
-            console.error('Error loading employee rates:', error);
-        });
+                resolve();
+            })
+            .catch(error => {
+                console.error('Error loading employee rates:', error);
+                reject(error);
+            });
+    });
 }
 
 // ==================== Time Calculation Functions ====================
@@ -268,15 +366,29 @@ function calculateHours(startTime, endTime) {
 }
 
 function calculateOT(startTime, endTime) {
-    const hours = calculateHours(startTime, endTime);
+    const totalHours = calculateHours(startTime, endTime);
     
-    // Standard work day is 8 hours
-    // OT is any hours beyond 8
-    if (hours > 8) {
-        const otHours = hours - 8;
+    // Standard work day is 9 hours
+    // OT is any hours beyond 9
+    if (totalHours > 9) {
+        const otHours = totalHours - 9;
         return Math.round(otHours * 10) / 10;
     }
     return 0;
+}
+
+function calculateRegularPay(startTime, endTime, status) {
+    if (status !== 'present') return 0;
+    if (!startTime || !endTime) return 0;
+    
+    const totalHours = calculateHours(startTime, endTime);
+    
+    // Regular pay is daily rate for up to 9 hours
+    // If less than 9 hours, pay is prorated based on hourly rate (dailyRate / 9)
+    const hourlyRate = currentDTR.dailyRate / 9;
+    const regularHours = Math.min(totalHours, 9);
+    
+    return regularHours * hourlyRate;
 }
 
 function calculateNightDiff(startTime, endTime) {
@@ -287,7 +399,7 @@ function calculateNightDiff(startTime, endTime) {
     
     if (!start || !end) return 0;
     
-    // Night differential hours: 10:00 PM (22:00) to 6:00 AM
+    // Night differential hours: 10:00 PM (22:00) to 6:00 AM (6:00)
     const NIGHT_START = 22; // 10 PM
     const NIGHT_END = 6; // 6 AM
     
@@ -307,7 +419,7 @@ function calculateNightDiff(startTime, endTime) {
     
     let nightDiffHours = 0;
     
-    // Check each hour segment
+    // Check each hour segment for night differential
     for (let hour = Math.floor(startDecimal); hour < Math.ceil(endDecimal); hour++) {
         let currentHour = hour % 24;
         
@@ -325,10 +437,41 @@ function calculateNightDiff(startTime, endTime) {
     return Math.round(nightDiffHours * 10) / 10;
 }
 
+function calculateNightDiffPay(startTime, endTime) {
+    const nightDiffHours = calculateNightDiff(startTime, endTime);
+    // Night differential pay is ₱10 per hour
+    return nightDiffHours * currentDTR.nightDiffRate;
+}
+
+function calculateOTPay(startTime, endTime) {
+    const otHours = calculateOT(startTime, endTime);
+    // Overtime pay is ₱70 per hour
+    return otHours * currentDTR.otRate;
+}
+
+function calculateDailyGross(startTime, endTime, status) {
+    if (status !== 'present') return 0;
+    if (!startTime || !endTime) return 0;
+    
+    const regularPay = calculateRegularPay(startTime, endTime, status);
+    const otPay = calculateOTPay(startTime, endTime);
+    const nightDiffPay = calculateNightDiffPay(startTime, endTime);
+    
+    return regularPay + otPay + nightDiffPay;
+}
+
 // ==================== DTR Grid ====================
 function generateDTRGrid() {
+    console.log('%c📊 GENERATING DTR GRID', 'color: purple; font-weight: bold');
+    console.log('Current cutoff:', document.getElementById('cutoffSelect').value);
+    console.log('Current adminId:', currentDTR.adminId);
+    console.log('Current transactions:', currentDTR.transactions);
+    
     const cutoff = document.getElementById('cutoffSelect').value;
-    if (!cutoff) return;
+    if (!cutoff) {
+        console.log('No cutoff selected, skipping grid generation');
+        return;
+    }
     
     currentDTR.cutoff = cutoff;
     
@@ -382,7 +525,7 @@ function generateDTRGrid() {
                 <td><input type="time" class="time-out" value="${entry.timeOut || ''}" onchange="updateDTRRow('${date}')"></td>
                 <td><input type="number" class="ot-hours" step="0.5" min="0" value="${entry.ot || 0}" readonly style="background-color:#f0f0f0;"></td>
                 <td><input type="number" class="night-diff" step="0.5" min="0" value="${entry.nightDiff || 0}" readonly style="background-color:#f0f0f0;"></td>
-                <td><input type="number" class="advance" step="0.01" min="0" value="${entry.advance || 0}" onchange="updateDTRRow('${date}')"></td>
+                <td><input type="number" class="advance" step="0.01" min="0" value="${entry.advance || 0}" onchange="updateAdvance('${date}', this.value)"></td>
                 <td>
                     <select class="status" onchange="updateDTRRow('${date}')">
                         <option value="present" ${entry.status === 'present' ? 'selected' : ''}>Present</option>
@@ -395,6 +538,246 @@ function generateDTRGrid() {
             </tr>
         `;
     }
+
+    console.log('Grid generated with', Object.keys(currentDTR.entries).length, 'entries');
+    console.log('Transactions to display:', currentDTR.transactions);
+    
+    tbody.innerHTML = html;
+    renderTransactionsList();
+}
+
+function updateAdvance(date, amount) {
+    const advanceAmount = parseFloat(amount) || 0;
+    
+    // Ensure transactions.list exists
+    if (!currentDTR.transactions.list) {
+        currentDTR.transactions.list = {};
+    }
+    
+    // Check if this advance already exists in transactions
+    const existingTransactionId = Object.keys(currentDTR.transactions.list).find(id => 
+        currentDTR.transactions.list[id]?.date === date && 
+        currentDTR.transactions.list[id]?.type === 'utang'
+    );
+    
+    if (existingTransactionId) {
+        // Update existing transaction
+        const oldAmount = currentDTR.transactions.list[existingTransactionId].amount;
+        const difference = advanceAmount - oldAmount;
+        
+        if (advanceAmount > 0) {
+            currentDTR.transactions.list[existingTransactionId].amount = advanceAmount;
+        } else {
+            delete currentDTR.transactions.list[existingTransactionId];
+        }
+        
+        // Update totals
+        currentDTR.transactions.totalUtang = (currentDTR.transactions.totalUtang || 0) + difference;
+    } else if (advanceAmount > 0) {
+        // Add new transaction
+        const transactionId = Date.now().toString();
+        currentDTR.transactions.list[transactionId] = {
+            id: transactionId,
+            date: date,
+            amount: advanceAmount,
+            type: 'utang',
+            description: `Advance for ${date}`
+        };
+        currentDTR.transactions.totalUtang = (currentDTR.transactions.totalUtang || 0) + advanceAmount;
+    }
+    
+    // Update balance (just for display, not for deduction)
+    currentDTR.transactions.totalPaid = currentDTR.transactions.totalPaid || 0;
+    currentDTR.transactions.balanceUtang = (currentDTR.transactions.totalUtang || 0) - (currentDTR.transactions.totalPaid || 0);
+    
+    // Update the entry
+    if (currentDTR.entries[date]) {
+        currentDTR.entries[date].advance = advanceAmount;
+    }
+    
+    updateTransactionDisplay();
+    updateDTRRow(date);
+}
+
+function openPaymentModal() {
+    if (!document.getElementById('recordId').value) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Save First',
+            text: 'Please save the DTR record first before adding payments.'
+        });
+        return;
+    }
+    
+    Swal.fire({
+        title: 'Add Payment',
+        html: `
+            <div style="text-align: left;">
+                <div class="form-group">
+                    <label>Amount to Pay</label>
+                    <input type="number" id="paymentAmount" class="swal2-input" step="0.01" min="0" placeholder="Enter amount">
+                </div>
+                <div class="form-group">
+                    <label>Description (Optional)</label>
+                    <input type="text" id="paymentDescription" class="swal2-input" placeholder="Payment description">
+                </div>
+                <div class="form-group">
+                    <label>Current Balance: ₱${currentDTR.transactions.balanceUtang.toLocaleString()}</label>
+                </div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Add Payment',
+        preConfirm: () => {
+            const amount = document.getElementById('paymentAmount').value;
+            if (!amount || parseFloat(amount) <= 0) {
+                Swal.showValidationMessage('Please enter a valid amount');
+                return false;
+            }
+            return {
+                amount: parseFloat(amount),
+                description: document.getElementById('paymentDescription').value
+            };
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            addPayment(result.value.amount, result.value.description);
+        }
+    });
+}
+
+function addPayment(amount, description) {
+    const transactionId = Date.now().toString();
+    const today = new Date().toISOString().split('T')[0];
+    
+    console.log('Adding payment:', {amount, description});
+    
+    // Ensure transactions.list exists
+    if (!currentDTR.transactions.list) {
+        currentDTR.transactions.list = {};
+    }
+    
+    // Add the payment transaction
+    currentDTR.transactions.list[transactionId] = {
+        id: transactionId,
+        date: today,
+        amount: amount,
+        type: 'payment',
+        description: description || `Payment made on ${today}`
+    };
+    
+    // Update totals
+    currentDTR.transactions.totalPaid = (currentDTR.transactions.totalPaid || 0) + amount;
+    currentDTR.transactions.balanceUtang = currentDTR.transactions.totalUtang - currentDTR.transactions.totalPaid;
+    
+    console.log('Updated transactions after payment:', currentDTR.transactions);
+    
+    // Update display
+    updateTransactionDisplay();
+    calculateNetTotal();
+    
+    Swal.fire({
+        icon: 'success',
+        title: 'Payment Added',
+        text: `₱${amount.toLocaleString()} payment recorded`,
+        timer: 1500,
+        showConfirmButton: false
+    });
+}
+
+function deleteTransaction(transactionId) {
+    Swal.fire({
+        title: 'Delete Transaction?',
+        text: 'This action cannot be undone',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#e74c3c',
+        confirmButtonText: 'Yes, Delete'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Ensure transactions.list exists
+            if (!currentDTR.transactions.list) {
+                currentDTR.transactions.list = {};
+            }
+            
+            const transaction = currentDTR.transactions.list[transactionId];
+            if (transaction) {
+                if (transaction.type === 'utang') {
+                    currentDTR.transactions.totalUtang = (currentDTR.transactions.totalUtang || 0) - transaction.amount;
+                    // Also remove from daily entry
+                    Object.keys(currentDTR.entries).forEach(date => {
+                        if (currentDTR.entries[date] && 
+                            currentDTR.entries[date].advance === transaction.amount && 
+                            currentDTR.entries[date].advance > 0) {
+                            currentDTR.entries[date].advance = 0;
+                            // Update the input field if visible
+                            const row = document.querySelector(`tr[data-date="${date}"]`);
+                            if (row) {
+                                const advanceInput = row.querySelector('.advance');
+                                if (advanceInput) advanceInput.value = 0;
+                            }
+                        }
+                    });
+                } else if (transaction.type === 'payment') {
+                    currentDTR.transactions.totalPaid = (currentDTR.transactions.totalPaid || 0) - transaction.amount;
+                }
+                
+                delete currentDTR.transactions.list[transactionId];
+                currentDTR.transactions.balanceUtang = (currentDTR.transactions.totalUtang || 0) - (currentDTR.transactions.totalPaid || 0);
+                
+                updateTransactionDisplay();
+                calculateNetTotal();
+                
+                Swal.fire('Deleted!', 'Transaction deleted', 'success');
+            }
+        }
+    });
+}
+
+function updateTransactionDisplay() {
+    // Update summary fields in Salary Summary section
+    const totalUtang = currentDTR.transactions.totalUtang || 0;
+    const bayadUtang = currentDTR.transactions.totalPaid || 0;
+    const remainingUtang = totalUtang - bayadUtang;
+    
+    // Update Salary Summary fields
+    document.getElementById('totalUtangDisplay').textContent = `₱${totalUtang.toLocaleString()}`;
+    document.getElementById('bayadUtang').value = bayadUtang;
+    document.getElementById('remainingUtang').textContent = `₱${remainingUtang.toLocaleString()}`;
+    
+    // Update transaction summary cards
+    document.getElementById('totalUtang').textContent = `₱${totalUtang.toLocaleString()}`;
+    document.getElementById('totalPaid').textContent = `₱${bayadUtang.toLocaleString()}`;
+    document.getElementById('balanceUtang').textContent = `₱${remainingUtang.toLocaleString()}`;
+    
+    renderTransactionsList();
+    calculateNetTotal();
+}
+
+function renderTransactionsList() {
+    const tbody = document.getElementById('transactionsListBody');
+    if (!tbody) return;
+    
+    const transactions = currentDTR.transactions.list || {};
+    
+    if (Object.keys(transactions).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">No transactions</td></tr>';
+        return;
+    }
+    
+    let html = '';
+    Object.values(transactions).forEach(trans => {
+        const rowClass = trans.type === 'utang' ? 'utang-row' : 'payment-row';
+        html += `
+            <tr class="${rowClass}">
+                <td>${trans.date}</td>
+                <td>${trans.type === 'utang' ? 'UTANG (Advance)' : 'BAYAD UTANG'}</td>
+                <td>₱${trans.amount.toLocaleString()}</td>
+                <td>${trans.description || '—'}</td>
+                <td><button class="btn-sm btn-danger" onclick="deleteTransaction('${trans.id}')"><i class="fas fa-trash"></i></button></td>
+            </tr>
+        `;
+    });
     
     tbody.innerHTML = html;
 }
@@ -406,6 +789,7 @@ function updateDTRRow(date) {
     const timeIn = row.querySelector('.time-in')?.value || '';
     const timeOut = row.querySelector('.time-out')?.value || '';
     const status = row.querySelector('.status')?.value || 'present';
+    const advance = parseFloat(row.querySelector('.advance')?.value) || 0;
     
     let ot = 0;
     let nightDiff = 0;
@@ -414,26 +798,6 @@ function updateDTRRow(date) {
         ot = calculateOT(timeIn, timeOut);
         nightDiff = calculateNightDiff(timeIn, timeOut);
         
-        // Calculate the daily gross for debugging
-        const totalHours = calculateHours(timeIn, timeOut);
-        const regularHours = Math.min(totalHours, 8);
-        const regularPay = regularHours * currentDTR.hourlyRate;
-        const otPay = ot * currentDTR.otRate;
-        const nightDiffPay = nightDiff * currentDTR.nightDiffRate;
-        const dailyGross = regularPay + otPay + nightDiffPay;
-        
-        console.log(`Day ${date}:`, {
-            timeIn, timeOut,
-            totalHours: totalHours.toFixed(1),
-            regularHours: regularHours,
-            regularPay: regularPay,
-            ot: ot,
-            otPay: otPay,
-            nightDiff: nightDiff,
-            nightDiffPay: nightDiffPay,
-            dailyGross: dailyGross
-        });
-        
         // Update the input fields with calculated values
         row.querySelector('.ot-hours').value = ot;
         row.querySelector('.night-diff').value = nightDiff;
@@ -441,8 +805,6 @@ function updateDTRRow(date) {
         row.querySelector('.ot-hours').value = 0;
         row.querySelector('.night-diff').value = 0;
     }
-    
-    const advance = parseFloat(row.querySelector('.advance')?.value) || 0;
     
     currentDTR.entries[date] = {
         date: date,
@@ -460,6 +822,27 @@ function updateDTRRow(date) {
 function clearDTRRow(date) {
     const row = document.querySelector(`tr[data-date="${date}"]`);
     if (!row) return;
+    
+    // Ensure transactions.list exists
+    if (!currentDTR.transactions.list) {
+        currentDTR.transactions.list = {};
+    }
+    
+    // Remove advance from transactions if exists
+    const advanceAmount = parseFloat(row.querySelector('.advance')?.value) || 0;
+    if (advanceAmount > 0) {
+        const transactionId = Object.keys(currentDTR.transactions.list).find(id => 
+            currentDTR.transactions.list[id]?.date === date && 
+            currentDTR.transactions.list[id]?.type === 'utang' &&
+            currentDTR.transactions.list[id]?.amount === advanceAmount
+        );
+        if (transactionId) {
+            delete currentDTR.transactions.list[transactionId];
+            currentDTR.transactions.totalUtang = (currentDTR.transactions.totalUtang || 0) - advanceAmount;
+            currentDTR.transactions.balanceUtang = (currentDTR.transactions.totalUtang || 0) - (currentDTR.transactions.totalPaid || 0);
+            updateTransactionDisplay();
+        }
+    }
     
     row.querySelector('.time-in').value = '';
     row.querySelector('.time-out').value = '';
@@ -488,40 +871,21 @@ function calculateTotals() {
     document.getElementById('totalOT').textContent = totalOT.toFixed(1);
     document.getElementById('totalNightDiff').textContent = totalNightDiff.toFixed(1);
     document.getElementById('totalAdvances').textContent = `₱${totalAdvances.toLocaleString()}`;
-    document.getElementById('advancesTotal').textContent = `₱${totalAdvances.toLocaleString()}`;
     
     calculateGrossSalary();
 }
 
 function calculateGrossSalary() {
-    let totalRegularPay = 0;
-    let totalOTPay = 0;
-    let totalNightDiffPay = 0;
+    let totalGross = 0;
     
     Object.values(currentDTR.entries).forEach(entry => {
         if (entry.status === 'present') {
-            const totalHours = entry.timeIn && entry.timeOut ? calculateHours(entry.timeIn, entry.timeOut) : 8;
-            const regularHours = Math.min(totalHours, 8);
-            const regularPay = regularHours * currentDTR.hourlyRate;
-            const otPay = (entry.ot || 0) * currentDTR.otRate;
-            const nightDiffPay = (entry.nightDiff || 0) * currentDTR.nightDiffRate;
-            
-            totalRegularPay += regularPay;
-            totalOTPay += otPay;
-            totalNightDiffPay += nightDiffPay;
+            const dailyGross = calculateDailyGross(entry.timeIn, entry.timeOut, entry.status);
+            totalGross += dailyGross;
         }
     });
     
-    const grossSalary = totalRegularPay + totalOTPay + totalNightDiffPay;
-    
-    console.log('Salary Summary:', {
-        totalRegularPay: totalRegularPay,
-        totalOTPay: totalOTPay,
-        totalNightDiffPay: totalNightDiffPay,
-        grossSalary: grossSalary
-    });
-    
-    document.getElementById('grossSalary').textContent = `₱${grossSalary.toLocaleString()}`;
+    document.getElementById('grossSalary').textContent = `₱${totalGross.toLocaleString()}`;
     
     calculateNetTotal();
 }
@@ -530,15 +894,21 @@ function calculateNetTotal() {
     const grossText = document.getElementById('grossSalary').textContent;
     const gross = parseFloat(grossText.replace('₱', '').replace(/,/g, '')) || 0;
     
-    const advances = parseFloat(document.getElementById('advancesTotal').textContent.replace('₱', '').replace(/,/g, '')) || 0;
+    // ONLY Bayad Utang (payment made this cutoff) is deducted from gross salary
+    const bayadUtang = parseFloat(document.getElementById('bayadUtang').value) || 0;
     const otherDeductions = parseFloat(document.getElementById('otherDeductions').value) || 0;
     const sss = parseFloat(document.getElementById('sssDeduction').value) || 0;
     const philhealth = parseFloat(document.getElementById('philhealthDeduction').value) || 0;
     const pagibig = parseFloat(document.getElementById('pagibigDeduction').value) || 0;
     
-    const totalDeductions = advances + otherDeductions + sss + philhealth + pagibig;
+    // Total deductions = bayadUtang (payment made this cutoff) + other deductions + government deductions
+    const totalDeductions = bayadUtang + otherDeductions + sss + philhealth + pagibig;
     const netTotal = gross - totalDeductions;
     
+    // Update remaining utang display (just for info, not deducted from gross)
+    const totalUtang = currentDTR.transactions.totalUtang || 0;
+    const remainingUtang = totalUtang - bayadUtang;
+    document.getElementById('remainingUtang').textContent = `₱${remainingUtang.toLocaleString()}`;
     document.getElementById('netTotal').textContent = `₱${netTotal.toLocaleString()}`;
 }
 
@@ -557,36 +927,156 @@ function calculateAll() {
     });
 }
 
-// ==================== DTR CRUD ====================
 function openDTRModal(recordId = null) {
+    // If recordId is an event object (from click), set it to null
+    if (recordId && typeof recordId === 'object' && recordId.target) {
+        recordId = null;
+    }
+    
     const modal = document.getElementById('dtrModal');
     
     if (!recordId) {
+        // Reset modal title and buttons
         document.getElementById('modalTitle').textContent = 'New DTR Record';
-        document.getElementById('dtrForm').reset();
         document.getElementById('recordId').value = '';
         document.getElementById('approveBtn').style.display = 'none';
         document.getElementById('markPaidBtn').style.display = 'none';
         document.getElementById('saveDTRBtn').style.display = 'inline-block';
         
+        // Reset the form
+        document.getElementById('dtrForm').reset();
+        
+        // Reset select elements to empty values
+        const employeeSelect = document.getElementById('employeeId');
+        const cutoffSelect = document.getElementById('cutoffSelect');
+        
+        if (employeeSelect) employeeSelect.value = '';
+        if (cutoffSelect) cutoffSelect.value = '';
+        
+        // Reset currentDTR object to initial state
         currentDTR = {
             adminId: null,
             cutoff: null,
             entries: {},
-            dailyRate: 560,
-            hourlyRate: 70,
-            otRate: 14,
+            dailyRate: 620,
+            hourlyRate: 68.89,
+            otRate: 70,
             nightDiffRate: 10,
-            otherAdvances: {
+            employeeSSS: 0,
+            employeePhilhealth: 0,
+            employeePagibig: 0,
+            transactions: {
                 totalUtang: 0,
                 totalPaid: 0,
                 balanceUtang: 0,
-                transactions: {}
+                list: {}
             }
         };
         
-        document.getElementById('dtrGridBody').innerHTML = '';
+        // Clear the DTR grid
+        const gridBody = document.getElementById('dtrGridBody');
+        if (gridBody) gridBody.innerHTML = '';
+        
+        // Reset all display fields
+        document.getElementById('totalOT').textContent = '0';
+        document.getElementById('totalNightDiff').textContent = '0';
+        document.getElementById('totalAdvances').textContent = '₱0';
+        document.getElementById('grossSalary').textContent = '₱0';
+        document.getElementById('totalUtangDisplay').textContent = '₱0';
+        document.getElementById('bayadUtang').value = 0;
+        document.getElementById('remainingUtang').textContent = '₱0';
+        document.getElementById('totalUtang').textContent = '₱0';
+        document.getElementById('totalPaid').textContent = '₱0';
+        document.getElementById('balanceUtang').textContent = '₱0';
+        document.getElementById('sssDeduction').value = 0;
+        document.getElementById('philhealthDeduction').value = 0;
+        document.getElementById('pagibigDeduction').value = 0;
+        document.getElementById('otherDeductions').value = 0;
+        document.getElementById('netTotal').textContent = '₱0';
+        
+        // Clear transactions list
+        renderTransactionsList();
+        
+        // Remove existing event listeners by cloning and replacing the selects
+        const newEmployeeSelect = employeeSelect.cloneNode(true);
+        const newCutoffSelect = cutoffSelect.cloneNode(true);
+        employeeSelect.parentNode.replaceChild(newEmployeeSelect, employeeSelect);
+        cutoffSelect.parentNode.replaceChild(newCutoffSelect, cutoffSelect);
+        
+        // Store references to the new elements
+        const updatedEmployeeSelect = document.getElementById('employeeId');
+        const updatedCutoffSelect = document.getElementById('cutoffSelect');
+        
+        // Add fresh event listeners
+        updatedEmployeeSelect.addEventListener('change', async function() {
+            const adminId = this.value;
+            const cutoff = updatedCutoffSelect.value;
+            
+            console.log('%c👤 Employee selection changed', 'color: blue; font-weight: bold');
+            console.log('Selected Admin ID:', adminId);
+            console.log('Current Cutoff:', cutoff);
+            
+            if (adminId) {
+                try {
+                    console.log('🔄 Loading employee rates...');
+                    await loadEmployeeRates();
+                    console.log('✅ Employee rates loaded');
+                    
+                    if (cutoff) {
+                        console.log('🔄 Loading carryover utang...');
+                        await loadCarryOverUtang(adminId, cutoff);
+                        console.log('✅ Carryover utang loaded');
+                        console.log('🔄 Generating DTR grid...');
+                        generateDTRGrid();
+                        console.log('✅ DTR grid generated');
+                    }
+                } catch (error) {
+                    console.error('❌ Error loading data:', error);
+                }
+            }
+        });
+
+        updatedCutoffSelect.addEventListener('change', async function() {
+            const cutoff = this.value;
+            const adminId = updatedEmployeeSelect.value;
+            
+            console.log('%c📅 Cutoff selection changed', 'color: blue; font-weight: bold');
+            console.log('Selected Cutoff:', cutoff);
+            console.log('Current Admin ID:', adminId);
+            
+            if (adminId && cutoff) {
+                try {
+                    console.log('🔄 Loading employee rates...');
+                    await loadEmployeeRates();
+                    console.log('✅ Employee rates loaded');
+                    
+                    console.log('🔄 Loading carryover utang...');
+                    await loadCarryOverUtang(adminId, cutoff);
+                    console.log('✅ Carryover utang loaded');
+                    
+                    console.log('🔄 Generating DTR grid...');
+                    generateDTRGrid();
+                    console.log('✅ DTR grid generated');
+                    
+                } catch (error) {
+                    console.error('❌ Error loading data:', error);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error Loading Data',
+                        text: 'There was an error loading the carryover utang. Please try again.'
+                    });
+                }
+            } else if (cutoff && currentDTR.adminId) {
+                console.log('Generating DTR grid with existing admin...');
+                generateDTRGrid();
+            }
+        });
+        
     } else {
+        // Load existing record
+        document.getElementById('approveBtn').style.display = 'inline-block';
+        document.getElementById('markPaidBtn').style.display = 'none';
+        document.getElementById('saveDTRBtn').style.display = 'inline-block';
         loadDTRRecord(recordId);
     }
     
@@ -614,32 +1104,34 @@ function loadDTRRecord(recordId) {
                     adminId: record.adminId,
                     cutoff: record.cutoff,
                     entries: record.entries || {},
-                    dailyRate: record.dailyRate || 560,
-                    hourlyRate: record.hourlyRate || 70,
-                    otRate: 14,
+                    dailyRate: record.dailyRate || 620,
+                    hourlyRate: (record.dailyRate || 620) / 9,
+                    otRate: 70,
                     nightDiffRate: 10,
                     employeeSSS: record.summary?.sss || 0,
                     employeePhilhealth: record.summary?.philhealth || 0,
                     employeePagibig: record.summary?.pagibig || 0,
-                    otherAdvances: record.otherAdvances || {
+                    transactions: record.transactions || {
                         totalUtang: 0,
                         totalPaid: 0,
                         balanceUtang: 0,
-                        transactions: {}
+                        list: {}
                     }
                 };
                 
                 generateDTRGrid();
                 
                 if (record.summary) {
-                    // Load the stored deduction values (which are already correct for the cutoff)
+                    // Load the stored deduction values
                     document.getElementById('sssDeduction').value = record.summary.sss || 0;
                     document.getElementById('philhealthDeduction').value = record.summary.philhealth || 0;
                     document.getElementById('pagibigDeduction').value = record.summary.pagibig || 0;
                     document.getElementById('otherDeductions').value = record.summary.otherDeductions || 0;
                 }
                 
-                renderUtangTransactions(currentDTR.otherAdvances.transactions);
+                // Load transactions display
+                updateTransactionDisplay();
+                
                 calculateTotals();
                 calculateGrossSalary();
                 calculateNetTotal();
@@ -686,7 +1178,7 @@ function saveDTR(e) {
         totalDays: Object.values(currentDTR.entries).filter(e => e.status === 'present').length,
         totalOT: parseFloat(document.getElementById('totalOT').textContent) || 0,
         totalNightDiff: parseFloat(document.getElementById('totalNightDiff').textContent) || 0,
-        totalAdvances: parseFloat(document.getElementById('advancesTotal').textContent.replace('₱', '').replace(/,/g, '')) || 0,
+        totalAdvances: currentDTR.transactions.totalUtang,
         grossSalary: parseFloat(document.getElementById('grossSalary').textContent.replace('₱', '').replace(/,/g, '')) || 0,
         otherDeductions: parseFloat(document.getElementById('otherDeductions').value) || 0,
         sss: parseFloat(document.getElementById('sssDeduction').value) || 0,
@@ -695,7 +1187,9 @@ function saveDTR(e) {
         benefitsDeduction: (parseFloat(document.getElementById('sssDeduction').value) || 0) +
                           (parseFloat(document.getElementById('philhealthDeduction').value) || 0) +
                           (parseFloat(document.getElementById('pagibigDeduction').value) || 0),
-        netTotal: parseFloat(document.getElementById('netTotal').textContent.replace('₱', '').replace(/,/g, '')) || 0
+        netTotal: parseFloat(document.getElementById('netTotal').textContent.replace('₱', '').replace(/,/g, '')) || 0,
+        bayadUtang: currentDTR.transactions.totalPaid,
+        remainingUtang: currentDTR.transactions.totalUtang - currentDTR.transactions.totalPaid
     };
     
     const formData = {
@@ -703,7 +1197,8 @@ function saveDTR(e) {
         cutoff: cutoff,
         entries: currentDTR.entries,
         summary: summary,
-        otherAdvances: currentDTR.otherAdvances
+        transactions: currentDTR.transactions,
+        dailyRate: currentDTR.dailyRate
     };
     
     const url = recordId ? `/api/admin-salary/records/${recordId}` : '/api/admin-salary/records';
@@ -831,132 +1326,6 @@ function deleteDTRRecord(recordId) {
     });
 }
 
-// ==================== Utang Transactions ====================
-function openUtangModal(type) {
-    if (!document.getElementById('recordId').value) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'Save First',
-            text: 'Please save the DTR record first before adding utang transactions.'
-        });
-        return;
-    }
-    
-    document.getElementById('utangType').value = type;
-    document.getElementById('utangAmount').value = '';
-    document.getElementById('utangDescription').value = '';
-    document.getElementById('utangModal').style.display = 'block';
-}
-
-function saveUtangTransaction(e) {
-    e.preventDefault();
-    
-    const dtrId = document.getElementById('recordId').value;
-    const type = document.getElementById('utangType').value;
-    const amount = parseFloat(document.getElementById('utangAmount').value);
-    const description = document.getElementById('utangDescription').value;
-    
-    if (!amount || amount <= 0) {
-        Swal.fire({ icon: 'error', title: 'Invalid Amount', text: 'Please enter a valid amount' });
-        return;
-    }
-    
-    fetch('/api/admin-salary/advances', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            adminId: currentDTR.adminId,
-            amount: amount,
-            type: type,
-            cutoff: currentDTR.cutoff,
-            description: description,
-            dtrRecordId: dtrId
-        })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            Swal.fire({
-                icon: 'success',
-                title: 'Transaction Added',
-                text: `${type === 'utang' ? 'Utang' : 'Payment'} recorded successfully`,
-                timer: 1500,
-                showConfirmButton: false
-            });
-            
-            closeAllModals();
-            loadDTRRecord(dtrId);
-        }
-    });
-}
-
-function deleteTransaction(transactionId) {
-    const dtrId = document.getElementById('recordId').value;
-    
-    Swal.fire({
-        title: 'Delete Transaction?',
-        text: 'This action cannot be undone',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#e74c3c',
-        confirmButtonText: 'Yes, Delete'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            fetch(`/api/admin-salary/advances/${transactionId}`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ dtrRecordId: dtrId })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    Swal.fire('Deleted!', 'Transaction deleted', 'success');
-                    loadDTRRecord(dtrId);
-                }
-            });
-        }
-    });
-}
-
-function renderUtangTransactions(transactions) {
-    const tbody = document.getElementById('utangTransactionsBody');
-    if (!tbody) return;
-    
-    if (!transactions || Object.keys(transactions).length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center">No transactions</td></tr>';
-        return;
-    }
-    
-    let html = '';
-    let totalUtang = 0;
-    let totalPaid = 0;
-    
-    Object.entries(transactions).forEach(([id, trans]) => {
-        const rowClass = trans.type === 'utang' ? 'utang-row' : 'payment-row';
-        const amount = trans.amount || 0;
-        
-        if (trans.type === 'utang') totalUtang += amount;
-        else totalPaid += amount;
-        
-        html += `
-            <tr class="${rowClass}">
-                <td>${new Date(trans.date).toLocaleDateString()}</td>
-                <td>${trans.type === 'utang' ? 'UTANG' : 'PAYMENT'}</td>
-                <td>₱${amount.toLocaleString()}</td>
-                <td>${trans.description || '—'}</td>
-                <td><button class="btn-sm btn-danger" onclick="deleteTransaction('${id}')"><i class="fas fa-trash"></i></button></td>
-            </tr>
-        `;
-    });
-    
-    tbody.innerHTML = html;
-    
-    document.getElementById('totalUtang').value = totalUtang;
-    document.getElementById('totalPaid').value = totalPaid;
-    document.getElementById('balanceUtang').value = totalUtang - totalPaid;
-    document.getElementById('bawas').value = totalPaid;
-}
-
 // ==================== Admin Management ====================
 function openAddAdminModal() {
     const modal = document.getElementById('addAdminModal');
@@ -980,7 +1349,7 @@ function saveAdmin(e) {
         status: document.getElementById('adminStatus').value,
         rateType: document.getElementById('rateType').value,
         effectiveDate: document.getElementById('effectiveDate').value,
-        dailyRate: parseFloat(document.getElementById('dailyRate').value) || 560,
+        dailyRate: parseFloat(document.getElementById('dailyRate').value) || 620,
         cutoffRate: parseFloat(document.getElementById('cutoffRate').value) || 0,
         monthlyRate: parseFloat(document.getElementById('monthlyRate').value) || 0,
         sss: parseFloat(document.getElementById('adminSSS').value) || 0,
@@ -1047,19 +1416,19 @@ function viewAdminDetails(adminId) {
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Daily Rate:</span>
-                        <span class="detail-value">₱${(admin.dailyRate || 560).toLocaleString()}</span>
+                        <span class="detail-value">₱${(admin.dailyRate || 620).toLocaleString()}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Hourly Rate:</span>
-                        <span class="detail-value">₱${(admin.hourlyRate || 70).toLocaleString()}</span>
+                        <span class="detail-value">₱${((admin.dailyRate || 620) / 9).toFixed(2)}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">OT Rate:</span>
-                        <span class="detail-value">₱14/hr (20% of hourly)</span>
+                        <span class="detail-value">₱70/hr (beyond 9 hours)</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Night Diff Rate:</span>
-                        <span class="detail-value">₱10/hr</span>
+                        <span class="detail-value">₱10/hr (10PM - 6AM)</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">SSS:</span>
@@ -1138,7 +1507,7 @@ function openEditAdminModal() {
                 
                 handleEditRateTypeChange();
                 
-                document.getElementById('editDailyRate').value = admin.dailyRate || 560;
+                document.getElementById('editDailyRate').value = admin.dailyRate || 620;
                 document.getElementById('editCutoffRate').value = admin.cutoffRate || 0;
                 document.getElementById('editMonthlyRate').value = admin.monthlyRate || 0;
                 
@@ -1164,7 +1533,7 @@ function updateAdmin(e) {
         status: document.getElementById('editAdminStatus').value,
         rateType: document.getElementById('editRateType').value,
         effectiveDate: document.getElementById('editEffectiveDate').value,
-        dailyRate: parseFloat(document.getElementById('editDailyRate').value) || 560,
+        dailyRate: parseFloat(document.getElementById('editDailyRate').value) || 620,
         cutoffRate: parseFloat(document.getElementById('editCutoffRate').value) || 0,
         monthlyRate: parseFloat(document.getElementById('editMonthlyRate').value) || 0,
         sss: parseFloat(document.getElementById('editAdminSSS').value) || 0,
@@ -1359,7 +1728,7 @@ function handleRateTypeChange() {
     if (rateType === 'daily') {
         document.getElementById('dailyRateFields').style.display = 'block';
         document.getElementById('dailyRate').required = true;
-        document.getElementById('dailyRate').value = 560;
+        document.getElementById('dailyRate').value = 620;
     } else if (rateType === 'cutoff') {
         document.getElementById('cutoffRateFields').style.display = 'block';
         document.getElementById('cutoffRate').required = true;

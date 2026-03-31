@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OLStar | Admin Salary & DTR</title>
+  <title>OLStar | Admin DTR & DTR</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/gl_admin_salary.css') }}">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -56,10 +56,10 @@
                   <i class="fas fa-chart-pie" style="color:yellow;"></i> General Ledger
               </a>
               <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink active">
-                  <i class="fas fa-user-tie" style="color:blue;"></i> Admin Salary
+                  <i class="fas fa-user-tie" style="color:blue;"></i> Admin DTR
               </a>
               <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink">
-                  <i class="fas fa-truck" style="color:green;"></i> Drivers Salary
+                  <i class="fas fa-truck" style="color:green;"></i> Drivers DTR
               </a>
           </div>
       </details>
@@ -77,7 +77,7 @@
     <header class="page-header">
       <button id="btnToggleSidebar" class="hamburger">☰</button>
       <div class="header-with-badge">
-        <h1>Admin Salary & DTR</h1>
+        <h1>Admin DTR & DTR</h1>
       </div>
       <p class="subtitle">Manage daily time records, overtime, night differential, advances, and payroll per cutoff</p>
     </header>
@@ -288,55 +288,54 @@
             <td><input type="number" id="sssDeduction" class="deduction-input" step="0.01" value="0"></td>
           </tr>
           <tr>
-            <td><strong>Advances:</strong></td>
-            <td id="advancesTotal">₱0</td>
+            <td><strong>Total Utang:</strong></td>
+            <td id="totalUtangDisplay">₱0</td>
             <td><strong>PhilHealth:</strong></td>
             <td><input type="number" id="philhealthDeduction" class="deduction-input" step="0.01" value="0"></td>
           </tr>
           <tr>
-            <td><strong>Other Deductions:</strong></td>
-            <td><input type="number" id="otherDeductions" class="deduction-input" step="0.01" value="0"></td>
+            <td><strong>Bayad Utang:</strong></td>
+            <td><input type="number" id="bayadUtang" class="deduction-input" step="0.01" value="0" readonly style="background-color:#f0f0f0;"></td>
             <td><strong>PAGIBIG:</strong></td>
             <td><input type="number" id="pagibigDeduction" class="deduction-input" step="0.01" value="0"></td>
+          </tr>
+          <tr>
+            <td><strong>Remaining Utang:</strong></td>
+            <td id="remainingUtang">₱0</td>
+            <td><strong>Other Deductions:</strong></td>
+            <td><input type="number" id="otherDeductions" class="deduction-input" step="0.01" value="0"></td>
           </tr>
         </table>
       </div>
 
-      <!-- Other Advances Table (BAWAS/UTANG) -->
-      <div class="other-advances-container">
-        <h3>Other Advances (BAWAS/UTANG)</h3>
-        <div class="other-advances-grid">
-          <table class="other-advances-table">
-            <thead>
-              <tr>
-                <th>BAWAS</th>
-                <th>TOTAL UTANG</th>
-                <th>TOTAL PAID</th>
-                <th>BALANCE UTANG</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><input type="number" id="bawas" class="other-advance-input" step="0.01" value="0" readonly></td>
-                <td><input type="number" id="totalUtang" class="other-advance-input" step="0.01" value="0" readonly></td>
-                <td><input type="number" id="totalPaid" class="other-advance-input" step="0.01" value="0" readonly></td>
-                <td><input type="number" id="balanceUtang" class="other-advance-input" step="0.01" value="0" readonly></td>
-              </tr>
-            </tbody>
-          </table>
-          
-          <div class="utang-actions">
-            <button type="button" class="btn btn-sm btn-warning" id="addUtangBtn">
-              <i class="fas fa-plus"></i> Add Utang
-            </button>
-            <button type="button" class="btn btn-sm btn-success" id="addPaymentBtn">
-              <i class="fas fa-money-bill"></i> Add Payment
-            </button>
+      <!-- Transactions Section -->
+      <div class="transactions-container">
+        <div class="transactions-header">
+          <h3>Transactions (Utang / Payments)</h3>
+          <button type="button" class="btn btn-sm btn-success" id="addPaymentBtn">
+            <i class="fas fa-money-bill"></i> Add Payment
+          </button>
+        </div>
+        
+        <div class="transactions-summary">
+          <div class="transaction-summary-item">
+            <span class="summary-label">Total Utang:</span>
+            <span class="summary-value" id="totalUtang">₱0</span>
           </div>
-          
-          <!-- Utang Transactions List -->
-          <div class="utang-transactions" id="utangTransactions">
-            <h4>Transactions</h4>
+          <div class="transaction-summary-item">
+            <span class="summary-label">Total Paid:</span>
+            <span class="summary-value" id="totalPaid">₱0</span>
+          </div>
+          <div class="transaction-summary-item">
+            <span class="summary-label">Balance:</span>
+            <span class="summary-value" id="balanceUtang">₱0</span>
+          </div>
+        </div>
+        
+        <!-- Transactions List -->
+        <div class="transactions-list">
+          <h4>Transaction History</h4>
+          <div class="table-responsive">
             <table class="transactions-table">
               <thead>
                 <tr>
@@ -347,8 +346,8 @@
                   <th>Action</th>
                 </tr>
               </thead>
-              <tbody id="utangTransactionsBody">
-                <!-- Populated dynamically -->
+              <tbody id="transactionsListBody">
+                <tr><td colspan="5" class="text-center">No transactions</td></tr>
               </tbody>
             </table>
           </div>
@@ -372,43 +371,6 @@
         <button type="submit" class="btn-primary" id="saveDTRBtn">Save DTR</button>
         <button type="button" class="btn-success" id="approveBtn" style="display:none;">Approve</button>
         <button type="button" class="btn-warning" id="markPaidBtn" style="display:none;">Mark as Paid</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Add Utang Modal -->
-<div id="utangModal" class="modal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2>Add Utang / Payment</h2>
-      <span class="close-modal">&times;</span>
-    </div>
-    
-    <form id="utangForm">
-      <input type="hidden" id="utangDtrId">
-      
-      <div class="form-group">
-        <label for="utangType">Type *</label>
-        <select id="utangType" name="type" required>
-          <option value="utang">Utang (Borrow)</option>
-          <option value="payment">Payment (Bayad)</option>
-        </select>
-      </div>
-      
-      <div class="form-group">
-        <label for="utangAmount">Amount (₱) *</label>
-        <input type="number" id="utangAmount" name="amount" step="0.01" min="0" required>
-      </div>
-      
-      <div class="form-group">
-        <label for="utangDescription">Description</label>
-        <textarea id="utangDescription" rows="2" placeholder="Reason for utang/payment..."></textarea>
-      </div>
-      
-      <div class="form-actions">
-        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
-        <button type="submit" class="btn-primary">Add Transaction</button>
       </div>
     </form>
   </div>
@@ -507,8 +469,8 @@
         <div id="dailyRateFields" class="rate-fields">
           <div class="form-group">
             <label for="dailyRate">Daily Rate (₱) *</label>
-            <input type="number" id="dailyRate" name="dailyRate" step="0.01" min="0" value="560">
-            <small class="form-text">Daily rate for 8 hours work</small>
+            <input type="number" id="dailyRate" name="dailyRate" step="0.01" min="0" value="620">
+            <small class="form-text">Daily rate for 9 hours work</small>
           </div>
         </div>
 

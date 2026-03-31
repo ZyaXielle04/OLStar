@@ -35,12 +35,95 @@ def get_cutoff_periods(year=None, month=None):
         }
     }
 
+def parse_time(time_str):
+    """Parse time string to decimal hours"""
+    if not time_str:
+        return None
+    try:
+        parts = time_str.split(':')
+        hours = int(parts[0])
+        minutes = int(parts[1])
+        return hours + minutes / 60
+    except:
+        return None
+
+def calculate_hours(time_in, time_out):
+    """Calculate total hours worked"""
+    if not time_in or not time_out:
+        return 0
+    
+    start = parse_time(time_in)
+    end = parse_time(time_out)
+    
+    if start is None or end is None:
+        return 0
+    
+    hours = end - start
+    # Handle overnight shifts
+    if hours < 0:
+        hours += 24
+    
+    return hours
+
+def calculate_ot_hours(time_in, time_out):
+    """Calculate overtime hours (hours beyond 9)"""
+    total_hours = calculate_hours(time_in, time_out)
+    if total_hours > 9:
+        return total_hours - 9
+    return 0
+
+def calculate_regular_pay(time_in, time_out, status, daily_rate):
+    """Calculate regular pay based on daily rate for 9-hour standard day"""
+    if status != 'present' or not time_in or not time_out:
+        return 0
+    
+    total_hours = calculate_hours(time_in, time_out)
+    hourly_rate = daily_rate / 9
+    regular_hours = min(total_hours, 9)
+    
+    return regular_hours * hourly_rate
+
+def calculate_night_diff_hours(time_in, time_out):
+    """Calculate night differential hours (10 PM to 6 AM)"""
+    if not time_in or not time_out:
+        return 0
+    
+    NIGHT_START = 22  # 10 PM
+    NIGHT_END = 6     # 6 AM
+    
+    start = parse_time(time_in)
+    end = parse_time(time_out)
+    
+    if start is None or end is None:
+        return 0
+    
+    # Handle overnight shifts
+    if end <= start:
+        end += 24
+    
+    night_diff_hours = 0
+    
+    # Check each hour segment
+    for hour in range(int(start), int(end) + 1):
+        current_hour = hour % 24
+        
+        # Check if this hour falls within night diff period
+        if current_hour >= NIGHT_START or current_hour < NIGHT_END:
+            segment_start = max(start, hour)
+            segment_end = min(end, hour + 1)
+            if segment_end > segment_start:
+                night_diff_hours += (segment_end - segment_start)
+    
+    return night_diff_hours
+
 def calculate_salary_from_dtr(entries, daily_rate, hourly_rate, ot_rate, night_diff_rate, cutoff=None):
     """
     Calculate all salary components from DTR entries
-    hourly_rate = 70 per hour
-    ot_rate = 14 per hour (20% of hourly rate)
-    night_diff_rate = 10 per hour
+    
+    Rate Structure:
+    - Base Pay: ₱620 for 9 hours (daily_rate / 9 per hour)
+    - Overtime: ₱70 per hour for hours beyond 9
+    - Night Differential: ₱10 per hour for hours between 10 PM and 6 AM
     """
     summary = {
         'totalDays': 0,
@@ -61,11 +144,6 @@ def calculate_salary_from_dtr(entries, daily_rate, hourly_rate, ot_rate, night_d
         'netTotal': 0
     }
     
-    # Determine if this is 2nd cutoff (where deductions apply)
-    is_second_cutoff = False
-    if cutoff and '2nd Half' in cutoff:
-        is_second_cutoff = True
-    
     for date, entry in entries.items():
         if entry.get('status') == 'present':
             summary['totalDays'] += 1
@@ -74,39 +152,30 @@ def calculate_salary_from_dtr(entries, daily_rate, hourly_rate, ot_rate, night_d
             time_in = entry.get('timeIn', '')
             time_out = entry.get('timeOut', '')
             
-            # Calculate hours worked
-            total_hours = 8  # Default 8 hours
             if time_in and time_out:
-                # Parse times
-                start_h, start_m = map(int, time_in.split(':'))
-                end_h, end_m = map(int, time_out.split(':'))
+                # Calculate regular pay
+                regular_pay = calculate_regular_pay(time_in, time_out, 'present', daily_rate)
+                summary['regularPay'] += regular_pay
                 
-                start_minutes = start_h * 60 + start_m
-                end_minutes = end_h * 60 + end_m
+                # Calculate total hours (for display)
+                total_hours = calculate_hours(time_in, time_out)
+                summary['totalHours'] += total_hours
                 
-                # Handle overnight shifts
-                if end_minutes < start_minutes:
-                    end_minutes += 24 * 60
+                # Calculate OT (hours beyond 9)
+                ot_hours = calculate_ot_hours(time_in, time_out)
+                if ot_hours > 0:
+                    summary['totalOT'] += ot_hours
+                    summary['otPay'] += ot_hours * ot_rate
                 
-                total_minutes = end_minutes - start_minutes
-                total_hours = total_minutes / 60
-            
-            # Regular hours (up to 8 hours)
-            regular_hours = min(total_hours, 8)
-            summary['totalHours'] += regular_hours
-            summary['regularPay'] += regular_hours * hourly_rate
-            
-            # Overtime (20% of hourly rate = ₱14)
-            ot_hours = float(entry.get('ot', 0) or 0)
-            if ot_hours > 0:
-                summary['totalOT'] += ot_hours
-                summary['otPay'] += ot_hours * ot_rate  # 14 per hour
-            
-            # Night Differential (₱10 per hour)
-            night_diff_hours = float(entry.get('nightDiff', 0) or 0)
-            if night_diff_hours > 0:
-                summary['totalNightDiff'] += night_diff_hours
-                summary['nightDiffPay'] += night_diff_hours * night_diff_rate  # 10 per hour
+                # Calculate Night Differential
+                night_diff_hours = calculate_night_diff_hours(time_in, time_out)
+                if night_diff_hours > 0:
+                    summary['totalNightDiff'] += night_diff_hours
+                    summary['nightDiffPay'] += night_diff_hours * night_diff_rate
+            else:
+                # Default 9 hours if no time data
+                summary['totalHours'] += 9
+                summary['regularPay'] += daily_rate
             
             # Advances
             advance = float(entry.get('advance', 0) or 0)
@@ -116,10 +185,6 @@ def calculate_salary_from_dtr(entries, daily_rate, hourly_rate, ot_rate, night_d
     
     # Calculate gross salary
     summary['grossSalary'] = summary['regularPay'] + summary['otPay'] + summary['nightDiffPay']
-    
-    # Note: SSS, PhilHealth, PAGIBIG will be set separately based on cutoff
-    # For 1st cutoff, these should be 0
-    # For 2nd cutoff, they should be the admin's deduction values
     
     return summary
 
@@ -167,6 +232,8 @@ def get_employees():
             if info.get('status') != 'active':
                 continue
             
+            daily_rate = pay_rates.get('dailyRate', 620)
+            
             employee = {
                 'id': admin_id,
                 'name': info.get('fullName', 'Unknown'),
@@ -177,9 +244,9 @@ def get_employees():
                 'phone': info.get('phone', ''),
                 'hireDate': info.get('hireDate', ''),
                 'status': info.get('status', 'active'),
-                'dailyRate': pay_rates.get('dailyRate', 560),
-                'hourlyRate': 70,
-                'otRate': 14,
+                'dailyRate': daily_rate,
+                'hourlyRate': daily_rate / 9,
+                'otRate': 70,
                 'nightDiffRate': 10
             }
             employees.append(employee)
@@ -204,6 +271,8 @@ def get_all_employees():
             info = admin_data.get('info', {})
             pay_rates = admin_data.get('payRates', {})
             
+            daily_rate = pay_rates.get('dailyRate', 620)
+            
             employee = {
                 'id': admin_id,
                 'name': info.get('fullName', 'Unknown'),
@@ -213,9 +282,9 @@ def get_all_employees():
                 'phone': info.get('phone', ''),
                 'hireDate': info.get('hireDate', ''),
                 'status': info.get('status', 'active'),
-                'dailyRate': pay_rates.get('dailyRate', 560),
-                'hourlyRate': 70,
-                'otRate': 14,
+                'dailyRate': daily_rate,
+                'hourlyRate': daily_rate / 9,
+                'otRate': 70,
                 'nightDiffRate': 10,
                 'sss': pay_rates.get('sss', 0),
                 'philhealth': pay_rates.get('philhealth', 0),
@@ -241,6 +310,8 @@ def get_employee(admin_id):
         info = admin_data.get('info', {})
         pay_rates = admin_data.get('payRates', {})
         
+        daily_rate = pay_rates.get('dailyRate', 620)
+        
         employee = {
             'id': admin_id,
             'name': info.get('fullName', 'Unknown'),
@@ -252,9 +323,9 @@ def get_employee(admin_id):
             'status': info.get('status', 'active'),
             'address': info.get('address', ''),
             'emergencyContact': info.get('emergencyContact', ''),
-            'dailyRate': pay_rates.get('dailyRate', 560),
-            'hourlyRate': 70,
-            'otRate': 14,
+            'dailyRate': daily_rate,
+            'hourlyRate': daily_rate / 9,
+            'otRate': 70,
             'nightDiffRate': 10,
             'rateType': pay_rates.get('rateType', 'daily'),
             'effectiveDate': pay_rates.get('effectiveDate', ''),
@@ -283,18 +354,15 @@ def get_employee_rates(admin_id):
         if not admin_info:
             return jsonify({'success': False, 'error': 'Admin not found'}), 404
         
-        daily_rate = pay_rates.get('dailyRate', 560)
-        hourly_rate = 70
-        ot_rate = 14
-        night_diff_rate = 10
+        daily_rate = pay_rates.get('dailyRate', 620)
         
         return jsonify({
             'success': True,
             'data': {
                 'dailyRate': daily_rate,
-                'hourlyRate': hourly_rate,
-                'otRate': ot_rate,
-                'nightDiffRate': night_diff_rate,
+                'hourlyRate': daily_rate / 9,
+                'otRate': 70,
+                'nightDiffRate': 10,
                 'sss': pay_rates.get('sss', 0),
                 'philhealth': pay_rates.get('philhealth', 0),
                 'pagibig': pay_rates.get('pagibig', 0)
@@ -323,6 +391,7 @@ def add_admin():
         sss = float(data.get('sss', 0))
         philhealth = float(data.get('philhealth', 0))
         pagibig = float(data.get('pagibig', 0))
+        daily_rate = float(data.get('dailyRate', 620))
         
         # Prepare admin data
         admin_data = {
@@ -343,9 +412,9 @@ def add_admin():
             'payRates': {
                 'rateType': data['rateType'],
                 'effectiveDate': data.get('effectiveDate', datetime.datetime.now().strftime('%Y-%m-%d')),
-                'dailyRate': float(data.get('dailyRate', 560)),
-                'hourlyRate': 70,
-                'otRate': 14,
+                'dailyRate': daily_rate,
+                'hourlyRate': daily_rate / 9,
+                'otRate': 70,
                 'nightDiffRate': 10,
                 'cutoffRate': float(data.get('cutoffRate', 0)),
                 'monthlyRate': float(data.get('monthlyRate', 0)),
@@ -394,6 +463,7 @@ def update_admin(admin_id):
         sss = float(data.get('sss', 0))
         philhealth = float(data.get('philhealth', 0))
         pagibig = float(data.get('pagibig', 0))
+        daily_rate = float(data.get('dailyRate', 620))
         
         # Update info
         info_data = {
@@ -414,9 +484,9 @@ def update_admin(admin_id):
         pay_rates_data = {
             'rateType': data['rateType'],
             'effectiveDate': data.get('effectiveDate', datetime.datetime.now().strftime('%Y-%m-%d')),
-            'dailyRate': float(data.get('dailyRate', 560)),
-            'hourlyRate': 70,
-            'otRate': 14,
+            'dailyRate': daily_rate,
+            'hourlyRate': daily_rate / 9,
+            'otRate': 70,
             'nightDiffRate': 10,
             'cutoffRate': float(data.get('cutoffRate', 0)),
             'monthlyRate': float(data.get('monthlyRate', 0)),
@@ -591,8 +661,7 @@ def get_dtr_record(record_id):
         admin = admin_ref.get() or {}
         pay_rates = get_admins_ref().child(record['adminId']).child('payRates').get() or {}
         
-        daily_rate = pay_rates.get('dailyRate', 560)
-        hourly_rate = 70
+        daily_rate = pay_rates.get('dailyRate', 620)
         
         return jsonify({
             'success': True, 
@@ -601,8 +670,8 @@ def get_dtr_record(record_id):
                 'adminName': admin.get('fullName', 'Unknown'),
                 'adminPosition': admin.get('position', ''),
                 'dailyRate': daily_rate,
-                'hourlyRate': hourly_rate,
-                'otRate': 14,
+                'hourlyRate': daily_rate / 9,
+                'otRate': 70,
                 'nightDiffRate': 10,
                 **record
             }
@@ -615,7 +684,7 @@ def get_dtr_record(record_id):
 @gl_admin_salary_bp.route('/api/admin-salary/records', methods=['POST'])
 @admin_required
 def create_dtr_record():
-    """Create new DTR record"""
+    """Create new DTR record with integrated transactions"""
     try:
         data = request.json
         
@@ -632,10 +701,10 @@ def create_dtr_record():
         if not admin_info:
             return jsonify({'success': False, 'error': 'Admin not found'}), 404
         
-        # Use fixed rates
-        daily_rate = pay_rates.get('dailyRate', 560)
-        hourly_rate = 70
-        ot_rate = 14
+        # Use updated rates
+        daily_rate = pay_rates.get('dailyRate', 620)
+        hourly_rate = daily_rate / 9
+        ot_rate = 70
         night_diff_rate = 10
         
         # Calculate salary (without deductions first)
@@ -645,7 +714,7 @@ def create_dtr_record():
             hourly_rate,
             ot_rate,
             night_diff_rate,
-            data['cutoff']  # Pass cutoff to determine if deductions apply
+            data['cutoff']
         )
         
         # Get admin deduction values
@@ -656,22 +725,78 @@ def create_dtr_record():
         # Determine if this is 2nd cutoff (deductions apply)
         is_second_cutoff = '2nd Half' in data['cutoff']
         
-        # Override with user-provided deductions if any, otherwise apply logic
+        # Handle transactions (utang/payments) - PRESERVE EXISTING TRANSACTIONS
+        transactions = data.get('transactions', {
+            'totalUtang': 0,
+            'totalPaid': 0,
+            'balanceUtang': 0,
+            'list': {}
+        })
+        
+        # Calculate total advances from entries
+        total_advances_from_entries = 0
+        for entry in data['entries'].values():
+            if entry.get('advance', 0) > 0:
+                total_advances_from_entries += entry['advance']
+        
+        # CRITICAL FIX: Don't overwrite carryover utang
+        # Separate carryover transactions from daily advances
+        carryover_amount = 0
+        carryover_transactions = {}
+        daily_advance_transactions = {}
+        
+        # Separate transactions into carryover and daily advances
+        for trans_id, trans in transactions.get('list', {}).items():
+            if trans.get('date', '').startswith('Carryover'):
+                carryover_amount += trans.get('amount', 0)
+                carryover_transactions[trans_id] = trans
+            else:
+                daily_advance_transactions[trans_id] = trans
+        
+        # Calculate total from daily advances only
+        total_daily_advances = sum(t.get('amount', 0) for t in daily_advance_transactions.values())
+        
+        # Ensure daily advances match entries
+        if total_daily_advances != total_advances_from_entries:
+            # Update daily advances to match entries
+            daily_advance_transactions = {}
+            for date, entry in data['entries'].items():
+                if entry.get('advance', 0) > 0:
+                    trans_id = f"advance_{date}_{int(datetime.datetime.now().timestamp())}"
+                    daily_advance_transactions[trans_id] = {
+                        'id': trans_id,
+                        'date': date,
+                        'amount': entry['advance'],
+                        'type': 'utang',
+                        'description': f'Advance for {date}'
+                    }
+        
+        # Combine carryover and daily advances
+        all_transactions = {**carryover_transactions, **daily_advance_transactions}
+        
+        # Calculate totals
+        total_utang = carryover_amount + total_advances_from_entries
+        
+        # Update transactions object
+        transactions = {
+            'totalUtang': total_utang,
+            'totalPaid': transactions.get('totalPaid', 0),
+            'balanceUtang': total_utang - transactions.get('totalPaid', 0),
+            'list': all_transactions
+        }
+        
+        # Set deductions based on cutoff
         if 'summary' in data and data['summary']:
-            # Manual override - use provided values
             summary['sss'] = float(data['summary'].get('sss', 0))
             summary['philhealth'] = float(data['summary'].get('philhealth', 0))
             summary['pagibig'] = float(data['summary'].get('pagibig', 0))
             summary['otherDeductions'] = float(data['summary'].get('otherDeductions', 0))
         else:
-            # Automatic deduction based on cutoff
             if is_second_cutoff:
-                # Apply deductions for 2nd cutoff
                 summary['sss'] = admin_sss
                 summary['philhealth'] = admin_philhealth
                 summary['pagibig'] = admin_pagibig
             else:
-                # No deductions for 1st cutoff
                 summary['sss'] = 0
                 summary['philhealth'] = 0
                 summary['pagibig'] = 0
@@ -679,9 +804,15 @@ def create_dtr_record():
         
         summary['benefitsDeduction'] = summary['sss'] + summary['philhealth'] + summary['pagibig']
         
-        total_deductions = (summary['advances'] + summary['otherDeductions'] + 
-                           summary['benefitsDeduction'])
+        # IMPORTANT: Only bayadUtang (payment made this cutoff) is deducted
+        bayad_utang = transactions.get('totalPaid', 0)
+        remaining_utang = transactions.get('totalUtang', 0) - bayad_utang
+        
+        # Total deductions = bayadUtang + other deductions + government deductions
+        total_deductions = bayad_utang + summary['otherDeductions'] + summary['benefitsDeduction']
         summary['netTotal'] = summary['grossSalary'] - total_deductions
+        summary['bayadUtang'] = bayad_utang
+        summary['remainingUtang'] = remaining_utang
         
         # Parse cutoff
         cutoff_parts = data['cutoff'].split(' - ')
@@ -699,17 +830,26 @@ def create_dtr_record():
             'period': period,
             'entries': data['entries'],
             'summary': summary,
-            'otherAdvances': data.get('otherAdvances', {
-                'totalUtang': 0,
-                'totalPaid': 0,
-                'balanceUtang': 0,
-                'transactions': {}
-            }),
+            'transactions': transactions,
+            'dailyRate': daily_rate,
             'status': 'draft',
             'createdAt': datetime.datetime.now().isoformat(),
             'createdBy': session.get('user_id', 'system'),
             'updatedAt': datetime.datetime.now().isoformat()
         }
+        
+        # Log the transactions being saved
+        print(f"\n{'='*60}")
+        print(f"💾 SAVING NEW DTR RECORD")
+        print(f"Admin: {data['adminId']}")
+        print(f"Cutoff: {data['cutoff']}")
+        print(f"Total Utang being saved: ₱{transactions['totalUtang']:,.2f}")
+        print(f"Carryover Amount: ₱{carryover_amount:,.2f}")
+        print(f"Daily Advances: ₱{total_advances_from_entries:,.2f}")
+        print(f"Transactions List: {len(all_transactions)} transactions")
+        for tid, trans in all_transactions.items():
+            print(f"  - {trans['date']}: ₱{trans['amount']:,.2f} ({trans['type']})")
+        print(f"{'='*60}\n")
         
         # Save to Firebase
         dtr_ref = get_dtr_records_ref()
@@ -722,13 +862,15 @@ def create_dtr_record():
         }), 201
         
     except Exception as e:
-        print(f"Error creating DTR: {str(e)}")
+        print(f"❌ Error creating DTR: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @gl_admin_salary_bp.route('/api/admin-salary/records/<record_id>', methods=['PUT'])
 @admin_required
 def update_dtr_record(record_id):
-    """Update DTR record"""
+    """Update DTR record with integrated transactions"""
     try:
         data = request.json
         dtr_ref = get_dtr_records_ref().child(record_id)
@@ -742,9 +884,9 @@ def update_dtr_record(record_id):
             admin_ref = get_admins_ref().child(existing['adminId'])
             pay_rates = admin_ref.child('payRates').get() or {}
             
-            daily_rate = pay_rates.get('dailyRate', 560)
-            hourly_rate = 70
-            ot_rate = 14
+            daily_rate = pay_rates.get('dailyRate', 620)
+            hourly_rate = daily_rate / 9
+            ot_rate = 70
             night_diff_rate = 10
             
             # Use existing cutoff if not provided
@@ -767,15 +909,129 @@ def update_dtr_record(record_id):
             # Determine if this is 2nd cutoff
             is_second_cutoff = cutoff and '2nd Half' in cutoff
             
-            # Preserve manual deduction overrides or apply automatic logic
+            # Handle transactions - PRESERVE ALL EXISTING TRANSACTIONS
+            # Get existing transactions from the record
+            existing_transactions = existing.get('transactions', {
+                'totalUtang': 0,
+                'totalPaid': 0,
+                'balanceUtang': 0,
+                'list': {}
+            })
+            
+            # Get new transactions from request
+            new_transactions = data.get('transactions', {})
+            
+            # Create a copy of existing transactions list
+            transactions_list = existing_transactions.get('list', {}).copy()
+            
+            # Separate carryover from other transactions in existing list
+            carryover_transactions = {}
+            payment_transactions = {}
+            daily_advance_transactions = {}
+            
+            for trans_id, trans in transactions_list.items():
+                if trans.get('date', '').startswith('Carryover'):
+                    carryover_transactions[trans_id] = trans
+                elif trans.get('type') == 'payment':
+                    payment_transactions[trans_id] = trans
+                else:
+                    daily_advance_transactions[trans_id] = trans
+            
+            # Merge new transactions from request
+            if new_transactions and 'list' in new_transactions:
+                for trans_id, trans in new_transactions['list'].items():
+                    if trans.get('date', '').startswith('Carryover'):
+                        carryover_transactions[trans_id] = trans
+                    elif trans.get('type') == 'payment':
+                        payment_transactions[trans_id] = trans
+                    else:
+                        daily_advance_transactions[trans_id] = trans
+            
+            # Update totalPaid from new transactions
+            total_paid = existing_transactions.get('totalPaid', 0)
+            if new_transactions and 'totalPaid' in new_transactions:
+                total_paid = new_transactions['totalPaid']
+            else:
+                # Calculate from payment transactions
+                total_paid = sum(t.get('amount', 0) for t in payment_transactions.values())
+            
+            # Calculate total advances from entries
+            total_advances_from_entries = 0
+            for entry in data['entries'].values():
+                if entry.get('advance', 0) > 0:
+                    total_advances_from_entries += entry['advance']
+            
+            # Update daily advances to match entries
+            # Clear existing daily advances
+            daily_advance_transactions = {}
+            
+            # Add new daily advances from entries
+            for date, entry in data['entries'].items():
+                if entry.get('advance', 0) > 0:
+                    trans_id = f"advance_{date}_{int(datetime.datetime.now().timestamp())}"
+                    daily_advance_transactions[trans_id] = {
+                        'id': trans_id,
+                        'date': date,
+                        'amount': entry['advance'],
+                        'type': 'utang',
+                        'description': f'Advance for {date}'
+                    }
+            
+            # Calculate totals
+            total_carryover = sum(t.get('amount', 0) for t in carryover_transactions.values())
+            total_daily_advances = total_advances_from_entries
+            
+            # Build final transactions list
+            final_transactions_list = {}
+            
+            # Add carryover transactions
+            for trans_id, trans in carryover_transactions.items():
+                final_transactions_list[trans_id] = trans
+            
+            # Add payment transactions
+            for trans_id, trans in payment_transactions.items():
+                final_transactions_list[trans_id] = trans
+            
+            # Add daily advance transactions
+            for trans_id, trans in daily_advance_transactions.items():
+                final_transactions_list[trans_id] = trans
+            
+            # Create final transactions object
+            transactions = {
+                'totalUtang': total_carryover + total_daily_advances,
+                'totalPaid': total_paid,
+                'balanceUtang': (total_carryover + total_daily_advances) - total_paid,
+                'list': final_transactions_list
+            }
+            
+            # Log for debugging
+            print(f"\n{'='*60}")
+            print(f"🔄 UPDATING DTR RECORD")
+            print(f"Record ID: {record_id}")
+            print(f"Carryover amount: ₱{total_carryover:,.2f}")
+            print(f"Daily advances: ₱{total_daily_advances:,.2f}")
+            print(f"Total paid: ₱{total_paid:,.2f}")
+            print(f"Total utang: ₱{transactions['totalUtang']:,.2f}")
+            print(f"Balance: ₱{transactions['balanceUtang']:,.2f}")
+            print(f"Transactions in list: {len(final_transactions_list)}")
+            print("Carryover transactions:")
+            for trans_id, trans in carryover_transactions.items():
+                print(f"  - {trans.get('date')}: ₱{trans.get('amount'):,.2f} ({trans.get('type')})")
+            print("Payment transactions:")
+            for trans_id, trans in payment_transactions.items():
+                print(f"  - {trans.get('date')}: ₱{trans.get('amount'):,.2f} ({trans.get('type')})")
+            print("Daily advance transactions:")
+            for trans_id, trans in daily_advance_transactions.items():
+                print(f"  - {trans.get('date')}: ₱{trans.get('amount'):,.2f} ({trans.get('type')})")
+            print(f"{'='*60}\n")
+            
+            # Set deductions
             if 'summary' in data and data['summary']:
-                # Manual override
-                summary['sss'] = float(data['summary'].get('sss', summary['sss']))
-                summary['philhealth'] = float(data['summary'].get('philhealth', summary['philhealth']))
-                summary['pagibig'] = float(data['summary'].get('pagibig', summary['pagibig']))
+                summary['sss'] = float(data['summary'].get('sss', summary.get('sss', 0)))
+                summary['philhealth'] = float(data['summary'].get('philhealth', summary.get('philhealth', 0)))
+                summary['pagibig'] = float(data['summary'].get('pagibig', summary.get('pagibig', 0)))
                 summary['otherDeductions'] = float(data['summary'].get('otherDeductions', 0))
             else:
-                # Automatic deduction based on cutoff
                 if is_second_cutoff:
                     summary['sss'] = admin_sss
                     summary['philhealth'] = admin_philhealth
@@ -788,11 +1044,18 @@ def update_dtr_record(record_id):
             
             summary['benefitsDeduction'] = summary['sss'] + summary['philhealth'] + summary['pagibig']
             
-            total_deductions = (summary['advances'] + summary['otherDeductions'] + 
-                               summary['benefitsDeduction'])
+            # Only bayadUtang (payment made this cutoff) is deducted
+            bayad_utang = transactions.get('totalPaid', 0)
+            remaining_utang = transactions.get('totalUtang', 0) - bayad_utang
+            
+            total_deductions = bayad_utang + summary['otherDeductions'] + summary['benefitsDeduction']
             summary['netTotal'] = summary['grossSalary'] - total_deductions
+            summary['bayadUtang'] = bayad_utang
+            summary['remainingUtang'] = remaining_utang
             
             data['summary'] = summary
+            data['transactions'] = transactions
+            data['dailyRate'] = daily_rate
         
         data['updatedAt'] = datetime.datetime.now().isoformat()
         data['updatedBy'] = session.get('user_id', 'system')
@@ -802,7 +1065,9 @@ def update_dtr_record(record_id):
         return jsonify({'success': True, 'message': 'DTR updated'})
         
     except Exception as e:
-        print(f"Error in update_dtr_record: {str(e)}")
+        print(f"❌ Error in update_dtr_record: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @gl_admin_salary_bp.route('/api/admin-salary/records/<record_id>/approve', methods=['POST'])
@@ -903,12 +1168,12 @@ def delete_dtr_record(record_id):
         print(f"Error in delete_dtr_record: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ==================== ADVANCES ENDPOINTS ====================
+# ==================== ADVANCES ENDPOINTS (Backward Compatibility) ====================
 
 @gl_admin_salary_bp.route('/api/admin-salary/advances', methods=['POST'])
 @admin_required
 def add_other_advance():
-    """Add other advance (utang) transaction"""
+    """Add other advance (utang) transaction - Integrated with DTR transactions"""
     try:
         data = request.json
         required_fields = ['adminId', 'amount', 'type', 'cutoff']
@@ -917,7 +1182,7 @@ def add_other_advance():
             if field not in data:
                 return jsonify({'success': False, 'error': f'Missing {field}'}), 400
         
-        # Save to advances collection
+        # Save to advances collection for backward compatibility
         advance_data = {
             'adminId': data['adminId'],
             'amount': float(data['amount']),
@@ -933,31 +1198,45 @@ def add_other_advance():
         
         # Update DTR record if specified
         if data.get('dtrRecordId'):
-            dtr_ref = get_dtr_records_ref().child(data['dtrRecordId']).child('otherAdvances').child('transactions')
-            dtr_ref.child(new_advance.key).set({
-                'amount': advance_data['amount'],
-                'type': advance_data['type'],
-                'date': advance_data['date'],
-                'description': advance_data['description']
-            })
+            dtr_ref = get_dtr_records_ref().child(data['dtrRecordId'])
+            dtr = dtr_ref.get()
             
-            # Recalculate totals
-            dtr = get_dtr_records_ref().child(data['dtrRecordId']).get()
             if dtr:
-                total_utang = 0
-                total_paid = 0
-                transactions = dtr.get('otherAdvances', {}).get('transactions', {})
-                for tid, trans in transactions.items():
-                    if trans.get('type') == 'utang':
-                        total_utang += trans.get('amount', 0)
-                    elif trans.get('type') == 'payment':
-                        total_paid += trans.get('amount', 0)
+                transactions = dtr.get('transactions', {'totalUtang': 0, 'totalPaid': 0, 'balanceUtang': 0, 'list': {}})
                 
-                get_dtr_records_ref().child(data['dtrRecordId']).child('otherAdvances').update({
-                    'totalUtang': total_utang,
-                    'totalPaid': total_paid,
-                    'balanceUtang': total_utang - total_paid
-                })
+                if 'list' not in transactions:
+                    transactions['list'] = {}
+                
+                transactions['list'][new_advance.key] = {
+                    'id': new_advance.key,
+                    'date': advance_data['date'],
+                    'amount': advance_data['amount'],
+                    'type': advance_data['type'],
+                    'description': advance_data['description']
+                }
+                
+                if advance_data['type'] == 'utang':
+                    transactions['totalUtang'] = transactions.get('totalUtang', 0) + advance_data['amount']
+                else:
+                    transactions['totalPaid'] = transactions.get('totalPaid', 0) + advance_data['amount']
+                
+                transactions['balanceUtang'] = transactions['totalUtang'] - transactions['totalPaid']
+                
+                dtr_ref.child('transactions').set(transactions)
+                
+                # Update summary with correct calculation
+                bayad_utang = transactions['totalPaid']
+                remaining_utang = transactions['totalUtang'] - bayad_utang
+                
+                summary = dtr.get('summary', {})
+                summary['bayadUtang'] = bayad_utang
+                summary['remainingUtang'] = remaining_utang
+                
+                # Recalculate net total
+                total_deductions = bayad_utang + summary.get('otherDeductions', 0) + summary.get('benefitsDeduction', 0)
+                summary['netTotal'] = summary.get('grossSalary', 0) - total_deductions
+                
+                dtr_ref.child('summary').update(summary)
         
         return jsonify({'success': True, 'message': 'Advance recorded', 'data': {'id': new_advance.key}})
         
@@ -981,26 +1260,39 @@ def delete_advance_transaction(transaction_id):
         advances_ref.delete()
         
         # Delete from DTR record
-        dtr_ref = get_dtr_records_ref().child(dtr_record_id).child('otherAdvances').child('transactions').child(transaction_id)
-        dtr_ref.delete()
+        dtr_ref = get_dtr_records_ref().child(dtr_record_id)
+        dtr = dtr_ref.get()
         
-        # Recalculate totals
-        dtr = get_dtr_records_ref().child(dtr_record_id).get()
         if dtr:
-            total_utang = 0
-            total_paid = 0
-            transactions = dtr.get('otherAdvances', {}).get('transactions', {})
-            for tid, trans in transactions.items():
-                if trans.get('type') == 'utang':
-                    total_utang += trans.get('amount', 0)
-                elif trans.get('type') == 'payment':
-                    total_paid += trans.get('amount', 0)
-            
-            get_dtr_records_ref().child(dtr_record_id).child('otherAdvances').update({
-                'totalUtang': total_utang,
-                'totalPaid': total_paid,
-                'balanceUtang': total_utang - total_paid
-            })
+            transactions = dtr.get('transactions', {})
+            if transaction_id in transactions.get('list', {}):
+                transaction = transactions['list'][transaction_id]
+                amount = transaction.get('amount', 0)
+                trans_type = transaction.get('type', '')
+                
+                if trans_type == 'utang':
+                    transactions['totalUtang'] = max(0, transactions.get('totalUtang', 0) - amount)
+                elif trans_type == 'payment':
+                    transactions['totalPaid'] = max(0, transactions.get('totalPaid', 0) - amount)
+                
+                transactions['balanceUtang'] = transactions['totalUtang'] - transactions['totalPaid']
+                
+                del transactions['list'][transaction_id]
+                
+                dtr_ref.child('transactions').set(transactions)
+                
+                # Update summary with correct calculation
+                bayad_utang = transactions.get('totalPaid', 0)
+                remaining_utang = transactions.get('totalUtang', 0) - bayad_utang
+                
+                summary = dtr.get('summary', {})
+                summary['bayadUtang'] = bayad_utang
+                summary['remainingUtang'] = remaining_utang
+                
+                total_deductions = bayad_utang + summary.get('otherDeductions', 0) + summary.get('benefitsDeduction', 0)
+                summary['netTotal'] = summary.get('grossSalary', 0) - total_deductions
+                
+                dtr_ref.child('summary').update(summary)
         
         return jsonify({'success': True, 'message': 'Transaction deleted'})
         
@@ -1092,4 +1384,151 @@ def get_admin_history(admin_id):
         
     except Exception as e:
         print(f"Error in get_admin_history: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@gl_admin_salary_bp.route('/api/admin-salary/last-cutoff-utang/<admin_id>/<path:current_cutoff>', methods=['GET'])
+@admin_required
+def get_last_cutoff_utang(admin_id, current_cutoff):
+    """Get remaining utang from previous cutoff to carry over (deprecated, use all-previous-utang)"""
+    # Redirect to the new endpoint
+    return get_all_previous_utang(admin_id, current_cutoff)
+
+@gl_admin_salary_bp.route('/api/admin-salary/all-previous-utang/<admin_id>/<path:current_cutoff>', methods=['GET'])
+@admin_required
+def get_all_previous_utang(admin_id, current_cutoff):
+    """Get remaining utang from the most recent previous cutoff to carry over"""
+    try:
+        print(f"\n{'='*60}")
+        print(f"🔍 FETCHING PREVIOUS UTANG (MOST RECENT ONLY)")
+        print(f"Admin ID: {admin_id}")
+        print(f"Current Cutoff: {current_cutoff}")
+        print(f"{'='*60}")
+        
+        dtr_ref = get_dtr_records_ref()
+        all_records = dtr_ref.get() or {}
+        
+        # Parse current cutoff date for comparison
+        def cutoff_to_date(cutoff_str):
+            try:
+                parts = cutoff_str.split(' - ')
+                month_year = parts[0]
+                month_year_parts = month_year.split()
+                month_name = month_year_parts[0]
+                year = int(month_year_parts[1])
+                
+                months = ['January', 'February', 'March', 'April', 'May', 'June',
+                          'July', 'August', 'September', 'October', 'November', 'December']
+                month_num = months.index(month_name) + 1
+                
+                # Return the end date of the cutoff for comparison
+                if '1st Half' in cutoff_str:
+                    return datetime.date(year, month_num, 15)
+                else:
+                    last_day = calendar.monthrange(year, month_num)[1]
+                    return datetime.date(year, month_num, last_day)
+            except:
+                return None
+        
+        current_end_date = cutoff_to_date(current_cutoff)
+        if not current_end_date:
+            return jsonify({'success': True, 'data': {'totalRemainingUtang': 0, 'cutoffsList': []}})
+        
+        # Collect all previous approved/paid records for this admin
+        previous_records = []
+        
+        for record_id, record in all_records.items():
+            if record.get('adminId') != admin_id:
+                continue
+            
+            record_status = record.get('status')
+            if record_status not in ['approved', 'paid']:
+                continue
+            
+            record_cutoff = record.get('cutoff')
+            if not record_cutoff or record_cutoff == current_cutoff:
+                continue
+            
+            record_end_date = cutoff_to_date(record_cutoff)
+            if not record_end_date:
+                continue
+            
+            # Only consider records that ended before current cutoff
+            if record_end_date < current_end_date:
+                # Get remaining utang
+                transactions = record.get('transactions', {})
+                total_utang = transactions.get('totalUtang', 0)
+                total_paid = transactions.get('totalPaid', 0)
+                remaining_utang = total_utang - total_paid
+                
+                previous_records.append({
+                    'cutoff': record_cutoff,
+                    'remaining_utang': remaining_utang,
+                    'end_date': record_end_date
+                })
+        
+        # Sort by end date (most recent first)
+        previous_records.sort(key=lambda x: x['end_date'], reverse=True)
+        
+        # Get the most recent previous cutoff (the immediate previous one)
+        most_recent_record = previous_records[0] if previous_records else None
+        
+        if most_recent_record and most_recent_record['remaining_utang'] > 0:
+            total_remaining_utang = most_recent_record['remaining_utang']
+            cutoffs_list = [most_recent_record['cutoff']]
+            
+            print(f"\n✅ MOST RECENT PREVIOUS CUTOFF:")
+            print(f"   Cutoff: {most_recent_record['cutoff']}")
+            print(f"   Remaining Utang: ₱{total_remaining_utang:,.2f}")
+        else:
+            total_remaining_utang = 0
+            cutoffs_list = []
+            print(f"\nℹ️ No previous cutoff with remaining utang found")
+        
+        print(f"\n📊 Total to carry over: ₱{total_remaining_utang:,.2f}")
+        print(f"{'='*60}\n")
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'totalRemainingUtang': total_remaining_utang,
+                'cutoffsList': cutoffs_list,
+                'adminId': admin_id,
+                'currentCutoff': current_cutoff
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ ERROR in get_all_previous_utang: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
+@gl_admin_salary_bp.route('/api/admin-salary/debug-admin-records/<admin_id>', methods=['GET'])
+@admin_required
+def debug_admin_records(admin_id):
+    """Debug endpoint to see all records for an admin"""
+    try:
+        dtr_ref = get_dtr_records_ref()
+        all_records = dtr_ref.get() or {}
+        
+        admin_records = []
+        for record_id, record in all_records.items():
+            if record.get('adminId') == admin_id:
+                admin_records.append({
+                    'id': record_id,
+                    'cutoff': record.get('cutoff'),
+                    'status': record.get('status'),
+                    'transactions': record.get('transactions', {}),
+                    'summary': record.get('summary', {})
+                })
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'admin_id': admin_id,
+                'total_records': len(admin_records),
+                'records': admin_records
+            }
+        })
+    except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

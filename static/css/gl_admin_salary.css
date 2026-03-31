@@ -570,16 +570,6 @@
     border-color: #3498db;
 }
 
-.form-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #ecf0f1;
-    flex-wrap: wrap;
-}
-
 /* DTR Grid Table */
 .dtr-grid-container {
     margin: 20px 0;
@@ -617,7 +607,8 @@
     background-color: white;
 }
 
-.dtr-grid input, .dtr-grid select {
+.dtr-grid input, 
+.dtr-grid select {
     width: 100%;
     padding: 6px;
     border: 1px solid #ced4da;
@@ -625,9 +616,15 @@
     font-size: 12px;
 }
 
-.dtr-grid input:focus, .dtr-grid select:focus {
+.dtr-grid input:focus, 
+.dtr-grid select:focus {
     outline: none;
     border-color: #3498db;
+}
+
+.dtr-grid input[readonly] {
+    background-color: #e9ecef;
+    cursor: not-allowed;
 }
 
 .totals-row {
@@ -638,15 +635,15 @@
 .totals-row td {
     background-color: #e9ecef;
     font-weight: 600;
+    border-top: 2px solid #dee2e6;
 }
 
 /* Salary Summary Table */
 .salary-summary-container {
-    margin: 20px 0;
-    padding: 15px;
-    background-color: #f8f9fa;
+    background: #f8f9fa;
     border-radius: 8px;
-    overflow-x: auto;
+    padding: 1rem;
+    margin: 1rem 0;
 }
 
 .salary-summary-container h3 {
@@ -659,137 +656,216 @@
 .salary-summary-table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 400px;
 }
 
 .salary-summary-table td {
     padding: 10px;
-    border: 1px solid #dee2e6;
-    background-color: white;
+    border-bottom: 1px solid #e9ecef;
 }
 
 .salary-summary-table td:first-child {
     font-weight: 600;
-    width: 150px;
+    width: 180px;
 }
 
-.salary-summary-table td:nth-child(2) {
-    font-weight: 600;
-    color: #27ae60;
+.salary-summary-table td:last-child {
+    width: 200px;
 }
 
 .deduction-input {
     width: 100%;
-    max-width: 150px;
-    padding: 6px;
+    padding: 6px 10px;
     border: 1px solid #ced4da;
     border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.2s;
 }
 
-/* Other Advances Table */
-.other-advances-container {
-    margin: 20px 0;
-    padding: 15px;
-    background-color: #f8f9fa;
+.deduction-input:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.deduction-input[readonly] {
+    background-color: #e9ecef;
+    cursor: not-allowed;
+}
+
+/* Transactions Container */
+.transactions-container {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.transactions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #3498db;
+}
+
+.transactions-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #2c3e50;
+}
+
+/* Transactions Summary Cards */
+.transactions-summary {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
     border-radius: 8px;
 }
 
-.other-advances-container h3 {
-    margin-top: 0;
-    margin-bottom: 15px;
+.transaction-summary-item {
+    flex: 1;
+    text-align: center;
+    padding: 0.75rem;
+    background: white;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.transaction-summary-item .summary-label {
+    display: block;
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+}
+
+.transaction-summary-item .summary-value {
+    display: block;
+    font-size: 1.25rem;
+    font-weight: bold;
     color: #2c3e50;
-    font-size: clamp(1rem, 4vw, 1.125rem);
 }
 
-.other-advances-grid {
-    overflow-x: auto;
+.transaction-summary-item:first-child .summary-value {
+    color: #e74c3c;
 }
 
-.other-advances-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 15px;
-    min-width: 400px;
+.transaction-summary-item:nth-child(2) .summary-value {
+    color: #27ae60;
 }
 
-.other-advances-table th {
-    background-color: #e67e22;
-    color: white;
-    padding: 10px;
+.transaction-summary-item:last-child .summary-value {
+    color: #f39c12;
+}
+
+/* Transactions List */
+.transactions-list {
+    margin-top: 1rem;
+}
+
+.transactions-list h4 {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.9rem;
+    color: #6c757d;
     font-weight: 500;
-    white-space: nowrap;
-}
-
-.other-advances-table td {
-    padding: 10px;
-    background-color: white;
-    border: 1px solid #dee2e6;
-}
-
-.other-advance-input {
-    width: 100%;
-    max-width: 150px;
-    padding: 8px;
-    border: 1px solid #ced4da;
-    border-radius: 4px;
-    font-weight: 600;
-    text-align: right;
-    background-color: #f8f9fa;
-}
-
-.utang-actions {
-    display: flex;
-    gap: 10px;
-    margin: 15px 0;
-    flex-wrap: wrap;
-}
-
-.utang-transactions {
-    margin-top: 20px;
-}
-
-.utang-transactions h4 {
-    margin-bottom: 10px;
-    color: #34495e;
-    font-size: clamp(0.875rem, 3vw, 1rem);
 }
 
 .transactions-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
-    min-width: 500px;
+    font-size: 0.85rem;
 }
 
 .transactions-table th {
-    background-color: #34495e;
-    color: white;
-    padding: 8px;
-    font-weight: 500;
-    white-space: nowrap;
+    background: #f8f9fa;
+    padding: 10px;
+    text-align: left;
+    font-weight: 600;
+    color: #495057;
+    border-bottom: 2px solid #dee2e6;
 }
 
 .transactions-table td {
-    padding: 8px;
-    border: 1px solid #dee2e6;
-    background-color: white;
-    word-break: break-word;
+    padding: 10px;
+    border-bottom: 1px solid #e9ecef;
+    vertical-align: middle;
 }
 
 .transactions-table .utang-row {
-    background-color: #fff3cd;
+    background-color: #fff5f5;
 }
 
 .transactions-table .payment-row {
-    background-color: #d4edda;
+    background-color: #f0fff4;
 }
 
-/* Net Total */
-.net-total-container {
-    margin: 20px 0;
-    padding: 15px;
+.transactions-table .utang-row td:first-child {
+    border-left: 3px solid #e74c3c;
+}
+
+.transactions-table .payment-row td:first-child {
+    border-left: 3px solid #27ae60;
+}
+
+.transactions-table tbody tr {
+    transition: background-color 0.2s;
+}
+
+.transactions-table tbody tr:hover {
     background-color: #f8f9fa;
+}
+
+/* Delete Transaction Button */
+.btn-sm.btn-danger {
+    background: #e74c3c;
+    color: white;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: background 0.2s;
+}
+
+.btn-sm.btn-danger:hover {
+    background: #c0392b;
+}
+
+/* Add Payment Button */
+.btn-sm.btn-success {
+    background: #27ae60;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.2s;
+}
+
+.btn-sm.btn-success:hover {
+    background: #219a52;
+}
+
+.btn-sm.btn-success i {
+    font-size: 0.8rem;
+}
+
+/* Net Total Container */
+.net-total-container {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
 }
 
 .net-total-table {
@@ -798,22 +874,35 @@
 
 .net-total-table td {
     padding: 10px;
+}
+
+.net-total-table td:first-child {
     text-align: right;
 }
 
 .net-total-table h3 {
     margin: 0;
-    color: #2c3e50;
-    font-size: clamp(1.125rem, 5vw, 1.5rem);
+    color: white;
+    font-size: 1.25rem;
 }
 
-.net-total-table td:first-child {
-    text-align: left;
+.net-total-table h3:first-child {
+    font-weight: 500;
 }
 
-.net-total-table h3#netTotal {
-    color: #27ae60;
-    font-weight: 700;
+.net-total-table h3:last-child {
+    font-weight: bold;
+    font-size: 1.5rem;
+}
+
+/* Form Actions */
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e9ecef;
 }
 
 /* Details Modal */
@@ -966,7 +1055,6 @@
     border-bottom: none;
 }
 
-/* Admin Name and Email */
 .admins-table td:first-child {
     font-weight: 500;
 }
@@ -980,7 +1068,6 @@
     word-break: break-all;
 }
 
-/* Action Buttons in Manage Admins */
 .actions-cell {
     white-space: nowrap;
     text-align: center;
@@ -1032,6 +1119,26 @@
     font-style: italic;
 }
 
+.loading-spinner {
+    text-align: center;
+    padding: 40px;
+    color: #667eea;
+}
+
+.loading-spinner i {
+    font-size: 32px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 /* Tooltip styles */
 .action-btn {
     position: relative;
@@ -1054,53 +1161,85 @@
     pointer-events: none;
 }
 
-/* Loading spinner for tables */
-.loading-spinner {
-    text-align: center;
-    padding: 40px;
-    color: #667eea;
-}
-
-.loading-spinner i {
-    font-size: 32px;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-
-/* Badge for status counts */
-.status-badge-sm {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-}
-
-/* Hover effects for table rows */
-.admins-table tbody tr,
-.dtr-table tbody tr {
-    transition: all 0.3s ease;
-}
-
-.admins-table tbody tr:hover {
-    transform: translateX(4px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
 /* Empty State */
 .text-center {
     text-align: center;
     padding: 40px !important;
     color: #7f8c8d;
     font-style: italic;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Focus States for Accessibility */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid #3498db;
+    outline-offset: 2px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Modal Scroll Improvements */
+.large-modal {
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.large-modal::-webkit-scrollbar {
+    width: 8px;
+}
+
+.large-modal::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.large-modal::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.large-modal::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* Utility Classes */
+.text-truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* ==================== Responsive Design ==================== */
@@ -1126,9 +1265,7 @@
     .dtr-table,
     .dtr-grid,
     .admins-table,
-    .transactions-table,
-    .salary-summary-table,
-    .other-advances-table {
+    .transactions-table {
         font-size: 13px;
     }
 }
@@ -1166,6 +1303,23 @@
     .btn {
         white-space: normal;
         word-break: break-word;
+    }
+    
+    .transactions-summary {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .transaction-summary-item {
+        text-align: left;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem;
+    }
+    
+    .transaction-summary-item .summary-label {
+        margin-bottom: 0;
     }
 }
 
@@ -1254,8 +1408,7 @@
         width: 100%;
     }
     
-    .deduction-input,
-    .other-advance-input {
+    .deduction-input {
         max-width: 100%;
     }
     
@@ -1276,6 +1429,39 @@
     .page-btn {
         width: 100%;
         max-width: 200px;
+    }
+    
+    .transactions-table {
+        font-size: 0.75rem;
+    }
+    
+    .transactions-table th,
+    .transactions-table td {
+        padding: 6px;
+    }
+    
+    .salary-summary-table td {
+        display: block;
+        width: 100%;
+        text-align: right;
+    }
+    
+    .salary-summary-table td:first-child {
+        text-align: left;
+        font-weight: 600;
+    }
+    
+    .salary-summary-table td:last-child {
+        width: 100%;
+    }
+    
+    .net-total-table td {
+        display: block;
+        text-align: center;
+    }
+    
+    .net-total-table td:first-child {
+        text-align: center;
     }
 }
 
@@ -1301,8 +1487,7 @@
     }
     
     .dtr-grid-container,
-    .salary-summary-container,
-    .other-advances-container {
+    .salary-summary-container {
         padding: 10px;
     }
     
@@ -1318,25 +1503,11 @@
         font-size: 10px;
     }
     
-    .transactions-table th,
-    .transactions-table td {
-        padding: 6px;
-        font-size: 11px;
-    }
-    
     .form-actions {
         flex-direction: column;
     }
     
     .form-actions button {
-        width: 100%;
-    }
-    
-    .utang-actions {
-        flex-direction: column;
-    }
-    
-    .utang-actions button {
         width: 100%;
     }
     
@@ -1359,6 +1530,20 @@
     .admin-details .detail-label {
         width: 100%;
     }
+    
+    .text-truncate-mobile {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .hide-on-mobile {
+        display: none;
+    }
+    
+    .show-on-mobile {
+        display: inline-block;
+    }
 }
 
 /* Print Styles */
@@ -1369,7 +1554,7 @@
     .modal-footer,
     .pagination,
     .action-btn,
-    .utang-actions,
+    .form-actions,
     .close-modal,
     .cancel-btn {
         display: none !important;
@@ -1394,7 +1579,6 @@
     }
     
     .dtr-grid th,
-    .other-advances-table th,
     .admins-table thead {
         background-color: #e9ecef !important;
         color: black !important;
@@ -1417,79 +1601,4 @@
     .admins-table {
         break-inside: avoid;
     }
-}
-
-/* Utility Classes */
-.text-truncate {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-@media (max-width: 767px) {
-    .text-truncate-mobile {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-}
-
-.hide-on-mobile {
-    display: inline-block;
-}
-
-@media (max-width: 767px) {
-    .hide-on-mobile {
-        display: none;
-    }
-}
-
-.show-on-mobile {
-    display: none;
-}
-
-@media (max-width: 767px) {
-    .show-on-mobile {
-        display: inline-block;
-    }
-}
-
-/* Scrollbar Styling */
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: #555;
-}
-
-/* Focus States for Accessibility */
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-    outline: 2px solid #3498db;
-    outline-offset: 2px;
-}
-
-/* Transition Effects */
-.btn,
-.action-btn,
-.tab-btn,
-.page-btn,
-.summary-card,
-.modal-content {
-    transition: all 0.3s ease;
 }
