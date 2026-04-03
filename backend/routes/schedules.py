@@ -1,7 +1,7 @@
 import os
 import time
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, send_file, session
 from message_template import build_message
 from decorators import admin_required
@@ -12,6 +12,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+from functools import wraps
+import logging
 
 schedules_api = Blueprint("schedules_api", __name__)
 
@@ -23,104 +25,181 @@ EDITABLE_FIELDS = {
     "plateNumber", "luggage", "tripType"
 }
 
+# =======================
+# CACHING SYSTEM
+# =======================
+class ScheduleCache:
+    def __init__(self):
+        self.cache = {}
+        self.cache_time = {}
+        self.default_ttl = 5  # 5 seconds default cache
+    
+    def get(self, key):
+        """Get cached data if not expired"""
+        if key in self.cache and key in self.cache_time:
+            age = (datetime.now() - self.cache_time[key]).total_seconds()
+            ttl = self.cache.get(f"{key}_ttl", self.default_ttl)
+            if age < ttl:
+                return self.cache[key]
+        return None
+    
+    def set(self, key, value, ttl=5):
+        """Cache data with TTL in seconds"""
+        self.cache[key] = value
+        self.cache_time[key] = datetime.now()
+        self.cache[f"{key}_ttl"] = ttl
+    
+    def clear(self, pattern=None):
+        """Clear cache"""
+        if pattern:
+            keys_to_delete = [k for k in self.cache.keys() if pattern in k]
+            for key in keys_to_delete:
+                self.cache.pop(key, None)
+                self.cache_time.pop(key, None)
+        else:
+            self.cache.clear()
+            self.cache_time.clear()
+
+# Initialize cache
+schedule_cache = ScheduleCache()
+
+# =======================
+# RATE LIMITING
+# =======================
+class RateLimiter:
+    def __init__(self, max_requests=30, time_window=60):
+        self.max_requests = max_requests
+        self.time_window = time_window
+        self.requests = {}
+    
+    def is_allowed(self, user_id):
+        """Check if user is within rate limit"""
+        now = time.time()
+        if user_id not in self.requests:
+            self.requests[user_id] = []
+        
+        self.requests[user_id] = [req_time for req_time in self.requests[user_id] 
+                                   if now - req_time < self.time_window]
+        
+        if len(self.requests[user_id]) >= self.max_requests:
+            return False
+        
+        self.requests[user_id].append(now)
+        return True
+
+rate_limiter = RateLimiter(max_requests=30, time_window=60)
+
+def rate_limit(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user_id = request.headers.get('X-User-ID', request.remote_addr)
+        if not rate_limiter.is_allowed(user_id):
+            return jsonify({"error": "Rate limit exceeded"}), 429
+        return f(*args, **kwargs)
+    return decorated_function
+
 def normalize_phone(number: str) -> str:
-    """
-    Convert "63-9171234567" → "+639171234567"
-    """
+    """Convert phone number to standard format"""
     if not number:
         return ""
-
     number = number.strip()
-
     if "-" in number:
         country, rest = number.split("-", 1)
         return f"+{country}{rest}"
-
     if number.startswith("+"):
         return number
-
     return f"+{number}"
 
-
-# ---------------- FLIGHTAWARE SCREENSHOT ----------------
+# =======================
+# OPTIMIZED: GET TRANSPORT UNITS
+# =======================
 @admin_required
-@schedules_api.route("/api/flightaware/screenshot/<flight_number>", methods=["GET"])
-def get_flightaware_screenshot(flight_number):
-    """
-    Capture a screenshot of FlightAware for the given flight number
-    """
-    temp_file = None
-    driver = None
+@schedules_api.route("/api/transportUnits", methods=["GET"])
+@rate_limit
+def get_transport_units():
+    """Fetch all transport units with caching"""
+    from firebase_admin import db
     
     try:
-        # Clean flight number
-        flight_number = flight_number.replace(" ", "").upper()
+        # Check cache
+        cached_data = schedule_cache.get("transport_units")
+        if cached_data:
+            return jsonify(cached_data)
         
-        # Set up Chrome options for headless browsing
-        chrome_options = Options()
-        chrome_options.add_argument("--headless=new")  # Run in headless mode
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        ref = db.reference("transportUnits")
+        data = ref.get() or {}
         
-        # Initialize the driver
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Convert to list efficiently
+        transport_units = []
+        for key, unit in data.items():
+            if unit:
+                transport_units.append({
+                    "transportUnit": unit.get("transportUnit", ""),
+                    "unitType": unit.get("unitType", ""),
+                    "color": unit.get("color", ""),
+                    "plateNumber": unit.get("plateNumber", "")
+                })
         
-        # Navigate to FlightAware
-        url = f"https://www.flightaware.com/live/flight/{flight_number}"
-        driver.get(url)
+        response = {"success": True, "transportUnits": transport_units}
         
-        # Wait for the page to load
-        wait = WebDriverWait(driver, 15)
-        
-        # Wait for flight status card to appear
-        try:
-            # Try to wait for the flight status card
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".flightPageCard")))
-        except:
-            # If not found, try alternative selectors
-            try:
-                wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='flightPageCard']")))
-            except:
-                # Wait a bit more and continue anyway
-                time.sleep(3)
-        
-        # Additional wait for any dynamic content
-        time.sleep(2)
-        
-        # Take screenshot
-        temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-        driver.save_screenshot(temp_file.name)
-        temp_file.close()
-        
-        # Return the screenshot
-        return send_file(
-            temp_file.name,
-            mimetype='image/png',
-            as_attachment=True,
-            download_name=f'flight_{flight_number}.png'
-        )
+        # Cache for 1 hour (transport units rarely change)
+        schedule_cache.set("transport_units", response, ttl=3600)
+        return jsonify(response)
         
     except Exception as e:
+        logging.error(f"Error fetching transport units: {e}")
         return jsonify({"error": str(e)}), 500
+
+# =======================
+# OPTIMIZED: GET SCHEDULES
+# =======================
+@admin_required
+@schedules_api.route("/api/schedules", methods=["GET"])
+@rate_limit
+def get_schedules():
+    """Get all schedules with caching"""
+    from firebase_admin import db
+    
+    try:
+        # Check cache
+        cached_data = schedule_cache.get("all_schedules")
+        if cached_data:
+            return jsonify(cached_data)
         
-    finally:
-        # Clean up
-        if driver:
-            driver.quit()
-        if temp_file and os.path.exists(temp_file.name):
-            try:
-                os.unlink(temp_file.name)
-            except:
-                pass
+        ref = db.reference("schedules")
+        data = ref.get() or {}
+        
+        schedules = []
+        for transaction_id, schedule in data.items():
+            if not schedule:
+                continue
+                
+            schedule["transactionID"] = transaction_id
+            current = schedule.get("current") or {}
+            schedule["current"] = {
+                "driverName": current.get("driverName", ""),
+                "cellPhone": current.get("cellPhone", "")
+            }
+            if "history" not in schedule:
+                schedule["history"] = []
+            schedules.append(schedule)
+        
+        response = {"success": True, "schedules": schedules}
+        
+        # Cache for 5 seconds (schedules change frequently)
+        schedule_cache.set("all_schedules", response, ttl=5)
+        return jsonify(response)
+        
+    except Exception as e:
+        logging.error(f"Error fetching schedules: {e}")
+        return jsonify({"error": str(e)}), 500
 
-
-# ---------------- CREATE ----------------
+# =======================
+# OPTIMIZED: CREATE SCHEDULE
+# =======================
 @admin_required
 @schedules_api.route("/api/schedules", methods=["POST"])
+@rate_limit
 def create_schedule():
     from firebase_admin import db
 
@@ -133,19 +212,16 @@ def create_schedule():
 
     saved_ids = []
     
-    # Get user info from cookies - these are set in auth.py from firstName and lastName
+    # Get user info
     user_email = request.cookies.get("user_email", "system")
     user_full_name = request.cookies.get("user_full_name", "System")
     user_first_name = request.cookies.get("user_first_name", "")
     user_last_name = request.cookies.get("user_last_name", "")
     
-    # Construct full name if not already provided
     if not user_full_name and user_first_name and user_last_name:
         user_full_name = f"{user_first_name} {user_last_name}".strip()
     elif not user_full_name and user_first_name:
         user_full_name = user_first_name
-    elif not user_full_name and user_last_name:
-        user_full_name = user_last_name
     else:
         user_full_name = user_full_name or "System"
 
@@ -157,82 +233,50 @@ def create_schedule():
 
             item["status"] = item.get("status", "Pending")
             
-            # Add creation timestamp to history
             if "history" not in item:
                 item["history"] = []
             
             item["history"].append({
                 "timestamp": datetime.now().isoformat(),
                 "action": "created",
-                "user": user_full_name,  # This will be "John Doe" from firstName and lastName
+                "user": user_full_name,
                 "user_email": user_email,
-                "user_first_name": user_first_name,
-                "user_last_name": user_last_name,
                 "changes": [{"field": "initial", "old": None, "new": "Schedule created"}]
             })
 
             ref = db.reference(f"schedules/{transaction_id}")
             ref.set(item)
-
             saved_ids.append(transaction_id)
-
-        return jsonify({
-            "success": True,
-            "transactionIDs": saved_ids
-        }), 200
+        
+        # Clear cache
+        schedule_cache.clear("all_schedules")
+        
+        return jsonify({"success": True, "transactionIDs": saved_ids}), 200
 
     except Exception as e:
+        logging.error(f"Error creating schedule: {e}")
         return jsonify({"error": str(e)}), 500
 
-
-# ---------------- READ ----------------
-@admin_required
-@schedules_api.route("/api/schedules", methods=["GET"])
-def get_schedules():
-    from firebase_admin import db
-    try:
-        ref = db.reference("schedules")
-        data = ref.get() or {}
-
-        schedules = []
-        for transaction_id, schedule in data.items():
-            schedule["transactionID"] = transaction_id
-            current = schedule.get("current") or {}
-            schedule["current"] = {
-                "driverName": current.get("driverName", ""),
-                "cellPhone": current.get("cellPhone", "")
-            }
-            # Ensure history exists
-            if "history" not in schedule:
-                schedule["history"] = []
-            schedules.append(schedule)
-
-        return jsonify({"success": True, "schedules": schedules}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ---------------- UPDATE ----------------
+# =======================
+# OPTIMIZED: UPDATE SCHEDULE
+# =======================
 @admin_required
 @schedules_api.route("/api/schedules/<transaction_id>", methods=["PATCH", "PUT"])
+@rate_limit
 def update_schedule(transaction_id):
     from firebase_admin import db
 
     data = request.get_json() or {}
     
-    # Get user info from cookies - these are set in auth.py from firstName and lastName
     user_email = request.cookies.get("user_email", "unknown")
     user_full_name = request.cookies.get("user_full_name", "Unknown")
     user_first_name = request.cookies.get("user_first_name", "")
     user_last_name = request.cookies.get("user_last_name", "")
     
-    # Construct full name if not already provided
     if not user_full_name and user_first_name and user_last_name:
         user_full_name = f"{user_first_name} {user_last_name}".strip()
     elif not user_full_name and user_first_name:
         user_full_name = user_first_name
-    elif not user_full_name and user_last_name:
-        user_full_name = user_last_name
     else:
         user_full_name = user_full_name or "Unknown"
 
@@ -252,20 +296,11 @@ def update_schedule(transaction_id):
         new_phone = current.get("cellPhone", "")
         
         if old_driver != new_driver:
-            changes.append({
-                "field": "driverName",
-                "old": old_driver,
-                "new": new_driver
-            })
+            changes.append({"field": "driverName", "old": old_driver, "new": new_driver})
         
         if old_phone != new_phone:
-            changes.append({
-                "field": "cellPhone",
-                "old": old_phone,
-                "new": new_phone
-            })
+            changes.append({"field": "cellPhone", "old": old_phone, "new": new_phone})
         
-        # Special handling for driver transfer
         if old_driver and new_driver and old_driver != new_driver:
             changes.append({
                 "field": "driver_transfer",
@@ -285,11 +320,7 @@ def update_schedule(transaction_id):
         if k in EDITABLE_FIELDS:
             old_val = existing.get(k, "")
             if str(old_val) != str(v):
-                changes.append({
-                    "field": k,
-                    "old": old_val,
-                    "new": v
-                })
+                changes.append({"field": k, "old": old_val, "new": v})
                 updates[k] = v
 
     if updates:
@@ -300,28 +331,26 @@ def update_schedule(transaction_id):
         history_entry = {
             "timestamp": datetime.now().isoformat(),
             "action": "updated",
-            "user": user_full_name,  # This will be "John Doe" from firstName and lastName
+            "user": user_full_name,
             "user_email": user_email,
-            "user_first_name": user_first_name,
-            "user_last_name": user_last_name,
             "changes": changes
         }
         
-        # Get existing history or create new array
         history = existing.get("history", [])
         history.append(history_entry)
         ref.child("history").set(history)
+    
+    # Clear cache
+    schedule_cache.clear("all_schedules")
+    
+    return jsonify({"success": True, "transactionID": transaction_id, "changes": changes}), 200
 
-    return jsonify({
-        "success": True,
-        "transactionID": transaction_id,
-        "changes": changes
-    }), 200
-
-
-# ---------------- DELETE ----------------
+# =======================
+# OPTIMIZED: DELETE SCHEDULE
+# =======================
 @admin_required
 @schedules_api.route("/api/schedules/<transaction_id>", methods=["DELETE"])
+@rate_limit
 def delete_schedule(transaction_id):
     from firebase_admin import db
 
@@ -331,21 +360,31 @@ def delete_schedule(transaction_id):
             return jsonify({"error": "Schedule not found"}), 404
 
         ref.delete()
+        
+        # Clear cache
+        schedule_cache.clear("all_schedules")
+        
         return jsonify({"success": True, "transactionID": transaction_id}), 200
     except Exception as e:
+        logging.error(f"Error deleting schedule: {e}")
         return jsonify({"error": str(e)}), 500
 
-
-# ---------------- SCHEDULE HISTORY ----------------
+# =======================
+# OPTIMIZED: GET SCHEDULE HISTORY
+# =======================
 @admin_required
 @schedules_api.route("/api/schedules/<transaction_id>/history", methods=["GET"])
+@rate_limit
 def get_schedule_history(transaction_id):
-    """
-    Get the change history for a specific schedule
-    """
     from firebase_admin import db
     
     try:
+        # Check cache for history
+        cache_key = f"history_{transaction_id}"
+        cached_data = schedule_cache.get(cache_key)
+        if cached_data:
+            return jsonify(cached_data)
+        
         ref = db.reference(f"schedules/{transaction_id}")
         schedule = ref.get()
         
@@ -354,39 +393,84 @@ def get_schedule_history(transaction_id):
         
         history = schedule.get("history", [])
         
-        return jsonify({
+        response = {
             "success": True,
             "transactionID": transaction_id,
             "history": history
-        }), 200
+        }
+        
+        # Cache history for 1 minute (history rarely changes)
+        schedule_cache.set(cache_key, response, ttl=60)
+        return jsonify(response)
+        
+    except Exception as e:
+        logging.error(f"Error fetching history: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# =======================
+# OPTIMIZED: FLIGHTAWARE SCREENSHOT
+# =======================
+@admin_required
+@schedules_api.route("/api/flightaware/screenshot/<flight_number>", methods=["GET"])
+@rate_limit
+def get_flightaware_screenshot(flight_number):
+    """Capture a screenshot of FlightAware for the given flight number"""
+    temp_file = None
+    driver = None
+    
+    try:
+        flight_number = flight_number.replace(" ", "").upper()
+        
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        url = f"https://www.flightaware.com/live/flight/{flight_number}"
+        driver.get(url)
+        
+        wait = WebDriverWait(driver, 15)
+        try:
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".flightPageCard")))
+        except:
+            time.sleep(3)
+        
+        temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+        driver.save_screenshot(temp_file.name)
+        temp_file.close()
+        
+        return send_file(
+            temp_file.name,
+            mimetype='image/png',
+            as_attachment=True,
+            download_name=f'flight_{flight_number}.png'
+        )
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+        
+    finally:
+        if driver:
+            driver.quit()
+        if temp_file and os.path.exists(temp_file.name):
+            try:
+                os.unlink(temp_file.name)
+            except:
+                pass
 
-
-# ---------------- TRANSPORT UNITS ----------------
+# =======================
+# CLEAR CACHE ENDPOINT
+# =======================
 @admin_required
-@schedules_api.route("/api/transportUnits", methods=["GET"])
-def get_transport_units():
-    """
-    Fetch all transport units from Firebase Realtime Database
-    """
-    from firebase_admin import db
-
-    try:
-        ref = db.reference("transportUnits")
-        data = ref.get() or {}
-
-        # Convert to list
-        transport_units = []
-        for key, unit in data.items():
-            transport_units.append({
-                "transportUnit": unit.get("transportUnit", ""),
-                "unitType": unit.get("unitType", ""),
-                "color": unit.get("color", ""),
-                "plateNumber": unit.get("plateNumber", "")
-            })
-
-        return jsonify({"success": True, "transportUnits": transport_units}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+@schedules_api.route("/api/schedules/clear-cache", methods=["POST"])
+@rate_limit
+def clear_schedule_cache():
+    """Manually clear the schedule cache"""
+    schedule_cache.clear()
+    return jsonify({"message": "Schedule cache cleared successfully"})

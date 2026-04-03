@@ -5,10 +5,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const userForm = document.getElementById("userForm");
   const modalTitle = userModal.querySelector(".modal-title");
   const defaultUnitSelect = userForm.defaultUnit;
-  const driverTypeSelect = userForm.driverType; // NEW
+  const driverTypeSelect = userForm.driverType;
 
   let editingUserId = null;
   let transportUnits = [];
+  let isLoading = false;
+
+  // Cache for users data
+  let usersCache = null;
+  let lastUsersFetch = 0;
+  const USERS_CACHE_TTL = 10000; // 10 seconds
 
   // ---------------- Toast ----------------
   const toast = Swal.mixin({
@@ -39,19 +45,40 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ---------------- Transport Units ----------------
-  async function fetchTransportUnits() {
+  // ---------------- Transport Units (with caching) ----------------
+  async function fetchTransportUnits(forceRefresh = false) {
+    // Check session storage for transport units (rarely change)
+    if (!forceRefresh) {
+      const cached = sessionStorage.getItem('transportUnits');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed.expiry > Date.now()) {
+            transportUnits = parsed.data;
+            populateTransportUnits();
+            return;
+          }
+        } catch(e) {}
+      }
+    }
+    
     const { ok, data } = await safeFetch("/api/admin/transport-units");
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
     transportUnits = data.units || [];
+    
+    // Cache in session storage for 1 hour
+    sessionStorage.setItem('transportUnits', JSON.stringify({
+      data: transportUnits,
+      expiry: Date.now() + 3600000
+    }));
+    
     populateTransportUnits();
   }
 
   function populateTransportUnits(selected = "") {
     defaultUnitSelect.innerHTML = `<option value="">— No Default Transport Unit —</option>`;
 
-    // Sort alphabetically by unit name
     const sortedUnits = [...transportUnits].sort((a, b) => {
       const nameA = (a.name || "").toLowerCase();
       const nameB = (b.name || "").toLowerCase();
@@ -67,83 +94,119 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ---------------- Users ----------------
-  async function fetchUsers() {
+  // ---------------- Users (with caching) ----------------
+  async function fetchUsers(forceRefresh = false) {
+    if (isLoading) return;
+    
+    // Check cache
+    if (!forceRefresh && usersCache && (Date.now() - lastUsersFetch) < USERS_CACHE_TTL) {
+      renderUsers(usersCache);
+      return;
+    }
+    
+    isLoading = true;
     usersGrid.innerHTML = "<p>Loading users...</p>";
+    
     const { ok, data } = await safeFetch("/api/admin/users");
-    if (!ok) return toast.fire({ icon: "error", title: data.error });
-
-    // Filter out admins
+    isLoading = false;
+    
+    if (!ok) {
+      toast.fire({ icon: "error", title: data.error });
+      usersGrid.innerHTML = "<p>Error loading users. Please refresh.</p>";
+      return;
+    }
+    
+    // Filter and sort users
     let users = (data.users || [])
-      .filter(u => (u.role || "").toLowerCase() !== "admin") // ignore admins
-      .filter(u => u.firstName || u.lastName); // only users with real names
-
-    // Sort alphabetically by full name
+      .filter(u => (u.role || "").toLowerCase() !== "admin")
+      .filter(u => u.firstName || u.lastName);
+    
     users.sort((a, b) => {
       const nameA = `${a.firstName || ""} ${a.middleName || ""} ${a.lastName || ""}`.trim().toLowerCase();
       const nameB = `${b.firstName || ""} ${b.middleName || ""} ${b.lastName || ""}`.trim().toLowerCase();
       return nameA.localeCompare(nameB);
     });
-
+    
+    // Update cache
+    usersCache = users;
+    lastUsersFetch = Date.now();
+    
     renderUsers(users);
   }
 
   function renderUsers(users) {
+    if (!usersGrid) return;
     usersGrid.innerHTML = "";
-
+    
+    if (users.length === 0) {
+      usersGrid.innerHTML = "<p>No users found.</p>";
+      return;
+    }
+    
+    // Use DocumentFragment for better performance
+    const fragment = document.createDocumentFragment();
+    
     users.forEach(user => {
       const card = document.createElement("article");
       card.className = "card user-card";
-
       card.dataset.uid = user.uid;
       card.dataset.firstName = user.firstName || "";
       card.dataset.middleName = user.middleName || "";
       card.dataset.lastName = user.lastName || "";
       card.dataset.phone = user.phone || "";
-      card.dataset.driverType = user.driverType || ""; // NEW
+      card.dataset.driverType = user.driverType || "";
       card.dataset.defaultUnit = user.defaultTransportUnit || "";
 
       let unitDetails = "-";
       if (user.defaultTransportUnit) {
         const unit = transportUnits.find(u => u.id === user.defaultTransportUnit);
         if (unit) {
-          unitDetails = `${unit.name}<p>Plate: ${unit.plateNo}</p><p>Color: ${unit.color}</p><p>Type: ${unit.unitType}</p>`;
+          unitDetails = `${unit.name}<br><small>Plate: ${unit.plateNo}<br>Color: ${unit.color}<br>Type: ${unit.unitType}</small>`;
         }
       }
 
-      // Format driver type for display
       const driverTypeDisplay = user.driverTypeDisplay || user.driverType || "Not set";
 
       card.innerHTML = `
         <div class="user-header">
-          <h3>${user.firstName} ${user.middleName} ${user.lastName}</h3>
+          <h3>${escapeHtml(user.firstName)} ${escapeHtml(user.middleName)} ${escapeHtml(user.lastName)}</h3>
           <span class="user-role ${user.role}">${user.role}</span>
         </div>
-
         <div class="user-details">
-          <p><strong>Phone:</strong> ${user.phone || "-"}</p>
-          <p><strong>Driver Type:</strong> ${driverTypeDisplay}</p>
+          <p><strong>Phone:</strong> ${escapeHtml(user.phone || "-")}</p>
+          <p><strong>Driver Type:</strong> ${escapeHtml(driverTypeDisplay)}</p>
           <p><strong>Default Unit:</strong> ${unitDetails}</p>
         </div>
-
         <div class="user-actions">
           <button class="btn btn-sm edit-btn">Edit</button>
           <button class="btn btn-sm btn-warning password-btn">Password</button>
           <button class="btn btn-sm btn-danger delete-btn">Delete</button>
         </div>
       `;
-
-      usersGrid.appendChild(card);
+      
+      fragment.appendChild(card);
     });
-
+    
+    usersGrid.appendChild(fragment);
+    
+    // Attach event listeners
     document.querySelectorAll(".edit-btn").forEach(b => b.addEventListener("click", openEditUserModal));
     document.querySelectorAll(".delete-btn").forEach(b => b.addEventListener("click", deleteUser));
     document.querySelectorAll(".password-btn").forEach(b => b.addEventListener("click", openPasswordModal));
   }
 
+  function escapeHtml(text) {
+    if (!text) return "";
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   // ---------------- Edit User ----------------
   function openEditUserModal(e) {
     const card = e.target.closest(".user-card");
+    if (!card) return;
+    
     editingUserId = card.dataset.uid;
 
     userForm.firstName.value = card.dataset.firstName;
@@ -153,7 +216,6 @@ document.addEventListener("DOMContentLoaded", () => {
     userForm.email.value = "";
     userForm.email.disabled = true;
 
-    // Set driver type value
     const driverType = card.dataset.driverType;
     if (driverType && ["main", "indirect", "direct"].includes(driverType)) {
       driverTypeSelect.value = driverType;
@@ -169,6 +231,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---------------- Password with Swal2 ----------------
   function openPasswordModal(e) {
     const card = e.target.closest(".user-card");
+    if (!card) return;
+    
     const uid = card.dataset.uid;
 
     Swal.fire({
@@ -207,15 +271,19 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---------------- Delete User ----------------
   async function deleteUser(e) {
     const card = e.target.closest(".user-card");
+    if (!card) return;
+    
     const uid = card.dataset.uid;
+    const userName = `${card.dataset.firstName} ${card.dataset.lastName}`.trim();
 
     const confirm = await Swal.fire({
       icon: "warning",
       title: "Delete user?",
-      text: "This action cannot be undone.",
+      html: `Are you sure you want to delete <strong>${escapeHtml(userName)}</strong>?<br>This action cannot be undone.`,
       showCancelButton: true,
       confirmButtonText: "Delete",
-      cancelButtonText: "Cancel"
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#dc2626"
     });
 
     if (!confirm.isConfirmed) return;
@@ -224,16 +292,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
     toast.fire({ icon: "success", title: "User deleted" });
-
-    // small delay to ensure RTDB is consistent
-    setTimeout(() => fetchUsers(), 200); 
+    
+    // Clear cache and refresh
+    usersCache = null;
+    fetchUsers(true);
   }
 
   // ---------------- Save User ----------------
   userForm.addEventListener("submit", async e => {
     e.preventDefault();
 
-    // Validate driver type
     if (!driverTypeSelect.value) {
       toast.fire({ icon: "error", title: "Please select a driver type" });
       return;
@@ -244,7 +312,7 @@ document.addEventListener("DOMContentLoaded", () => {
       middleName: userForm.middleName.value.trim(),
       lastName: userForm.lastName.value.trim(),
       phone: userForm.phone.value.trim(),
-      driverType: driverTypeSelect.value, // NEW
+      driverType: driverTypeSelect.value,
       defaultTransportUnit: defaultUnitSelect.value || ""
     };
 
@@ -273,27 +341,74 @@ document.addEventListener("DOMContentLoaded", () => {
     editingUserId = null;
     userForm.reset();
     closeModal();
-    fetchUsers();
+    
+    // Clear cache and refresh
+    usersCache = null;
+    fetchUsers(true);
   });
 
   // ---------------- Modal helpers ----------------
-  function openModal() { userModal.style.display = "block"; }
-  function closeModal() { userModal.style.display = "none"; }
+  function openModal() { 
+    userModal.style.display = "block"; 
+  }
+  
+  function closeModal() { 
+    userModal.style.display = "none"; 
+  }
 
   btnCloseModal.addEventListener("click", closeModal);
   window.addEventListener("click", e => e.target === userModal && closeModal());
 
-  document.getElementById("btnOpenCreateModal").addEventListener("click", () => {
-    editingUserId = null;
-    userForm.reset();
-    userForm.email.disabled = false;
-    driverTypeSelect.value = ""; // Reset driver type
-    populateTransportUnits();
-    modalTitle.textContent = "Create User";
-    openModal();
+  const btnOpenCreateModal = document.getElementById("btnOpenCreateModal");
+  if (btnOpenCreateModal) {
+    btnOpenCreateModal.addEventListener("click", () => {
+      editingUserId = null;
+      userForm.reset();
+      userForm.email.disabled = false;
+      driverTypeSelect.value = "";
+      populateTransportUnits();
+      modalTitle.textContent = "Create User";
+      openModal();
+    });
+  }
+
+  // ---------------- Auto-refresh (optional) ----------------
+  let refreshInterval;
+  
+  function startAutoRefresh() {
+    if (refreshInterval) clearInterval(refreshInterval);
+    // Refresh every 30 seconds only if tab is visible
+    refreshInterval = setInterval(() => {
+      if (!document.hidden) {
+        fetchUsers(false); // Use cache if still valid
+      }
+    }, 30000);
+  }
+  
+  function stopAutoRefresh() {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      refreshInterval = null;
+    }
+  }
+  
+  // Visibility API - pause refresh when tab is inactive
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopAutoRefresh();
+    } else {
+      startAutoRefresh();
+      fetchUsers(false); // Refresh when tab becomes visible
+    }
   });
 
   // ---------------- Init ----------------
   fetchTransportUnits();
-  fetchUsers();
+  fetchUsers(false);
+  startAutoRefresh();
+  
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', () => {
+    stopAutoRefresh();
+  });
 });
