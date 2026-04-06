@@ -168,6 +168,7 @@ body {
 #panelToggleIcon {
   font-size: 0.8rem;
   opacity: 0.8;
+  transition: transform 0.3s ease;
 }
 
 .driver-list {
@@ -178,6 +179,10 @@ body {
 
 .driver-panel.expanded .driver-list {
   max-height: 400px;
+}
+
+.driver-panel.expanded #panelToggleIcon {
+  transform: rotate(180deg);
 }
 
 .driver-item {

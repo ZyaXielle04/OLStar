@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/track_drivers.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/demo.css') }}">
 </head>
 <body>
 
@@ -54,7 +54,7 @@
       <i class="fas fa-chevron-up" id="panelToggleIcon"></i>
     </div>
     <div class="driver-list" id="driverList">
-      <!-- Driver list will be populated here -->
+      <div style="padding: 1rem; text-align: center; color: #6c757d;">Loading drivers...</div>
     </div>
   </div>
 
@@ -82,8 +82,141 @@
   defer
 ></script>
 
-<!-- Page Logic -->
+<!-- Page Logic - Your existing track_drivers.js -->
 <script src="{{ url_for('static', filename='js/track_drivers.js') }}"></script>
+
+<!-- Additional UI helpers for panel and toast -->
+<script>
+  // Panel collapse/expand functionality
+  const driverPanel = document.getElementById('driverPanel');
+  const panelHeader = document.getElementById('panelHeader');
+  const panelToggleIcon = document.getElementById('panelToggleIcon');
+  
+  if (panelHeader) {
+    panelHeader.addEventListener('click', () => {
+      driverPanel.classList.toggle('expanded');
+    });
+  }
+  
+  // Reset view button functionality
+  const resetBtn = document.getElementById('btnResetView');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (window.map) {
+        window.map.setCenter({ lat: 14.5222733, lng: 120.999655 });
+        window.map.setZoom(13);
+        showToastMessage('View reset to garage location');
+      }
+    });
+  }
+  
+  // Toast function for demo
+  function showToastMessage(message) {
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toastMessage');
+    if (toast && toastMessage) {
+      toastMessage.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2000);
+    }
+  }
+  
+  // Update driver panel with data from markers
+  function updateDriverPanelList() {
+    const driverListEl = document.getElementById('driverList');
+    const driverCountEl = document.getElementById('driverCount');
+    
+    if (!driverListEl) return;
+    
+    const drivers = [];
+    for (const [uid, marker] of Object.entries(window.driverMarkers)) {
+      if (marker && marker.userData) {
+        const { user, speedKmh } = marker.userData;
+        drivers.push({
+          uid,
+          name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver',
+          speed: speedKmh || 0
+        });
+      }
+    }
+    
+    driverCountEl.textContent = drivers.length;
+    
+    if (drivers.length === 0) {
+      driverListEl.innerHTML = '<div style="padding: 1rem; text-align: center; color: #6c757d;">No active drivers</div>';
+      return;
+    }
+    
+    driverListEl.innerHTML = drivers.map(driver => {
+      let speedClass = 'speed-normal';
+      let speedText = 'Normal';
+      if (driver.speed > 60) {
+        speedClass = 'speed-speeding';
+        speedText = 'Speeding!';
+      } else if (driver.speed > 30) {
+        speedClass = 'speed-moderate';
+        speedText = 'Moderate';
+      }
+      
+      const initials = driver.name.split(' ').map(n => n[0]).join('').toUpperCase();
+      
+      return `
+        <div class="driver-item" data-uid="${driver.uid}">
+          <div class="driver-avatar">${initials || 'D'}</div>
+          <div class="driver-info">
+            <div class="driver-name">${driver.name}</div>
+            <div class="driver-speed">
+              <span class="speed-badge ${speedClass}">
+                ${driver.speed > 0 ? '🚗' : '🅿️'} ${driver.speed.toFixed(1)} km/h
+              </span>
+              <span style="margin-left: 6px; font-size: 0.65rem;">${speedText}</span>
+            </div>
+          </div>
+          <i class="fas fa-location-dot" style="color: #ffb347;"></i>
+        </div>
+      `;
+    }).join('');
+    
+    // Add click handlers to focus on driver
+    document.querySelectorAll('.driver-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const uid = item.dataset.uid;
+        const marker = window.driverMarkers[uid];
+        if (marker && window.map) {
+          const position = marker.getPosition();
+          window.map.setCenter(position);
+          window.map.setZoom(17);
+          google.maps.event.trigger(marker, 'click');
+          showToastMessage(`Focusing on ${item.querySelector('.driver-name').textContent}`);
+        }
+      });
+    });
+  }
+  
+  // Override processDriverUpdate to update panel
+  const originalProcessDriverUpdate = window.processDriverUpdate;
+  if (originalProcessDriverUpdate) {
+    window.processDriverUpdate = function(uid, user, loc, timestamp) {
+      originalProcessDriverUpdate(uid, user, loc, timestamp);
+      setTimeout(updateDriverPanelList, 50);
+    };
+  }
+  
+  // Override createDriverMarker to update panel
+  const originalCreateDriverMarker = window.createDriverMarker;
+  if (originalCreateDriverMarker) {
+    window.createDriverMarker = function(uid, user, loc, speedKmh) {
+      originalCreateDriverMarker(uid, user, loc, speedKmh);
+      setTimeout(updateDriverPanelList, 100);
+    };
+  }
+  
+  // Initial panel update
+  setTimeout(updateDriverPanelList, 2000);
+  setInterval(updateDriverPanelList, 5000);
+</script>
 
 </body>
 </html>
