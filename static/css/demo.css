@@ -1,0 +1,351 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: #f0f2f5;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Main Layout */
+.demo-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+}
+
+/* Header */
+.demo-header {
+  background: linear-gradient(135deg, #0a2b3c 0%, #0d3b4f 100%);
+  color: white;
+  padding: 0.8rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  z-index: 5;
+}
+
+.logo-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-icon {
+  font-size: 1.6rem;
+  background: rgba(255,255,255,0.15);
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-area h1 {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.demo-badge {
+  background: #ffb347;
+  color: #1e2f3a;
+  padding: 0.25rem 0.9rem;
+  border-radius: 30px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-controls {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.control-btn {
+  padding: 0.45rem 1.2rem;
+  background: rgba(255,255,255,0.15);
+  border: none;
+  border-radius: 30px;
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.control-btn:hover {
+  background: rgba(255,255,255,0.25);
+  transform: translateY(-1px);
+}
+
+.control-btn.active {
+  background: #ffb347;
+  color: #1e2f3a;
+}
+
+.control-btn.reset {
+  background: #2c7da0;
+}
+
+.control-btn.reset:hover {
+  background: #1f5e7a;
+}
+
+/* Map Container */
+.map-container {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+#map {
+  height: 100%;
+  width: 100%;
+}
+
+/* Driver Panel */
+.driver-panel {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 320px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  overflow: hidden;
+  z-index: 10;
+  transition: all 0.3s ease;
+}
+
+.panel-header {
+  background: #1a2c3e;
+  color: white;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.panel-header:hover {
+  background: #1f3e50;
+}
+
+.panel-header h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.driver-count {
+  background: #ffb347;
+  color: #1a2c3e;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+#panelToggleIcon {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.driver-list {
+  max-height: 0;
+  overflow-y: auto;
+  transition: max-height 0.3s ease;
+}
+
+.driver-panel.expanded .driver-list {
+  max-height: 400px;
+}
+
+.driver-item {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #e9ecef;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.driver-item:hover {
+  background: #f8f9fa;
+}
+
+.driver-avatar {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #ffb347, #ff8c00);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.driver-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.driver-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.driver-speed {
+  margin-top: 4px;
+}
+
+.speed-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.speed-normal {
+  background: #d4edda;
+  color: #155724;
+}
+
+.speed-moderate {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.speed-speeding {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.driver-item i {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.driver-item:hover i {
+  opacity: 1;
+}
+
+/* Toast Notification */
+.toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: #1a2c3e;
+  color: white;
+  padding: 0.7rem 1.5rem;
+  border-radius: 50px;
+  font-size: 0.85rem;
+  z-index: 1000;
+  transition: transform 0.3s ease;
+  pointer-events: none;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .demo-header {
+    padding: 0.6rem 1rem;
+  }
+  
+  .logo-area h1 {
+    font-size: 1rem;
+  }
+  
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 1.2rem;
+  }
+  
+  .demo-badge {
+    font-size: 0.6rem;
+    padding: 0.2rem 0.6rem;
+  }
+  
+  .control-btn {
+    padding: 0.35rem 0.9rem;
+    font-size: 0.7rem;
+  }
+  
+  .driver-panel {
+    width: 280px;
+    bottom: 10px;
+    right: 10px;
+  }
+  
+  .panel-header {
+    padding: 0.8rem;
+  }
+  
+  .panel-header h3 {
+    font-size: 0.85rem;
+  }
+  
+  .driver-avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 0.8rem;
+  }
+  
+  .driver-name {
+    font-size: 0.8rem;
+  }
+  
+  .toast {
+    bottom: 20px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .driver-panel {
+    width: 260px;
+  }
+  
+  .header-controls {
+    gap: 0.5rem;
+  }
+  
+  .control-btn {
+    padding: 0.3rem 0.7rem;
+  }
+}

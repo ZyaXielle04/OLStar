@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>OLStar Demo | Track Drivers - Live Fleet Monitoring</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/track_drivers.css') }}">
+</head>
+<body>
+
+<div class="demo-container">
+
+  <!-- Simple Header -->
+  <header class="demo-header">
+    <div class="logo-area">
+      <div class="logo-icon">
+        <i class="fas fa-chart-line"></i>
+      </div>
+      <h1>OLStar <span style="font-weight:400">| Driver Tracking Demo</span></h1>
+      <span class="demo-badge">
+        <i class="fas fa-flask"></i> DEMO MODE
+      </span>
+    </div>
+    <div class="header-controls">
+      <button id="btnToggleTraffic" class="control-btn">
+        <i class="fas fa-map"></i> Show Traffic
+      </button>
+      <button id="btnResetView" class="control-btn reset">
+        <i class="fas fa-crosshairs"></i> Reset View
+      </button>
+    </div>
+  </header>
+
+  <!-- Map Section -->
+  <div class="map-container">
+    <div id="map"></div>
+  </div>
+
+  <!-- Driver Status Panel (Collapsible) -->
+  <div class="driver-panel" id="driverPanel">
+    <div class="panel-header" id="panelHeader">
+      <h3><i class="fas fa-truck-moving"></i> Active Drivers</h3>
+      <span class="driver-count" id="driverCount">0</span>
+      <i class="fas fa-chevron-up" id="panelToggleIcon"></i>
+    </div>
+    <div class="driver-list" id="driverList">
+      <!-- Driver list will be populated here -->
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast Notification -->
+<div id="toast" class="toast">
+  <span id="toastMessage"></span>
+</div>
+
+<!-- ================= SCRIPTS ================= -->
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<!-- App Scripts -->
+<script src="{{ url_for('static', filename='js/firebase-config.js') }}"></script>
+<script src="{{ url_for('static', filename='js/base.js') }}"></script>
+
+<!-- Google Maps (WITH geometry library) -->
+<script
+  src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_API_KEY }}&libraries=geometry,marker&loading=async&callback=initMap&v=weekly"
+  async
+  defer
+></script>
+
+<!-- Page Logic -->
+<script src="{{ url_for('static', filename='js/track_drivers.js') }}"></script>
+
+</body>
+</html>

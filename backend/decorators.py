@@ -14,7 +14,7 @@ def login_required(f):
     return decorated
 
 def admin_required(f):
-    """Ensure the user is an admin."""
+    """Ensure the user is an admin (or demo account for demo pages)."""
     @wraps(f)
     def decorated(*args, **kwargs):
         uid = session.get("uid")
@@ -22,10 +22,40 @@ def admin_required(f):
             flash("Please log in to access this page.", "info")
             return redirect(url_for("pages.login_page"))
 
-        # Check role in session first
+        # Check role in session
         role = session.get("role")
+        
+        # Allow demo accounts to access demo pages
+        if role == "demo":
+            # Check if this is a demo route
+            request_path = request.path if hasattr(request, 'path') else ''
+            if '/demo/' in request_path:
+                return f(*args, **kwargs)
+            else:
+                flash("Demo accounts can only access demo pages.", "warning")
+                return redirect(url_for("pages.demo_page"))
+        
+        # Regular admin check
         if role != "admin":
             flash("You need administrator privileges to access this page.", "warning")
+            return redirect(url_for("pages.login_page"))
+
+        return f(*args, **kwargs)
+    return decorated
+
+def demo_account_required(f):
+    """Ensure the user is a demo account."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        uid = session.get("uid")
+        if not uid:
+            flash("Please log in to access this page.", "info")
+            return redirect(url_for("pages.demo_page"))
+
+        # Check role in session
+        role = session.get("role")
+        if role != "demo":
+            flash("This page is only accessible to demo accounts.", "warning")
             return redirect(url_for("pages.admin_dashboard"))
 
         return f(*args, **kwargs)

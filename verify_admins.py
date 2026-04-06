@@ -109,9 +109,7 @@ def verify_admins_from_database():
 def verify_specific_admins():
     """Verify a hardcoded list of admin emails (quick option)"""
     admin_emails = [
-        "olstaropc@gmail.com",  # Replace with your actual email
-        "jessica.tipay@gmail.com",
-        "far.ana@gmail.com",
+        "demo.account@gmail.com",
     ]
     
     return verify_emails_bulk(admin_emails)

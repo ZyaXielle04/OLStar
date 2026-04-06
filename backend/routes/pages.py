@@ -3,7 +3,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Blueprint, render_template, redirect, url_for, session
-from decorators import login_required, admin_required, superadmin_required
+from decorators import login_required, admin_required, superadmin_required, demo_account_required
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -101,3 +101,20 @@ def admin_settings():
 def admin_logout():
     session.clear()
     return redirect(url_for("pages.login_page"))
+
+# Demo Routes
+@pages_bp.route("/demo")
+def demo_page():
+    """Demo landing page - accessible without authentication"""
+    return render_template("demo.html")
+
+@pages_bp.route("/demo/track-drivers")
+@login_required
+@demo_account_required
+def demo_track_drivers():
+    """Demo track drivers page - only for demo accounts"""
+    google_maps_api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    return render_template(
+        "demo.html",
+        GOOGLE_MAPS_API_KEY=google_maps_api_key
+    )

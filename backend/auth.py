@@ -53,9 +53,11 @@ def admin_login():
         if not user.email_verified:
             return jsonify({"error": "Login failed"}), 403
 
-        # Admin role check
+        # Check role (admin or demo)
         role = db.reference(f"/users/{uid}/role").get()
-        if role != "admin":
+        
+        # Allow both admin and demo roles
+        if role not in ["admin", "demo"]:
             return jsonify({"error": "Login failed"}), 403
 
         # Get user's firstName and lastName from Firebase Realtime Database
@@ -77,53 +79,60 @@ def admin_login():
             email_prefix = email.split('@')[0]
             full_name = ' '.join(word.capitalize() for word in email_prefix.replace('.', ' ').replace('_', ' ').split())
         
-        print(f"Login - User data from DB: first_name={first_name}, last_name={last_name}, full_name={full_name}")
+        print(f"Login - User data from DB: role={role}, first_name={first_name}, last_name={last_name}, full_name={full_name}")
         
         # Clear existing session
         session.clear()
         
-        # Set session with user data including firstName and lastName
+        # Set session with user data
         session.permanent = True
         session.permanent_session_lifetime = timedelta(days=7)
         session["uid"] = uid
         session["email"] = email
-        session["role"] = "admin"
+        session["role"] = role
         session["first_name"] = first_name
         session["last_name"] = last_name
         session["full_name"] = full_name
         session["id_token"] = id_token
 
+        # Determine redirect URL based on role
+        if role == "demo":
+            redirect_url = "/demo/track-drivers"
+        else:
+            redirect_url = "/admin/dashboard"
+
         # Create response
         response = make_response(jsonify({
             "status": "success", 
-            "redirect": "/admin/dashboard",
+            "redirect": redirect_url,
             "user": {
                 "email": email,
                 "firstName": first_name,
                 "lastName": last_name,
                 "fullName": full_name,
-                "uid": uid
+                "uid": uid,
+                "role": role
             }
         }))
 
-        # Set HTTP-only cookie for user email (used by schedules_api)
+        # Set HTTP-only cookie for user email
         response.set_cookie(
             "user_email",
             email,
-            max_age=60*60*24*7,  # 7 days
-            httponly=True,        # Prevents JavaScript access (more secure)
-            secure=True,          # Only send over HTTPS (set to False for local development)
+            max_age=60*60*24*7,
+            httponly=True,
+            secure=True,
             samesite="Lax",
-            path="/"              # Available on all routes
+            path="/"
         )
         
-        # Set HTTP-only cookie with user's full name (for history tracking in schedules_api)
+        # Set HTTP-only cookie with user's full name
         response.set_cookie(
             "user_full_name",
             full_name,
             max_age=60*60*24*7,
-            httponly=True,        # HTTP-only for security
-            secure=True,          # Set to False for local development
+            httponly=True,
+            secure=True,
             samesite="Lax",
             path="/"
         )
@@ -134,7 +143,7 @@ def admin_login():
             first_name,
             max_age=60*60*24*7,
             httponly=True,
-            secure=True,          # Set to False for local development
+            secure=True,
             samesite="Lax",
             path="/"
         )
@@ -144,7 +153,7 @@ def admin_login():
             last_name,
             max_age=60*60*24*7,
             httponly=True,
-            secure=True,          # Set to False for local development
+            secure=True,
             samesite="Lax",
             path="/"
         )
@@ -154,13 +163,24 @@ def admin_login():
             "user_display_name",
             full_name,
             max_age=60*60*24*7,
-            httponly=False,       # Allow JavaScript to read this
-            secure=True,          # Set to False for local development
+            httponly=False,
+            secure=True,
+            samesite="Lax",
+            path="/"
+        )
+        
+        # Set user role cookie
+        response.set_cookie(
+            "user_role",
+            role,
+            max_age=60*60*24*7,
+            httponly=False,
+            secure=True,
             samesite="Lax",
             path="/"
         )
 
-        print(f"Cookies set - user_email: {email}, user_full_name: {full_name}, user_first_name: {first_name}, user_last_name: {last_name}")
+        print(f"Login successful - Role: {role}, Redirect: {redirect_url}")
         
         return response
 
@@ -171,6 +191,46 @@ def admin_login():
         print(f"Unexpected error during login: {e}")
         return jsonify({"error": "Login failed"}), 500
 
+@auth_bp.route("/demo-login", methods=["POST"])
+@limiter.limit("10 per minute")
+def demo_login():
+    """Special login endpoint for demo accounts without Firebase"""
+    data = request.get_json(silent=True) or {}
+    email = data.get("email")
+    password = data.get("password")
+    
+    # Demo credentials check (for testing without Firebase)
+    demo_credentials = {
+        "demo@olstar.com": "demo123",
+        "client@olstar.com": "client123"
+    }
+    
+    if email in demo_credentials and demo_credentials[email] == password:
+        # Create a mock demo session
+        session.clear()
+        session.permanent = True
+        session.permanent_session_lifetime = timedelta(days=1)
+        session["uid"] = f"demo_{email.replace('@', '_')}"
+        session["email"] = email
+        session["role"] = "demo"
+        session["first_name"] = "Demo"
+        session["last_name"] = "User"
+        session["full_name"] = "Demo User"
+        session["is_demo"] = True
+        
+        return jsonify({
+            "status": "success",
+            "redirect": "/demo/track-drivers",
+            "user": {
+                "email": email,
+                "firstName": "Demo",
+                "lastName": "User",
+                "fullName": "Demo User",
+                "role": "demo"
+            }
+        })
+    
+    return jsonify({"error": "Invalid demo credentials"}), 401
 
 @auth_bp.route("/logout", methods=["POST"])
 def admin_logout():
@@ -187,13 +247,13 @@ def admin_logout():
         response.set_cookie("user_display_name", "", expires=0, path="/")
         response.set_cookie("user_first_name", "", expires=0, path="/")
         response.set_cookie("user_last_name", "", expires=0, path="/")
+        response.set_cookie("user_role", "", expires=0, path="/")
         response.set_cookie("session", "", expires=0, path="/")
         
         return response
     except Exception as e:
         print(f"Error during logout: {e}")
         return jsonify({"error": "Logout failed"}), 500
-
 
 @auth_bp.route("/current-user", methods=["GET"])
 def get_current_user():
@@ -205,8 +265,9 @@ def get_current_user():
         first_name = session.get("first_name", "")
         last_name = session.get("last_name", "")
         full_name = session.get("full_name", "")
+        role = session.get("role", "")
         
-        print(f"Current user from session - first_name: {first_name}, last_name: {last_name}, full_name: {full_name}")
+        print(f"Current user from session - role: {role}, first_name: {first_name}, last_name: {last_name}")
         
         # If not in session, check cookies
         if not email:
@@ -214,7 +275,8 @@ def get_current_user():
             full_name = request.cookies.get("user_full_name")
             first_name = request.cookies.get("user_first_name", "")
             last_name = request.cookies.get("user_last_name", "")
-            print(f"Current user from cookies - first_name: {first_name}, last_name: {last_name}, full_name: {full_name}")
+            role = request.cookies.get("user_role", "")
+            print(f"Current user from cookies - role: {role}, first_name: {first_name}, last_name: {last_name}")
         
         if not email:
             return jsonify({
@@ -223,7 +285,7 @@ def get_current_user():
             }), 401
         
         # If we have uid but no names, try to fetch from Firebase
-        if uid and (not first_name or not last_name):
+        if uid and role == "admin" and (not first_name or not last_name):
             try:
                 user_ref = db.reference(f"/users/{uid}")
                 user_data = user_ref.get() or {}
@@ -263,7 +325,8 @@ def get_current_user():
                 "firstName": first_name,
                 "lastName": last_name,
                 "fullName": full_name,
-                "uid": uid
+                "uid": uid,
+                "role": role
             }
         })
         
