@@ -345,44 +345,65 @@ function renderTripsGrid(entries, trips) {
     const groupedTrips = {};
     trips.forEach(trip => {
         const date = trip.date;
-        if (!groupedTrips[date]) {
-            groupedTrips[date] = {
-                date: date,
+        // Convert date to YYYY-MM-DD format for consistency
+        let formattedDate = date;
+        if (date && date.includes(',')) {
+            // Convert from "Month Day, Year" to YYYY-MM-DD
+            const dateObj = new Date(date);
+            formattedDate = dateObj.toISOString().split('T')[0];
+        }
+        
+        if (!groupedTrips[formattedDate]) {
+            groupedTrips[formattedDate] = {
+                date: formattedDate,
+                displayDate: date,
                 time: trip.time,
                 scheduleIds: [],
                 amount: 0,
                 driverRate: 0,
-                advance: entries[date]?.advance || 0,
+                advance: entries[formattedDate]?.advance || 0,
                 tripCount: 0
             };
         }
-        groupedTrips[date].scheduleIds.push(trip.scheduleId);
-        groupedTrips[date].amount += trip.amount;
-        groupedTrips[date].driverRate += trip.driverRate;
-        groupedTrips[date].tripCount++;
+        groupedTrips[formattedDate].scheduleIds.push(trip.scheduleId);
+        groupedTrips[formattedDate].amount += trip.amount;
+        groupedTrips[formattedDate].driverRate += trip.driverRate;
+        groupedTrips[formattedDate].tripCount++;
         // Keep the first time entry
-        if (groupedTrips[date].time !== trip.time) {
-            groupedTrips[date].time = trip.time;
+        if (groupedTrips[formattedDate].time !== trip.time) {
+            groupedTrips[formattedDate].time = trip.time;
         }
     });
     
-    // Convert to array and sort by date
-    const sortedDates = Object.keys(groupedTrips).sort();
+    // Get all dates from entries (which now includes all dates in cutoff)
+    const allDates = Object.keys(entries).sort();
     
     let html = '';
-    sortedDates.forEach(date => {
+    allDates.forEach(date => {
+        const entry = entries[date];
         const trip = groupedTrips[date];
         const dayName = new Date(date).toLocaleDateString('en-US', { weekday: 'short' });
         
+        // Determine if there are trips on this date
+        const hasTrips = trip && trip.tripCount > 0;
+        const tripCount = hasTrips ? trip.tripCount : 0;
+        const amount = hasTrips ? trip.amount : 0;
+        const driverRate = hasTrips ? trip.driverRate : 0;
+        const time = hasTrips ? (trip.time || '—') : '—';
+        const advance = entry?.advance || 0;
+        
+        // Add a class for empty days to style them differently if desired
+        const rowClass = hasTrips ? '' : 'empty-day-row';
+        
         html += `
-            <tr data-date="${date}">
+            <tr data-date="${date}" class="${rowClass}">
                 <td>${escapeHtml(date)}</td>
                 <td>${dayName}</td>
-                <td>${escapeHtml(trip.time)}</td>
-                <td>${trip.tripCount} trip(s)</td>
-                <td>₱${trip.amount.toLocaleString()}</td>
-                <td>₱${trip.driverRate.toLocaleString()}</td>
-                <td><input type="number" class="advance-input" step="0.01" min="0" value="${trip.advance}" onchange="updateAdvance('${date}', this.value)"></td>
+                <td>${escapeHtml(time)}</td>
+                <td>${tripCount} trip(s)</td>
+                <td>₱${amount.toLocaleString()}</td>
+                <td>₱${driverRate.toLocaleString()}</td>
+                <td><input type="number" class="advance-input" step="0.01" min="0" value="${advance}" onchange="updateAdvance('${date}', this.value)"></td>
                 <td><button type="button" class="btn-sm btn-danger" onclick="clearAdvance('${date}')"><i class="fas fa-times"></i></button></td>
             </tr>
         `;

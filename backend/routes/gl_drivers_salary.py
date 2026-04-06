@@ -118,7 +118,7 @@ def get_drivers():
                 'driverType': driver_type,
                 'fullName': f"{user_data.get('firstName', '')} {user_data.get('lastName', '')}".strip(),
                 'status': user_data.get('status', 'active'),
-                'dailyRate': 500,  # Default daily rate for drivers
+                'dailyRate': 500,
                 'sss': user_data.get('sss', 0),
                 'philhealth': user_data.get('philhealth', 0),
                 'pagibig': user_data.get('pagibig', 0)
@@ -192,6 +192,8 @@ def get_or_create_driver_dtr(driver_id, cutoff):
     """Get or create a specific driver's DTR record for a cutoff"""
     try:
         from urllib.parse import unquote
+        from datetime import datetime, timedelta
+        
         cutoff = unquote(cutoff)
         
         # Get driver info
@@ -251,24 +253,46 @@ def get_or_create_driver_dtr(driver_id, cutoff):
             start_day = 16
             end_day = calendar.monthrange(year, month_num)[1]
         
-        # Create daily entries based on trips
+        # Create daily entries for ALL dates in the cutoff period
         entries = {}
+        start_date_obj = datetime(year, month_num, start_day)
+        end_date_obj = datetime(year, month_num, end_day)
+        
+        current_date = start_date_obj
+        while current_date <= end_date_obj:
+            date_str = current_date.strftime('%Y-%m-%d')
+            entries[date_str] = {
+                'date': date_str,
+                'timeIn': '',
+                'timeOut': '',
+                'driverRate': 0,
+                'amount': 0,
+                'tripCount': 0,
+                'advance': 0,
+                'scheduleIds': []
+            }
+            current_date += timedelta(days=1)
+        
+        # Populate with actual trip data
         for trip in trips:
             trip_date = trip.get('date', '')
-            if trip_date not in entries:
-                entries[trip_date] = {
-                    'date': trip_date,
-                    'timeIn': trip.get('time', '').split(' - ')[0] if ' - ' in trip.get('time', '') else '',
-                    'timeOut': trip.get('time', '').split(' - ')[1] if ' - ' in trip.get('time', '') else '',
-                    'driverRate': 0,
-                    'amount': 0,
-                    'tripCount': 0,
-                    'scheduleIds': []
-                }
-            entries[trip_date]['driverRate'] += trip.get('driverRate', 0)
-            entries[trip_date]['amount'] += trip.get('amount', 0)
-            entries[trip_date]['tripCount'] += 1
-            entries[trip_date]['scheduleIds'].append(trip.get('scheduleId', ''))
+            try:
+                if '-' in trip_date:
+                    date_obj = datetime.strptime(trip_date, '%Y-%m-%d')
+                else:
+                    date_obj = datetime.strptime(trip_date, '%B %d, %Y')
+                date_str = date_obj.strftime('%Y-%m-%d')
+                
+                if date_str in entries:
+                    entries[date_str]['timeIn'] = trip.get('time', '').split(' - ')[0] if ' - ' in trip.get('time', '') else ''
+                    entries[date_str]['timeOut'] = trip.get('time', '').split(' - ')[1] if ' - ' in trip.get('time', '') else ''
+                    entries[date_str]['driverRate'] += trip.get('driverRate', 0)
+                    entries[date_str]['amount'] += trip.get('amount', 0)
+                    entries[date_str]['tripCount'] += 1
+                    entries[date_str]['scheduleIds'].append(trip.get('scheduleId', ''))
+            except Exception as e:
+                print(f"Error processing trip date {trip_date}: {e}")
+                continue
         
         # Create new record
         new_record = {
@@ -596,6 +620,8 @@ def generate_driver_dtr_records(cutoff, driver_type):
     """Generate or get all DTR records for drivers of a specific type for a cutoff"""
     try:
         from urllib.parse import unquote
+        from datetime import datetime, timedelta
+        
         cutoff = unquote(cutoff)
         
         # Get all drivers of the specified type
@@ -655,9 +681,9 @@ def generate_driver_dtr_records(cutoff, driver_type):
                 
                 try:
                     if '-' in schedule_date:
-                        date_obj = datetime.datetime.strptime(schedule_date, '%Y-%m-%d')
+                        date_obj = datetime.strptime(schedule_date, '%Y-%m-%d')
                     else:
-                        date_obj = datetime.datetime.strptime(schedule_date, '%B %d, %Y')
+                        date_obj = datetime.strptime(schedule_date, '%B %d, %Y')
                     
                     date_str = date_obj.strftime('%Y-%m-%d')
                     
@@ -736,25 +762,46 @@ def generate_driver_dtr_records(cutoff, driver_type):
                     start_day = 16
                     end_day = calendar.monthrange(year, month_num)[1]
                 
-                # Create daily entries based on trips
+                # Create daily entries for ALL dates in the cutoff period
                 entries = {}
+                start_date_obj = datetime(year, month_num, start_day)
+                end_date_obj = datetime(year, month_num, end_day)
+                
+                current_date = start_date_obj
+                while current_date <= end_date_obj:
+                    date_str = current_date.strftime('%Y-%m-%d')
+                    entries[date_str] = {
+                        'date': date_str,
+                        'timeIn': '',
+                        'timeOut': '',
+                        'driverRate': 0,
+                        'amount': 0,
+                        'tripCount': 0,
+                        'advance': 0,
+                        'scheduleIds': []
+                    }
+                    current_date += timedelta(days=1)
+                
+                # Populate with actual trip data
                 for trip in trips:
                     trip_date = trip.get('date', '')
-                    if trip_date not in entries:
-                        entries[trip_date] = {
-                            'date': trip_date,
-                            'timeIn': trip.get('time', '').split(' - ')[0] if ' - ' in trip.get('time', '') else '',
-                            'timeOut': trip.get('time', '').split(' - ')[1] if ' - ' in trip.get('time', '') else '',
-                            'driverRate': 0,
-                            'amount': 0,
-                            'tripCount': 0,
-                            'advance': 0,
-                            'scheduleIds': []
-                        }
-                    entries[trip_date]['driverRate'] += trip.get('driverRate', 0)
-                    entries[trip_date]['amount'] += trip.get('amount', 0)
-                    entries[trip_date]['tripCount'] += 1
-                    entries[trip_date]['scheduleIds'].append(trip.get('scheduleId', ''))
+                    try:
+                        if '-' in trip_date:
+                            date_obj = datetime.strptime(trip_date, '%Y-%m-%d')
+                        else:
+                            date_obj = datetime.strptime(trip_date, '%B %d, %Y')
+                        date_str = date_obj.strftime('%Y-%m-%d')
+                        
+                        if date_str in entries:
+                            entries[date_str]['timeIn'] = trip.get('time', '').split(' - ')[0] if ' - ' in trip.get('time', '') else ''
+                            entries[date_str]['timeOut'] = trip.get('time', '').split(' - ')[1] if ' - ' in trip.get('time', '') else ''
+                            entries[date_str]['driverRate'] += trip.get('driverRate', 0)
+                            entries[date_str]['amount'] += trip.get('amount', 0)
+                            entries[date_str]['tripCount'] += 1
+                            entries[date_str]['scheduleIds'].append(trip.get('scheduleId', ''))
+                    except Exception as e:
+                        print(f"Error processing trip date {trip_date}: {e}")
+                        continue
                 
                 # Create new record
                 new_record = {
