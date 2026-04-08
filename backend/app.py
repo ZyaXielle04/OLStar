@@ -99,9 +99,9 @@ try:
     from routes.schedules import schedules_api
     from routes.admin_requests import admin_requests_api
     from routes.admin_dashboard import admin_dashboard_api
-    from backend.routes.admin_transport_units import admin_transport_units
-    from backend.routes.flight_tracker import flight_tracker
-    from backend.routes.fcm_notifications import fcm_notifications
+    from routes.admin_transport_units import admin_transport_units
+    from routes.flight_tracker import flight_tracker
+    from routes.fcm_notifications import fcm_notifications
     from routes.admin_rfid import admin_rfid_api
     from routes.admin_maintenance import maintenance_transactions_bp
     from routes.gl_admin_salary import gl_admin_salary_bp
