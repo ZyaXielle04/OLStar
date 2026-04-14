@@ -726,12 +726,37 @@ This is an automated message. Please do not reply.`;
     // =======================
     // CREATE CALENDAR EVENT
     // =======================
+    // Check if user is superadmin
+    function isSuperAdmin() {
+        const superadminEmails = [
+            "zyacodesservices@gmail.com",
+            "olstaropc@gmail.com",
+            "far.ana@gmail.com"
+        ];
+        
+        // Make sure we have the values
+        const userRole = window.userRole || "";
+        const userEmail = window.userEmail || "";
+        
+        console.log("isSuperAdmin check - Role:", userRole, "Email:", userEmail);
+        
+        const isSuper = userRole === 'admin' && superadminEmails.includes(userEmail);
+        console.log("Is Super Admin:", isSuper);
+        
+        return isSuper;
+    }
+
     function createCalendarEvent(data) {
+        console.log("Creating event for:", data.transactionID, "Amount:", data.amount);
+        
         const event = document.createElement("div");
         event.classList.add("calendar-event");
 
         const driverName = data.current?.driverName || "Unassigned";
         const tripNumber = data.tripNumber || null;
+        const showAmount = isSuperAdmin();
+        
+        console.log("Show amount for this event:", showAmount);
 
         if (data.clientNoShow === true) event.classList.add("no-show-trip");
         if (data.status === "Completed") event.classList.add("completed-trip");
@@ -809,7 +834,7 @@ This is an automated message. Please do not reply.`;
                     <div class="detail"><span class="label">Trip Type</span><span class="value">${getTripTypeLabel(data.tripType)}</span></div>
                     <div class="detail"><span class="label">Flight</span><span class="value">${escapeHtml(data.flightNumber || "-")}</span></div>
                     <div class="detail"><span class="label">Booking Type</span><span class="value">${escapeHtml(data.bookingType || "-")}</span></div>
-                    <div class="detail"><span class="label">Amount</span><span class="value">${data.amount || "-"}</span></div>
+                    ${showAmount ? `<div class="detail"><span class="label">Amount</span><span class="value">${data.amount || "-"}</span></div>` : ''}
                     <div class="detail"><span class="label">Driver Rate</span><span class="value">${data.driverRate || "-"}</span></div>
                     <div class="detail"><span class="label">Luggage</span><span class="value">${data.luggage || "-"}</span></div>
                 </div>
@@ -852,7 +877,8 @@ This is an automated message. Please do not reply.`;
             } else {
                 selectedScheduleIDs.delete(id);
             }
-            document.getElementById("bulkDeleteBtn").disabled = selectedScheduleIDs.size === 0;
+            const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
+            if (bulkDeleteBtn) bulkDeleteBtn.disabled = selectedScheduleIDs.size === 0;
             event.classList.toggle("selected-schedule", checkbox.checked);
         });
 
@@ -863,110 +889,127 @@ This is an automated message. Please do not reply.`;
         const btnDriverTransfer = event.querySelector(".btn-driver-transfer");
         const btnEmailClient = event.querySelector(".btn-email-client");
 
-        btnEmailClient.addEventListener("click", () => {
-            const email = (data.note || "").trim();
-            if (!email || !email.includes("@")) {
-                showToast("No valid email found for this client.", "info");
-                return;
-            }
-            const subject = `Your Transport Booking – ${data.company || "Ol-Star Transport"}`;
-            const body = buildWhatsAppMessage(data);
-            const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-            window.open(gmailUrl, "_blank");
-        });
-
-        btnDriverTransfer.addEventListener("click", () => {
-            const clientName = data.clientName || "[Client Name]";
-            const newDriverName = data.current?.driverName || "[New Driver Name]";
-            const unit = data.transportUnit || "[Unit]";
-            const plate = data.plateNumber || "[Plate No.]";
-            const color = data.color || "[Color]";
-            const message = `Hi Sir/Madam ${clientName},\n\nWe apologize that we have to change your assigned driver and unit due to certain reason. Here is the new assigned Driver information:\n\nDriver's Name: ${newDriverName}\nUnit: ${unit}\nPlate No.: ${plate}\nColor: ${color}\n\nRest assured that the driver will be there.`;
-            copyText(message, "Driver transfer message copied!");
-        });
-
-        btnCopy.addEventListener("click", async () => {
-            const message = buildWhatsAppMessage(data);
-            copyText(message, "Message copied to clipboard!");
-        });
-
-        btnCopyClient?.addEventListener("click", () => copyText(data.clientName, "Client name copied!"));
-        btnCopyContact?.addEventListener("click", () => copyText(data.contactNumber, "Contact number copied!"));
-
-        btnFlightAware.addEventListener("click", async () => {
-            if (!data.flightNumber) {
-                showToast("No flight number available", "info");
-                return;
-            }
-            const flightNumber = data.flightNumber.replace(/\s+/g, "").toUpperCase();
-            const existingScreenshot = data.PhotoUrl?.flightAwareUrl || data.flightScreenshot;
-            
-            if (existingScreenshot) {
-                Swal.fire({
-                    title: 'Flight Options',
-                    html: `<div style="margin-bottom: 20px;"><strong>Flight:</strong> ${flightNumber}</div><div style="display: flex; flex-direction: column; gap: 10px;"><button class="swal2-confirm swal2-styled" style="background-color: #3085d6;" onclick="window.open('https://www.flightaware.com/live/flight/${flightNumber}', '_blank')">🌐 Open FlightAware</button><button class="swal2-confirm swal2-styled" style="background-color: #28a745;" onclick="window.open('${existingScreenshot}', '_blank')">👁️ View Screenshot</button><button class="swal2-deny swal2-styled" style="background-color: #dd33dd;" onclick="captureFlightScreenshot('${flightNumber}', '${data.transactionID}')">📸 Take New Screenshot</button><button class="swal2-cancel swal2-styled" onclick="Swal.close()">Cancel</button></div>`,
-                    showConfirmButton: false
-                });
-            } else {
-                const result = await Swal.fire({
-                    title: 'Flight Options',
-                    text: `Flight: ${flightNumber}`,
-                    icon: 'question',
-                    showCancelButton: true,
-                    showDenyButton: true,
-                    confirmButtonText: '🌐 Open FlightAware',
-                    denyButtonText: '📸 Take Screenshot',
-                    cancelButtonText: 'Cancel'
-                });
-                if (result.isConfirmed) {
-                    window.open(`https://www.flightaware.com/live/flight/${flightNumber}`, "_blank");
-                } else if (result.isDenied) {
-                    await captureFlightScreenshot(flightNumber, data.transactionID);
+        if (btnEmailClient) {
+            btnEmailClient.addEventListener("click", () => {
+                const email = (data.note || "").trim();
+                if (!email || !email.includes("@")) {
+                    showToast("No valid email found for this client.", "info");
+                    return;
                 }
-            }
-        });
+                const subject = `Your Transport Booking – ${data.company || "Ol-Star Transport"}`;
+                const body = buildWhatsAppMessage(data);
+                const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                window.open(gmailUrl, "_blank");
+            });
+        }
 
-        const btnEdit = event.querySelector(".btn-edit");
-        btnEdit.addEventListener("click", () => {
-            modal.style.display = "block";
-            editingTransactionID = data.transactionID;
-            for (let [key, value] of Object.entries(data)) {
-                const input = manualForm.querySelector(`[name="${key}"]`);
-                if (input) input.value = value;
-            }
-            if (data.current) {
-                driverInput.value = data.current.driverName || "";
-                cellPhoneInput.value = data.current.cellPhone || "";
-            }
-        });
+        if (btnDriverTransfer) {
+            btnDriverTransfer.addEventListener("click", () => {
+                const clientName = data.clientName || "[Client Name]";
+                const newDriverName = data.current?.driverName || "[New Driver Name]";
+                const unit = data.transportUnit || "[Unit]";
+                const plate = data.plateNumber || "[Plate No.]";
+                const color = data.color || "[Color]";
+                const message = `Hi Sir/Madam ${clientName},\n\nWe apologize that we have to change your assigned driver and unit due to certain reason. Here is the new assigned Driver information:\n\nDriver's Name: ${newDriverName}\nUnit: ${unit}\nPlate No.: ${plate}\nColor: ${color}\n\nRest assured that the driver will be there.`;
+                copyText(message, "Driver transfer message copied!");
+            });
+        }
 
-        const btnDelete = event.querySelector(".btn-delete");
-        btnDelete.addEventListener("click", async () => {
-            const result = await Swal.fire({
-                title: "Delete Schedule",
-                text: "This action cannot be undone. Please type 'Confirm Delete' below to proceed.",
-                input: "text",
-                inputPlaceholder: "Type 'Confirm Delete' here",
-                icon: "warning",
-                showCancelButton: true,
-                confirmButtonText: "Delete",
-                cancelButtonText: "Cancel",
-                confirmButtonColor: "#d33",
-                preConfirm: (input) => {
-                    if (input !== "Confirm Delete") {
-                        Swal.showValidationMessage("You must type exactly 'Confirm Delete'");
-                        return false;
+        if (btnCopy) {
+            btnCopy.addEventListener("click", async () => {
+                const message = buildWhatsAppMessage(data);
+                copyText(message, "Message copied to clipboard!");
+            });
+        }
+
+        if (btnCopyClient) {
+            btnCopyClient.addEventListener("click", () => copyText(data.clientName, "Client name copied!"));
+        }
+        
+        if (btnCopyContact) {
+            btnCopyContact.addEventListener("click", () => copyText(data.contactNumber, "Contact number copied!"));
+        }
+
+        if (btnFlightAware) {
+            btnFlightAware.addEventListener("click", async () => {
+                if (!data.flightNumber) {
+                    showToast("No flight number available", "info");
+                    return;
+                }
+                const flightNumber = data.flightNumber.replace(/\s+/g, "").toUpperCase();
+                const existingScreenshot = data.PhotoUrl?.flightAwareUrl || data.flightScreenshot;
+                
+                if (existingScreenshot) {
+                    Swal.fire({
+                        title: 'Flight Options',
+                        html: `<div style="margin-bottom: 20px;"><strong>Flight:</strong> ${flightNumber}</div><div style="display: flex; flex-direction: column; gap: 10px;"><button class="swal2-confirm swal2-styled" style="background-color: #3085d6;" onclick="window.open('https://www.flightaware.com/live/flight/${flightNumber}', '_blank')">🌐 Open FlightAware</button><button class="swal2-confirm swal2-styled" style="background-color: #28a745;" onclick="window.open('${existingScreenshot}', '_blank')">👁️ View Screenshot</button><button class="swal2-deny swal2-styled" style="background-color: #dd33dd;" onclick="captureFlightScreenshot('${flightNumber}', '${data.transactionID}')">📸 Take New Screenshot</button><button class="swal2-cancel swal2-styled" onclick="Swal.close()">Cancel</button></div>`,
+                        showConfirmButton: false
+                    });
+                } else {
+                    const result = await Swal.fire({
+                        title: 'Flight Options',
+                        text: `Flight: ${flightNumber}`,
+                        icon: 'question',
+                        showCancelButton: true,
+                        showDenyButton: true,
+                        confirmButtonText: '🌐 Open FlightAware',
+                        denyButtonText: '📸 Take Screenshot',
+                        cancelButtonText: 'Cancel'
+                    });
+                    if (result.isConfirmed) {
+                        window.open(`https://www.flightaware.com/live/flight/${flightNumber}`, "_blank");
+                    } else if (result.isDenied) {
+                        await captureFlightScreenshot(flightNumber, data.transactionID);
                     }
-                    return input;
                 }
             });
-            if (result.isConfirmed && result.value === "Confirm Delete") {
-                if (await deleteScheduleFromBackend(data.transactionID)) {
-                    event.remove();
-                    showToast("Schedule deleted.", "success");
+        }
+
+        const btnEdit = event.querySelector(".btn-edit");
+        if (btnEdit) {
+            btnEdit.addEventListener("click", () => {
+                if (modal) modal.style.display = "block";
+                editingTransactionID = data.transactionID;
+                for (let [key, value] of Object.entries(data)) {
+                    const input = manualForm ? manualForm.querySelector(`[name="${key}"]`) : null;
+                    if (input) input.value = value;
                 }
-            }
-        });
+                if (data.current) {
+                    if (driverInput) driverInput.value = data.current.driverName || "";
+                    if (cellPhoneInput) cellPhoneInput.value = data.current.cellPhone || "";
+                }
+            });
+        }
+
+        const btnDelete = event.querySelector(".btn-delete");
+        if (btnDelete) {
+            btnDelete.addEventListener("click", async () => {
+                const result = await Swal.fire({
+                    title: "Delete Schedule",
+                    text: "This action cannot be undone. Please type 'Confirm Delete' below to proceed.",
+                    input: "text",
+                    inputPlaceholder: "Type 'Confirm Delete' here",
+                    icon: "warning",
+                    showCancelButton: true,
+                    confirmButtonText: "Delete",
+                    cancelButtonText: "Cancel",
+                    confirmButtonColor: "#d33",
+                    preConfirm: (input) => {
+                        if (input !== "Confirm Delete") {
+                            Swal.showValidationMessage("You must type exactly 'Confirm Delete'");
+                            return false;
+                        }
+                        return input;
+                    }
+                });
+                if (result.isConfirmed && result.value === "Confirm Delete") {
+                    if (await deleteScheduleFromBackend(data.transactionID)) {
+                        event.remove();
+                        showToast("Schedule deleted.", "success");
+                    }
+                }
+            });
+        }
 
         return event;
     }

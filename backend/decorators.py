@@ -1,6 +1,6 @@
 # /OLStar/backend/decorators.py
 from functools import wraps
-from flask import session, redirect, url_for, abort, current_app, flash
+from flask import session, redirect, url_for, abort, current_app, flash, request
 from firebase_admin import auth
 
 def login_required(f):

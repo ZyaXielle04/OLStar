@@ -148,18 +148,18 @@ function updateSummaryCards(data) {
     document.getElementById('driverPayout').textContent = `₱${data.driverPayout.toLocaleString()}`;
     document.getElementById('tripNetIncome').textContent = `₱${data.tripNetIncome.toLocaleString()}`;
     
-    // Salaries
+    // Operating Expenses
+    document.getElementById('gasExpenses').textContent = `₱${data.gasExpenses.toLocaleString()}`;
+    document.getElementById('rfidExpenses').textContent = `₱${data.rfidExpenses.toLocaleString()}`;
+    document.getElementById('maintenanceExpenses').textContent = `₱${data.maintenanceExpenses.toLocaleString()}`;
+    document.getElementById('totalOperating').textContent = `₱${data.operatingExpenses.toLocaleString()}`;
+    
+    // Salaries (Net Pay)
     document.getElementById('adminSalaries').textContent = `₱${data.adminSalaries.toLocaleString()}`;
     document.getElementById('driverSalaries').textContent = `₱${data.driverSalaries.toLocaleString()}`;
     document.getElementById('totalSalaries').textContent = `₱${data.totalSalaries.toLocaleString()}`;
     
-    // Advances
-    document.getElementById('totalAdvanced').textContent = `₱${data.totalAdvanced.toLocaleString()}`;
-    document.getElementById('advancePaid').textContent = `₱${data.advancePaid.toLocaleString()}`;
-    document.getElementById('advanceOutstanding').textContent = `₱${data.advanceOutstanding.toLocaleString()}`;
-    document.getElementById('pendingAdvances').textContent = data.pendingAdvances;
-    
-    // Deductions
+    // Deductions (Information only)
     document.getElementById('deductionsSSS').textContent = `₱${data.deductionsSSS.toLocaleString()}`;
     document.getElementById('deductionsPhilHealth').textContent = `₱${data.deductionsPhilHealth.toLocaleString()}`;
     document.getElementById('deductionsPagIBIG').textContent = `₱${data.deductionsPagIBIG.toLocaleString()}`;
@@ -177,12 +177,6 @@ function updateCategoryCards(data) {
     
     document.getElementById('maintenanceTotal').textContent = `₱${data.maintenanceTotal.toLocaleString()}`;
     document.getElementById('maintenanceCount').textContent = `${data.maintenanceCount} records`;
-    
-    document.getElementById('adminPayrollTotal').textContent = `₱${data.adminPayrollTotal.toLocaleString()}`;
-    document.getElementById('adminPayrollCount').textContent = `${data.adminPayrollCount} employees`;
-    
-    document.getElementById('driverPayrollTotal').textContent = `₱${data.driverPayrollTotal.toLocaleString()}`;
-    document.getElementById('driverPayrollCount').textContent = `${data.driverPayrollCount} drivers`;
     
     document.getElementById('activeAdvancesTotal').textContent = `₱${data.activeAdvancesTotal.toLocaleString()}`;
     document.getElementById('activeAdvancesCount').textContent = `${data.activeAdvancesCount} advances`;
@@ -320,9 +314,9 @@ function updateMonthlyBreakdown(data) {
             <tr>
                 <td><strong>${month.month}</strong></td>
                 <td>₱${month.income.toLocaleString()}</td>
-                <td>₱${month.driverPayout.toLocaleString()}</td>
+                <td>₱${month.operatingExpenses.toLocaleString()}</td>
                 <td>₱${month.salaries.toLocaleString()}</td>
-                <td>₱${month.expenses.toLocaleString()}</td>
+                <td>₱${month.totalExpenses.toLocaleString()}</td>
                 <td class="${profitClass}">${profitSign}₱${Math.abs(month.netProfit).toLocaleString()}</td>
             </tr>
         `;
@@ -440,10 +434,6 @@ function updateIncomeExpensesChart(data) {
         loadCharts();
         return;
     }
-    
-    // This would update with filtered data
-    // charts.incomeExpenses.data.datasets[0].data = data.filteredIncome;
-    // charts.incomeExpenses.update();
 }
 
 // Get period text based on current range

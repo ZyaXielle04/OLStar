@@ -31,14 +31,21 @@ def get_deductions_ref():
 def get_advances_ref():
     return db.reference('advances')
 
+# UPDATED: Gas is from /requests
 def get_gas_transactions_ref():
-    return db.reference('gasTransactions')  # Adjust based on your actual structure
+    return db.reference('requests')
 
+# UPDATED: RFID is from /rfidBalanceHistory
 def get_rfid_transactions_ref():
-    return db.reference('rfidTransactions')  # Adjust based on your actual structure
+    return db.reference('rfidBalanceHistory')
 
+# UPDATED: Maintenance is from /maintenanceRecords
 def get_maintenance_records_ref():
-    return db.reference('maintenance')  # Adjust based on your actual structure
+    return db.reference('maintenanceRecords')
+
+# UPDATED: Driver net pay is from /driverDTRRecords
+def get_driver_dtr_records_ref():
+    return db.reference('driverDTRRecords')
 
 def safe_float(value, default=0):
     """Safely convert to float"""
@@ -64,6 +71,25 @@ def parse_date(date_str):
         return None
     try:
         return datetime.datetime.strptime(str(date_str), '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None
+
+def epoch_to_date(timestamp_ms):
+    """Convert epoch timestamp (milliseconds) to date object"""
+    if not timestamp_ms:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(timestamp_ms / 1000).date()
+    except (ValueError, TypeError):
+        return None
+
+def parse_iso_date(date_str):
+    """Parse ISO format date string"""
+    if not date_str:
+        return None
+    try:
+        # Handle format like "2026-04-15T00:07:46.831907"
+        return datetime.datetime.fromisoformat(date_str.split('T')[0]).date()
     except (ValueError, TypeError):
         return None
 
@@ -118,10 +144,15 @@ def get_summary():
         
         # Get all data
         schedules = get_schedules_ref().get() or {}
-        driver_salaries = get_driver_salary_records_ref().get() or {}
         admin_salaries = get_admin_salary_records_ref().get() or {}
         advances = get_advances_ref().get() or {}
         deductions = get_deductions_ref().get() or {}
+        
+        # UPDATED: Get from correct nodes
+        gas_requests = get_gas_transactions_ref().get() or {}      # /requests
+        rfid_history = get_rfid_transactions_ref().get() or {}     # /rfidBalanceHistory
+        maintenance_records = get_maintenance_records_ref().get() or {}  # /maintenanceRecords
+        driver_dtr_records = get_driver_dtr_records_ref().get() or {}     # /driverDTRRecords
         
         # Initialize counters
         total_trips = 0
@@ -129,6 +160,9 @@ def get_summary():
         driver_payout = 0
         admin_salaries_total = 0
         driver_salaries_total = 0
+        gas_expenses = 0
+        rfid_expenses = 0
+        maintenance_expenses = 0
         advances_total = 0
         advances_paid = 0
         advances_outstanding = 0
@@ -139,7 +173,7 @@ def get_summary():
         deductions_tax = 0
         deductions_total = 0
         
-        # In get_summary function, update the trip processing section:
+        # ========== INCOME: Process completed trips from schedules ==========
         for sched_id, sched in schedules.items():
             if not sched or not isinstance(sched, dict):
                 continue
@@ -152,31 +186,116 @@ def get_summary():
                 trip_income += amount
                 driver_payout += driver_rate
         
-        # Optional: You could also track driver names here if needed
-        # current = sched.get('current', {})
-        # driver_name = current.get('driverName', 'Unknown') if isinstance(current, dict) else 'Unknown'
-        
-        # Process driver salaries (Expense)
-        for sal_id, sal in driver_salaries.items():
-            if not sal or not isinstance(sal, dict):
+        # ========== EXPENSE: Gas from /requests (status = 'paid') ==========
+        gas_count = 0
+        for req_id, req in gas_requests.items():
+            if not req or not isinstance(req, dict):
                 continue
             
-            # Driver salaries are already paid out, but we track them separately
-            pay_period = sal.get('payPeriod', '')
-            # This is more complex - would need to parse period to date
-            # For now, we'll just sum all
-            if sal.get('paymentStatus') in ['paid', 'processing']:
-                driver_salaries_total += safe_float(sal.get('netPay'))
+            # Only include paid gas requests
+            if req.get('status') != 'paid':
+                continue
+            
+            # Convert epoch timestamp to date
+            timestamp_ms = req.get('timestamp')
+            req_date = epoch_to_date(timestamp_ms)
+            
+            if req_date and start_date <= req_date <= end_date:
+                gas_expenses += safe_float(req.get('amount'))
+                gas_count += 1
         
-        # Process admin salaries (Expense)
+        print(f"Gas expenses: ₱{gas_expenses:,.2f} from {gas_count} paid requests")
+        
+        # ========== EXPENSE: RFID from /rfidBalanceHistory ==========
+        rfid_count = 0
+        for hist_id, hist in rfid_history.items():
+            if not hist or not isinstance(hist, dict):
+                continue
+            
+            # Convert epoch timestamp to date
+            timestamp_ms = hist.get('timestamp')
+            hist_date = epoch_to_date(timestamp_ms)
+            
+            if hist_date and start_date <= hist_date <= end_date:
+                rfid_expenses += safe_float(hist.get('amount'))
+                rfid_count += 1
+        
+        print(f"RFID expenses: ₱{rfid_expenses:,.2f} from {rfid_count} transactions")
+        
+        # ========== EXPENSE: Maintenance from /maintenanceRecords (status = 'completed') ==========
+        maint_count = 0
+        for rec_id, rec in maintenance_records.items():
+            if not rec or not isinstance(rec, dict):
+                continue
+            
+            # Only include completed maintenance
+            if rec.get('status') != 'completed':
+                continue
+            
+            # Parse ISO date string
+            created_at = rec.get('createdAt')
+            rec_date = parse_iso_date(created_at) if created_at else None
+            
+            if rec_date and start_date <= rec_date <= end_date:
+                maintenance_expenses += safe_float(rec.get('cost'))
+                maint_count += 1
+        
+        print(f"Maintenance expenses: ₱{maintenance_expenses:,.2f} from {maint_count} records")
+        
+        # ========== EXPENSE: Driver Net Pay from /driverDTRRecords (status = 'paid') ==========
+        driver_dtr_count = 0
+        for dtr_id, dtr in driver_dtr_records.items():
+            if not dtr or not isinstance(dtr, dict):
+                continue
+            
+            # Only include paid DTR records
+            if dtr.get('status') != 'paid':
+                continue
+            
+            # Check if cutoff date falls within the period
+            cutoff = dtr.get('cutoff', '')
+            # Parse cutoff like "March 2026 - 1st Half" or "March 2026 - 2nd Half"
+            try:
+                if ' - ' in cutoff:
+                    month_year_part = cutoff.split(' - ')[0]
+                    month_name = month_year_part.split()[0]
+                    year = int(month_year_part.split()[1])
+                    half = cutoff.split(' - ')[1]
+                    
+                    months = ['January', 'February', 'March', 'April', 'May', 'June',
+                              'July', 'August', 'September', 'October', 'November', 'December']
+                    month_num = months.index(month_name) + 1
+                    
+                    if '1st Half' in half:
+                        cutoff_end_date = datetime.date(year, month_num, 15)
+                    else:
+                        last_day = calendar.monthrange(year, month_num)[1]
+                        cutoff_end_date = datetime.date(year, month_num, last_day)
+                    
+                    # Include if the cutoff end date is within our period
+                    if start_date <= cutoff_end_date <= end_date:
+                        driver_salaries_total += safe_float(dtr.get('netTotal'))
+                        driver_dtr_count += 1
+            except Exception as e:
+                print(f"Error parsing cutoff '{cutoff}': {e}")
+                # If can't parse, include if created recently
+                continue
+        
+        print(f"Driver salaries (net): ₱{driver_salaries_total:,.2f} from {driver_dtr_count} paid DTR records")
+        
+        # ========== EXPENSE: Admin Salaries from /salaryRecords (paymentStatus = 'paid') ==========
+        admin_count = 0
         for sal_id, sal in admin_salaries.items():
             if not sal or not isinstance(sal, dict):
                 continue
             
             if sal.get('paymentStatus') in ['paid', 'processing']:
                 admin_salaries_total += safe_float(sal.get('netPay'))
+                admin_count += 1
         
-        # Process advances
+        print(f"Admin salaries (net): ₱{admin_salaries_total:,.2f} from {admin_count} paid records")
+        
+        # ========== Advances (for display only) ==========
         for adv_id, adv in advances.items():
             if not adv or not isinstance(adv, dict):
                 continue
@@ -194,7 +313,7 @@ def get_summary():
             elif status == 'pending':
                 pending_advances += 1
         
-        # Process deductions
+        # ========== Deductions (for display only) ==========
         for ded_id, ded in deductions.items():
             if not ded or not isinstance(ded, dict):
                 continue
@@ -212,15 +331,33 @@ def get_summary():
                     deductions_pagibig += amount
                 elif ded_type == 'tax':
                     deductions_tax += amount
-                else:
-                    # Other deductions - add to total but not categorized
-                    pass
                 deductions_total += amount
         
-        # Calculate totals
-        total_expenses = driver_salaries_total + admin_salaries_total + deductions_total
+        # ========== CALCULATE TOTALS ==========
+        operating_expenses = gas_expenses + rfid_expenses + maintenance_expenses
+        total_salaries = driver_salaries_total + admin_salaries_total
+        total_expenses = total_salaries + operating_expenses
+        
+        # Calculate profit
         net_profit = trip_income - total_expenses
-        cash_flow = trip_income - driver_payout - admin_salaries_total - deductions_total
+        
+        # Cash flow calculation
+        cash_flow = trip_income - driver_payout - total_salaries - operating_expenses
+        
+        print(f"\n{'='*60}")
+        print(f"SUMMARY FOR {start_date} to {end_date}")
+        print(f"INCOME: ₱{trip_income:,.2f}")
+        print(f"EXPENSES:")
+        print(f"  - Driver Salaries (net): ₱{driver_salaries_total:,.2f}")
+        print(f"  - Admin Salaries (net): ₱{admin_salaries_total:,.2f}")
+        print(f"  - Gas: ₱{gas_expenses:,.2f}")
+        print(f"  - RFID: ₱{rfid_expenses:,.2f}")
+        print(f"  - Maintenance: ₱{maintenance_expenses:,.2f}")
+        print(f"  - Operating Total: ₱{operating_expenses:,.2f}")
+        print(f"  - Total Salaries: ₱{total_salaries:,.2f}")
+        print(f"  - TOTAL EXPENSES: ₱{total_expenses:,.2f}")
+        print(f"NET PROFIT: ₱{net_profit:,.2f}")
+        print(f"{'='*60}\n")
         
         summary = {
             'grossIncome': trip_income,
@@ -233,7 +370,11 @@ def get_summary():
             'tripNetIncome': trip_income - driver_payout,
             'adminSalaries': admin_salaries_total,
             'driverSalaries': driver_salaries_total,
-            'totalSalaries': admin_salaries_total + driver_salaries_total,
+            'totalSalaries': total_salaries,
+            'gasExpenses': gas_expenses,
+            'rfidExpenses': rfid_expenses,
+            'maintenanceExpenses': maintenance_expenses,
+            'operatingExpenses': operating_expenses,
             'totalAdvanced': advances_total,
             'advancePaid': advances_paid,
             'advanceOutstanding': advances_outstanding,
@@ -263,13 +404,12 @@ def get_categories():
         
         start_date, end_date = get_date_range(range_type, start_date_str, end_date_str)
         
-        # Get all transaction data
-        gas_ref = get_gas_transactions_ref()
-        rfid_ref = get_rfid_transactions_ref()
-        maintenance_ref = get_maintenance_records_ref()
-        admin_salaries = get_admin_salary_records_ref().get() or {}
-        driver_salaries = get_driver_salary_records_ref().get() or {}
+        # Get from correct nodes
+        gas_requests = get_gas_transactions_ref().get() or {}
+        rfid_history = get_rfid_transactions_ref().get() or {}
+        maintenance_records = get_maintenance_records_ref().get() or {}
         advances = get_advances_ref().get() or {}
+        driver_dtr_records = get_driver_dtr_records_ref().get() or {}
         
         gas_total = 0
         gas_count = 0
@@ -277,50 +417,37 @@ def get_categories():
         rfid_count = 0
         maintenance_total = 0
         maintenance_count = 0
-        admin_payroll_total = 0
-        admin_payroll_count = 0
-        driver_payroll_total = 0
-        driver_payroll_count = 0
         active_advances_total = 0
         active_advances_count = 0
+        driver_payroll_total = 0
+        driver_payroll_count = 0
         
-        # Process gas transactions
-        gas_data = gas_ref.get() or {}
-        for trans_id, trans in gas_data.items():
-            if trans and isinstance(trans, dict):
-                # Add date filtering logic here based on your gas transaction structure
-                gas_total += safe_float(trans.get('amount'))
-                gas_count += 1
+        # Process gas from /requests (paid only)
+        for req_id, req in gas_requests.items():
+            if req and isinstance(req, dict) and req.get('status') == 'paid':
+                timestamp_ms = req.get('timestamp')
+                req_date = epoch_to_date(timestamp_ms)
+                if req_date and start_date <= req_date <= end_date:
+                    gas_total += safe_float(req.get('amount'))
+                    gas_count += 1
         
-        # Process RFID transactions
-        rfid_data = rfid_ref.get() or {}
-        for trans_id, trans in rfid_data.items():
-            if trans and isinstance(trans, dict):
-                rfid_total += safe_float(trans.get('amount'))
-                rfid_count += 1
+        # Process RFID from /rfidBalanceHistory
+        for hist_id, hist in rfid_history.items():
+            if hist and isinstance(hist, dict):
+                timestamp_ms = hist.get('timestamp')
+                hist_date = epoch_to_date(timestamp_ms)
+                if hist_date and start_date <= hist_date <= end_date:
+                    rfid_total += safe_float(hist.get('amount'))
+                    rfid_count += 1
         
-        # Process maintenance records
-        maint_data = maintenance_ref.get() or {}
-        for rec_id, rec in maint_data.items():
-            if rec and isinstance(rec, dict):
-                maintenance_total += safe_float(rec.get('cost'))
-                maintenance_count += 1
-        
-        # Process admin salaries
-        for sal_id, sal in admin_salaries.items():
-            if sal and isinstance(sal, dict) and sal.get('paymentStatus') == 'paid':
-                admin_payroll_total += safe_float(sal.get('netPay'))
-                admin_payroll_count += 1
-        
-        # Process driver salaries
-        unique_drivers = set()
-        for sal_id, sal in driver_salaries.items():
-            if sal and isinstance(sal, dict) and sal.get('paymentStatus') == 'paid':
-                driver_payroll_total += safe_float(sal.get('netPay'))
-                driver_id = sal.get('driverId')
-                if driver_id:
-                    unique_drivers.add(driver_id)
-        driver_payroll_count = len(unique_drivers)
+        # Process maintenance from /maintenanceRecords (completed only)
+        for rec_id, rec in maintenance_records.items():
+            if rec and isinstance(rec, dict) and rec.get('status') == 'completed':
+                created_at = rec.get('createdAt')
+                rec_date = parse_iso_date(created_at) if created_at else None
+                if rec_date and start_date <= rec_date <= end_date:
+                    maintenance_total += safe_float(rec.get('cost'))
+                    maintenance_count += 1
         
         # Process active advances
         for adv_id, adv in advances.items():
@@ -330,6 +457,16 @@ def get_categories():
                     active_advances_total += safe_float(adv.get('remainingBalance'))
                     active_advances_count += 1
         
+        # Process driver payroll from /driverDTRRecords (paid only)
+        unique_drivers = set()
+        for dtr_id, dtr in driver_dtr_records.items():
+            if dtr and isinstance(dtr, dict) and dtr.get('status') == 'paid':
+                driver_payroll_total += safe_float(dtr.get('netTotal'))
+                driver_id = dtr.get('driverId')
+                if driver_id:
+                    unique_drivers.add(driver_id)
+        driver_payroll_count = len(unique_drivers)
+        
         categories = {
             'gasTotal': gas_total,
             'gasCount': gas_count,
@@ -337,8 +474,8 @@ def get_categories():
             'rfidCount': rfid_count,
             'maintenanceTotal': maintenance_total,
             'maintenanceCount': maintenance_count,
-            'adminPayrollTotal': admin_payroll_total,
-            'adminPayrollCount': admin_payroll_count,
+            'adminPayrollTotal': 0,  # From admin DTR system
+            'adminPayrollCount': 0,
             'driverPayrollTotal': driver_payroll_total,
             'driverPayrollCount': driver_payroll_count,
             'activeAdvancesTotal': active_advances_total,
@@ -357,86 +494,99 @@ def get_categories():
 @superadmin_required
 def get_recent():
     try:
-        # Get recent completed trips - FIXED to use current.driverName
+        range_type = request.args.get('range', 'month')
+        start_date_str = request.args.get('startDate', '')
+        end_date_str = request.args.get('endDate', '')
+        
+        start_date, end_date = get_date_range(range_type, start_date_str, end_date_str)
+        
+        # Get recent completed trips
         schedules = get_schedules_ref().get() or {}
         
         recent_trips = []
         for sched_id, sched in schedules.items():
             if sched and isinstance(sched, dict) and sched.get('status') == 'Completed':
-                # Get driver name from current object
-                current = sched.get('current', {})
-                if not isinstance(current, dict):
-                    current = {}
-                
-                driver_name = current.get('driverName', 'Unknown')
-                
-                recent_trips.append({
-                    'date': sched.get('date', ''),
-                    'time': sched.get('time', ''),
-                    'driverName': driver_name,  # Now using the stored driverName
-                    'amount': safe_float(sched.get('amount'))
-                })
+                sched_date = parse_date(sched.get('date'))
+                if sched_date and start_date <= sched_date <= end_date:
+                    current = sched.get('current', {})
+                    if not isinstance(current, dict):
+                        current = {}
+                    
+                    driver_name = current.get('driverName', 'Unknown')
+                    
+                    recent_trips.append({
+                        'date': sched.get('date', ''),
+                        'time': sched.get('time', ''),
+                        'driverName': driver_name,
+                        'amount': safe_float(sched.get('amount'))
+                    })
         
-        # Sort and limit
         recent_trips.sort(key=lambda x: x.get('date', ''), reverse=True)
         recent_trips = recent_trips[:10]
         
-        # Get recent expenses (mix of gas, rfid, maintenance)
-        gas_ref = get_gas_transactions_ref()
-        rfid_ref = get_rfid_transactions_ref()
-        maintenance_ref = get_maintenance_records_ref()
-        
+        # Get recent gas expenses (paid requests)
+        gas_requests = get_gas_transactions_ref().get() or {}
         recent_expenses = []
         
-        gas_data = gas_ref.get() or {}
-        for trans_id, trans in gas_data.items():
-            if trans and isinstance(trans, dict):
-                recent_expenses.append({
-                    'date': trans.get('date', ''),
-                    'type': 'gas',
-                    'description': trans.get('description', 'Gas Transaction'),
-                    'amount': safe_float(trans.get('amount'))
-                })
+        for req_id, req in gas_requests.items():
+            if req and isinstance(req, dict) and req.get('status') == 'paid':
+                timestamp_ms = req.get('timestamp')
+                req_date = epoch_to_date(timestamp_ms)
+                if req_date and start_date <= req_date <= end_date:
+                    recent_expenses.append({
+                        'date': req_date.isoformat(),
+                        'type': 'gas',
+                        'description': 'Gas Request',
+                        'amount': safe_float(req.get('amount'))
+                    })
         
-        rfid_data = rfid_ref.get() or {}
-        for trans_id, trans in rfid_data.items():
-            if trans and isinstance(trans, dict):
-                recent_expenses.append({
-                    'date': trans.get('date', ''),
-                    'type': 'rfid',
-                    'description': trans.get('description', 'RFID Transaction'),
-                    'amount': safe_float(trans.get('amount'))
-                })
+        # Get recent RFID expenses
+        rfid_history = get_rfid_transactions_ref().get() or {}
+        for hist_id, hist in rfid_history.items():
+            if hist and isinstance(hist, dict):
+                timestamp_ms = hist.get('timestamp')
+                hist_date = epoch_to_date(timestamp_ms)
+                if hist_date and start_date <= hist_date <= end_date:
+                    recent_expenses.append({
+                        'date': hist_date.isoformat(),
+                        'type': 'rfid',
+                        'description': 'RFID Transaction',
+                        'amount': safe_float(hist.get('amount'))
+                    })
         
-        maint_data = maintenance_ref.get() or {}
-        for rec_id, rec in maint_data.items():
-            if rec and isinstance(rec, dict):
-                recent_expenses.append({
-                    'date': rec.get('date', ''),
-                    'type': 'maintenance',
-                    'description': rec.get('description', 'Maintenance'),
-                    'amount': safe_float(rec.get('cost'))
-                })
+        # Get recent maintenance expenses (completed)
+        maintenance_records = get_maintenance_records_ref().get() or {}
+        for rec_id, rec in maintenance_records.items():
+            if rec and isinstance(rec, dict) and rec.get('status') == 'completed':
+                created_at = rec.get('createdAt')
+                rec_date = parse_iso_date(created_at) if created_at else None
+                if rec_date and start_date <= rec_date <= end_date:
+                    recent_expenses.append({
+                        'date': rec_date.isoformat(),
+                        'type': 'maintenance',
+                        'description': rec.get('serviceType', 'Maintenance'),
+                        'amount': safe_float(rec.get('cost'))
+                    })
         
         recent_expenses.sort(key=lambda x: x.get('date', ''), reverse=True)
         recent_expenses = recent_expenses[:10]
         
-        # Get top drivers by earnings (this part still needs users lookup)
-        driver_salaries = get_driver_salary_records_ref().get() or {}
+        # Get top drivers by earnings (from driverDTRRecords)
+        driver_dtr_records = get_driver_dtr_records_ref().get() or {}
         users = get_users_ref().get() or {}
         driver_earnings = {}
         
-        for sal_id, sal in driver_salaries.items():
-            if sal and isinstance(sal, dict) and sal.get('paymentStatus') == 'paid':
-                driver_id = sal.get('driverId')
+        for dtr_id, dtr in driver_dtr_records.items():
+            if dtr and isinstance(dtr, dict) and dtr.get('status') == 'paid':
+                driver_id = dtr.get('driverId')
                 if driver_id:
                     if driver_id not in driver_earnings:
                         driver_earnings[driver_id] = {
                             'earnings': 0,
                             'trips': 0
                         }
-                    driver_earnings[driver_id]['earnings'] += safe_float(sal.get('netPay'))
-                    driver_earnings[driver_id]['trips'] += safe_int(sal.get('totalTrips'))
+                    driver_earnings[driver_id]['earnings'] += safe_float(dtr.get('netTotal'))
+                    driver_earnings[driver_id]['trips'] += dtr.get('summary', {}).get('totalTrips', 0)
         
         top_drivers = []
         for driver_id, data in sorted(driver_earnings.items(), key=lambda x: x[1]['earnings'], reverse=True)[:5]:
@@ -478,11 +628,6 @@ def get_recent():
             if sal and isinstance(sal, dict) and sal.get('paymentStatus') == 'pending':
                 unpaid_salaries += safe_float(sal.get('netPay'))
         
-        driver_salaries_data = get_driver_salary_records_ref().get() or {}
-        for sal_id, sal in driver_salaries_data.items():
-            if sal and isinstance(sal, dict) and sal.get('paymentStatus') == 'pending':
-                unpaid_salaries += safe_float(sal.get('netPay'))
-        
         recent_data = {
             'recentTrips': recent_trips,
             'recentExpenses': recent_expenses,
@@ -507,8 +652,11 @@ def get_monthly():
         year = int(request.args.get('year', datetime.datetime.now().year))
         
         schedules = get_schedules_ref().get() or {}
-        driver_salaries = get_driver_salary_records_ref().get() or {}
         admin_salaries = get_admin_salary_records_ref().get() or {}
+        gas_requests = get_gas_transactions_ref().get() or {}
+        rfid_history = get_rfid_transactions_ref().get() or {}
+        maintenance_records = get_maintenance_records_ref().get() or {}
+        driver_dtr_records = get_driver_dtr_records_ref().get() or {}
         
         monthly_data = []
         
@@ -521,9 +669,8 @@ def get_monthly():
                 end_date = datetime.date(year, month + 1, 1) - datetime.timedelta(days=1)
             
             month_income = 0
-            month_driver_payout = 0
+            month_operating_expenses = 0
             month_salaries = 0
-            month_expenses = 0
             
             # Process completed trips for this month
             for sched_id, sched in schedules.items():
@@ -533,33 +680,86 @@ def get_monthly():
                 sched_date = parse_date(sched.get('date'))
                 if sched.get('status') == 'Completed' and sched_date and start_date <= sched_date <= end_date:
                     month_income += safe_float(sched.get('amount'))
-                    month_driver_payout += safe_float(sched.get('driverRate'))
             
-            # Process driver salaries
-            for sal_id, sal in driver_salaries.items():
-                if not sal or not isinstance(sal, dict):
+            # Process gas expenses (paid requests)
+            for req_id, req in gas_requests.items():
+                if not req or not isinstance(req, dict):
                     continue
-                # This is approximate - would need better period parsing
-                if sal.get('paymentStatus') == 'paid':
-                    month_salaries += safe_float(sal.get('netPay'))
+                if req.get('status') != 'paid':
+                    continue
+                timestamp_ms = req.get('timestamp')
+                req_date = epoch_to_date(timestamp_ms)
+                if req_date and start_date <= req_date <= end_date:
+                    month_operating_expenses += safe_float(req.get('amount'))
             
-            # Process admin salaries
+            # Process RFID expenses
+            for hist_id, hist in rfid_history.items():
+                if not hist or not isinstance(hist, dict):
+                    continue
+                timestamp_ms = hist.get('timestamp')
+                hist_date = epoch_to_date(timestamp_ms)
+                if hist_date and start_date <= hist_date <= end_date:
+                    month_operating_expenses += safe_float(hist.get('amount'))
+            
+            # Process maintenance expenses (completed)
+            for rec_id, rec in maintenance_records.items():
+                if not rec or not isinstance(rec, dict):
+                    continue
+                if rec.get('status') != 'completed':
+                    continue
+                created_at = rec.get('createdAt')
+                rec_date = parse_iso_date(created_at) if created_at else None
+                if rec_date and start_date <= rec_date <= end_date:
+                    month_operating_expenses += safe_float(rec.get('cost'))
+            
+            # Process driver salaries from DTR (paid)
+            for dtr_id, dtr in driver_dtr_records.items():
+                if not dtr or not isinstance(dtr, dict):
+                    continue
+                if dtr.get('status') != 'paid':
+                    continue
+                
+                # Check cutoff period
+                cutoff = dtr.get('cutoff', '')
+                try:
+                    if ' - ' in cutoff:
+                        month_year_part = cutoff.split(' - ')[0]
+                        cutoff_month_name = month_year_part.split()[0]
+                        cutoff_year = int(month_year_part.split()[1])
+                        
+                        months = ['January', 'February', 'March', 'April', 'May', 'June',
+                                  'July', 'August', 'September', 'October', 'November', 'December']
+                        cutoff_month_num = months.index(cutoff_month_name) + 1
+                        
+                        if cutoff_year == year and cutoff_month_num == month:
+                            month_salaries += safe_float(dtr.get('netTotal'))
+                except:
+                    pass
+            
+            # Process admin salaries (paid)
             for sal_id, sal in admin_salaries.items():
                 if not sal or not isinstance(sal, dict):
                     continue
                 if sal.get('paymentStatus') == 'paid':
-                    month_salaries += safe_float(sal.get('netPay'))
+                    # Approximate by created date
+                    created_at = sal.get('createdAt')
+                    if created_at:
+                        try:
+                            sal_date = datetime.datetime.fromisoformat(created_at.split('T')[0]).date()
+                            if start_date <= sal_date <= end_date:
+                                month_salaries += safe_float(sal.get('netPay'))
+                        except:
+                            pass
             
-            # For now, expenses are just salaries + driver payout
-            month_expenses = month_salaries + month_driver_payout
-            net_profit = month_income - month_expenses
+            total_expenses = month_operating_expenses + month_salaries
+            net_profit = month_income - total_expenses
             
             monthly_data.append({
                 'month': month_name,
                 'income': month_income,
-                'driverPayout': month_driver_payout,
+                'operatingExpenses': month_operating_expenses,
                 'salaries': month_salaries,
-                'expenses': month_expenses,
+                'totalExpenses': total_expenses,
                 'netProfit': net_profit
             })
         
@@ -582,8 +782,11 @@ def get_chart_data():
         profit_data = []
         
         schedules = get_schedules_ref().get() or {}
-        driver_salaries = get_driver_salary_records_ref().get() or {}
         admin_salaries = get_admin_salary_records_ref().get() or {}
+        gas_requests = get_gas_transactions_ref().get() or {}
+        rfid_history = get_rfid_transactions_ref().get() or {}
+        maintenance_records = get_maintenance_records_ref().get() or {}
+        driver_dtr_records = get_driver_dtr_records_ref().get() or {}
         
         for month in range(1, 13):
             start_date = datetime.date(year, month, 1)
@@ -603,18 +806,70 @@ def get_chart_data():
                 if sched.get('status') == 'Completed' and sched_date and start_date <= sched_date <= end_date:
                     month_income += safe_float(sched.get('amount'))
             
-            # Expenses (driver payouts + salaries)
-            for sal_id, sal in driver_salaries.items():
-                if not sal or not isinstance(sal, dict):
+            # Gas expenses
+            for req_id, req in gas_requests.items():
+                if not req or not isinstance(req, dict):
                     continue
-                if sal.get('paymentStatus') == 'paid':
-                    month_expenses += safe_float(sal.get('netPay'))
+                if req.get('status') == 'paid':
+                    timestamp_ms = req.get('timestamp')
+                    req_date = epoch_to_date(timestamp_ms)
+                    if req_date and start_date <= req_date <= end_date:
+                        month_expenses += safe_float(req.get('amount'))
             
+            # RFID expenses
+            for hist_id, hist in rfid_history.items():
+                if not hist or not isinstance(hist, dict):
+                    continue
+                timestamp_ms = hist.get('timestamp')
+                hist_date = epoch_to_date(timestamp_ms)
+                if hist_date and start_date <= hist_date <= end_date:
+                    month_expenses += safe_float(hist.get('amount'))
+            
+            # Maintenance expenses
+            for rec_id, rec in maintenance_records.items():
+                if not rec or not isinstance(rec, dict):
+                    continue
+                if rec.get('status') == 'completed':
+                    created_at = rec.get('createdAt')
+                    rec_date = parse_iso_date(created_at) if created_at else None
+                    if rec_date and start_date <= rec_date <= end_date:
+                        month_expenses += safe_float(rec.get('cost'))
+            
+            # Driver salaries
+            for dtr_id, dtr in driver_dtr_records.items():
+                if not dtr or not isinstance(dtr, dict):
+                    continue
+                if dtr.get('status') == 'paid':
+                    # Approximate by cutoff
+                    cutoff = dtr.get('cutoff', '')
+                    try:
+                        if ' - ' in cutoff:
+                            month_year_part = cutoff.split(' - ')[0]
+                            cutoff_month_name = month_year_part.split()[0]
+                            cutoff_year = int(month_year_part.split()[1])
+                            
+                            months_list = ['January', 'February', 'March', 'April', 'May', 'June',
+                                           'July', 'August', 'September', 'October', 'November', 'December']
+                            cutoff_month_num = months_list.index(cutoff_month_name) + 1
+                            
+                            if cutoff_year == year and cutoff_month_num == month:
+                                month_expenses += safe_float(dtr.get('netTotal'))
+                    except:
+                        pass
+            
+            # Admin salaries
             for sal_id, sal in admin_salaries.items():
                 if not sal or not isinstance(sal, dict):
                     continue
                 if sal.get('paymentStatus') == 'paid':
-                    month_expenses += safe_float(sal.get('netPay'))
+                    created_at = sal.get('createdAt')
+                    if created_at:
+                        try:
+                            sal_date = datetime.datetime.fromisoformat(created_at.split('T')[0]).date()
+                            if start_date <= sal_date <= end_date:
+                                month_expenses += safe_float(sal.get('netPay'))
+                        except:
+                            pass
             
             income_data.append(month_income)
             expenses_data.append(month_expenses)

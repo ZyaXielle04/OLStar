@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, jsonify, request, session
 from functools import wraps
-import datetime
+from datetime import datetime, timedelta
 import calendar
 from decorators import login_required, admin_required
 import firebase_admin
@@ -13,11 +13,11 @@ gl_drivers_salary_bp = Blueprint('gl_drivers_salary', __name__)
 def get_cutoff_periods(year=None, month=None):
     """Generate cutoff periods for a given month/year"""
     if not year:
-        year = datetime.datetime.now().year
+        year = datetime.now().year
     if not month:
-        month = datetime.datetime.now().month
+        month = datetime.now().month
     
-    month_name = datetime.datetime(year, month, 1).strftime('%B')
+    month_name = datetime(year, month, 1).strftime('%B')
     last_day = calendar.monthrange(year, month)[1]
     
     return {
@@ -192,7 +192,6 @@ def get_or_create_driver_dtr(driver_id, cutoff):
     """Get or create a specific driver's DTR record for a cutoff"""
     try:
         from urllib.parse import unquote
-        from datetime import datetime, timedelta
         
         cutoff = unquote(cutoff)
         
@@ -294,6 +293,13 @@ def get_or_create_driver_dtr(driver_id, cutoff):
                 print(f"Error processing trip date {trip_date}: {e}")
                 continue
         
+        # Calculate net total (initially gross minus deductions)
+        sss = driver_data.get('sss', 0)
+        philhealth = driver_data.get('philhealth', 0)
+        pagibig = driver_data.get('pagibig', 0)
+        total_deductions = sss + philhealth + pagibig
+        net_total = total_driver_rate - total_deductions
+        
         # Create new record
         new_record = {
             'driverId': driver_id,
@@ -320,15 +326,16 @@ def get_or_create_driver_dtr(driver_id, cutoff):
                 'list': {}
             },
             'deductions': {
-                'sss': driver_data.get('sss', 0),
-                'philhealth': driver_data.get('philhealth', 0),
-                'pagibig': driver_data.get('pagibig', 0),
+                'sss': sss,
+                'philhealth': philhealth,
+                'pagibig': pagibig,
                 'otherDeductions': 0
             },
+            'netTotal': net_total,
             'status': 'draft',
-            'createdAt': datetime.datetime.now().isoformat(),
+            'createdAt': datetime.now().isoformat(),
             'createdBy': session.get('user_id', 'system'),
-            'updatedAt': datetime.datetime.now().isoformat()
+            'updatedAt': datetime.now().isoformat()
         }
         
         # Save to Firebase
@@ -389,9 +396,9 @@ def get_driver_trips_for_cutoff(driver_phone, cutoff):
             
             try:
                 if '-' in schedule_date:
-                    date_obj = datetime.datetime.strptime(schedule_date, '%Y-%m-%d')
+                    date_obj = datetime.strptime(schedule_date, '%Y-%m-%d')
                 else:
-                    date_obj = datetime.datetime.strptime(schedule_date, '%B %d, %Y')
+                    date_obj = datetime.strptime(schedule_date, '%B %d, %Y')
                 
                 date_str = date_obj.strftime('%Y-%m-%d')
                 
@@ -458,24 +465,22 @@ def update_driver_dtr_record(record_id):
                 'totalAmount': total_amount
             }
         
-        # Calculate net total if deductions are present
-        if 'deductions' in update_data or 'transactions' in update_data:
-            gross = update_data.get('summary', existing.get('summary', {})).get('totalDriverRate', 0)
-            deductions = update_data.get('deductions', existing.get('deductions', {}))
-            transactions = update_data.get('transactions', existing.get('transactions', {}))
-            
-            sss = deductions.get('sss', 0)
-            philhealth = deductions.get('philhealth', 0)
-            pagibig = deductions.get('pagibig', 0)
-            other_deductions = deductions.get('otherDeductions', 0)
-            bayad_utang = transactions.get('totalPaid', 0)
-            
-            total_deductions = sss + philhealth + pagibig + other_deductions + bayad_utang
-            net_total = gross - total_deductions
-            
-            update_data['netTotal'] = net_total
+        # Calculate net total if deductions or transactions are present
+        gross = update_data.get('summary', existing.get('summary', {})).get('totalDriverRate', 0)
+        deductions = update_data.get('deductions', existing.get('deductions', {}))
+        transactions = update_data.get('transactions', existing.get('transactions', {}))
         
-        update_data['updatedAt'] = datetime.datetime.now().isoformat()
+        sss = deductions.get('sss', 0)
+        philhealth = deductions.get('philhealth', 0)
+        pagibig = deductions.get('pagibig', 0)
+        other_deductions = deductions.get('otherDeductions', 0)
+        bayad_utang = transactions.get('totalPaid', 0)
+        
+        total_deductions = sss + philhealth + pagibig + other_deductions + bayad_utang
+        net_total = gross - total_deductions
+        
+        update_data['netTotal'] = net_total
+        update_data['updatedAt'] = datetime.now().isoformat()
         update_data['updatedBy'] = session.get('user_id', 'system')
         
         dtr_ref.update(update_data)
@@ -499,7 +504,7 @@ def approve_driver_dtr_record(record_id):
         
         update_data = {
             'status': 'approved',
-            'approvedAt': datetime.datetime.now().isoformat(),
+            'approvedAt': datetime.now().isoformat(),
             'approvedBy': session.get('user_id', 'system')
         }
         
@@ -525,7 +530,7 @@ def mark_driver_dtr_paid(record_id):
         
         update_data = {
             'status': 'paid',
-            'paidAt': datetime.datetime.now().isoformat(),
+            'paidAt': datetime.now().isoformat(),
             'paidBy': session.get('user_id', 'system'),
             'paymentMethod': data.get('paymentMethod', 'bank-transfer')
         }
@@ -552,10 +557,10 @@ def get_driver_cutoffs():
             cutoffs = get_cutoff_periods(year, month)
             return jsonify({'success': True, 'data': cutoffs})
         
-        today = datetime.datetime.now()
+        today = datetime.now()
         periods = []
         for i in range(2, -1, -1):
-            month_date = today - datetime.timedelta(days=30*i)
+            month_date = today - timedelta(days=30*i)
             periods.append(get_cutoff_periods(month_date.year, month_date.month))
         
         return jsonify({'success': True, 'data': periods})
@@ -577,7 +582,7 @@ def get_driver_dtr_summary():
         total_payroll = 0
         current_cutoff = None
         
-        today = datetime.datetime.now()
+        today = datetime.now()
         if today.day <= 15:
             current_cutoff = f"{today.strftime('%B %Y')} - 1st Half"
         else:
@@ -620,7 +625,6 @@ def generate_driver_dtr_records(cutoff, driver_type):
     """Generate or get all DTR records for drivers of a specific type for a cutoff"""
     try:
         from urllib.parse import unquote
-        from datetime import datetime, timedelta
         
         cutoff = unquote(cutoff)
         
@@ -803,6 +807,13 @@ def generate_driver_dtr_records(cutoff, driver_type):
                         print(f"Error processing trip date {trip_date}: {e}")
                         continue
                 
+                # Calculate net total (initially gross minus deductions)
+                sss = driver_data.get('sss', 0)
+                philhealth = driver_data.get('philhealth', 0)
+                pagibig = driver_data.get('pagibig', 0)
+                total_deductions = sss + philhealth + pagibig
+                net_total = total_driver_rate - total_deductions
+                
                 # Create new record
                 new_record = {
                     'driverId': driver_id,
@@ -829,15 +840,16 @@ def generate_driver_dtr_records(cutoff, driver_type):
                         'list': {}
                     },
                     'deductions': {
-                        'sss': driver_data.get('sss', 0),
-                        'philhealth': driver_data.get('philhealth', 0),
-                        'pagibig': driver_data.get('pagibig', 0),
+                        'sss': sss,
+                        'philhealth': philhealth,
+                        'pagibig': pagibig,
                         'otherDeductions': 0
                     },
+                    'netTotal': net_total,
                     'status': 'draft',
-                    'createdAt': datetime.datetime.now().isoformat(),
+                    'createdAt': datetime.now().isoformat(),
                     'createdBy': session.get('user_id', 'system'),
-                    'updatedAt': datetime.datetime.now().isoformat()
+                    'updatedAt': datetime.now().isoformat()
                 }
                 
                 # Save to Firebase

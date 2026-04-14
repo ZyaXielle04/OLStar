@@ -6,6 +6,41 @@ from decorators import superadmin_required
 
 maintenance_transactions_bp = Blueprint("maintenance_transactions", __name__, url_prefix="/api/maintenance")
 
+# ---------------- GET DRIVERS (FROM /users) ----------------
+@maintenance_transactions_bp.route("/drivers", methods=["GET"])
+@superadmin_required
+def get_drivers():
+    try:
+        users_ref = db.reference("users")
+        users_data = users_ref.get() or {}
+        
+        drivers = []
+        for uid, user in users_data.items():
+            if user.get("role") == "driver":
+                drivers.append({
+                    "uid": uid,
+                    "firstName": user.get("firstName", ""),
+                    "middleName": user.get("middleName", ""),
+                    "lastName": user.get("lastName", ""),
+                    "email": user.get("email", ""),
+                    "status": user.get("status", "active")
+                })
+        
+        # Sort by last name
+        drivers.sort(key=lambda x: x.get("lastName", ""))
+        
+        print(f"Found {len(drivers)} drivers")
+        
+        return jsonify({
+            "success": True,
+            "drivers": drivers,
+            "total": len(drivers)
+        }), 200
+        
+    except Exception as e:
+        print(f"Error in get_drivers: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # ---------------- GET ALL MAINTENANCE RECORDS ----------------
 @maintenance_transactions_bp.route("/records", methods=["GET"])
 @superadmin_required
@@ -19,11 +54,12 @@ def get_maintenance_records():
             record["id"] = record_id
             records.append(record)
         
-        # Debug: Print first few records to see transportUnit data
+        # Debug: Print first few records to see transportUnit and driver data
         print(f"Total records: {len(records)}")
         for i, record in enumerate(records[:3]):  # First 3 records
             transport_unit = record.get('transportUnit', {})
-            print(f"Record {i+1}: ID={record.get('id')}, transportUnit={transport_unit.get('name')} ({transport_unit.get('plateNumber')})")
+            driver = record.get('driver', {})
+            print(f"Record {i+1}: ID={record.get('id')}, transportUnit={transport_unit.get('name')} ({transport_unit.get('plateNumber')}), driver={driver.get('name')}")
         
         return jsonify({
             "success": True,
@@ -46,7 +82,8 @@ def get_maintenance_record(record_id):
         
         record["id"] = record_id
         transport_unit = record.get('transportUnit', {})
-        print(f"Single record - transportUnit: {transport_unit.get('name')} ({transport_unit.get('plateNumber')})")
+        driver = record.get('driver', {})
+        print(f"Single record - transportUnit: {transport_unit.get('name')} ({transport_unit.get('plateNumber')}), driver: {driver.get('name')}")
         
         return jsonify({
             "success": True,
@@ -75,12 +112,14 @@ def create_maintenance_record():
         
         # transportUnit is now an object, not just an ID
         transport_unit = data.get("transportUnit")
-        print(f"Creating record with transportUnit: {transport_unit.get('name') if transport_unit else 'None'}")
+        driver = data.get("driver")
+        print(f"Creating record with transportUnit: {transport_unit.get('name') if transport_unit else 'None'}, driver: {driver.get('name') if driver else 'None'}")
         
         # Create record with metadata
         record_data = {
             "date": data["date"],
             "transportUnit": transport_unit,  # Store the complete transport unit object
+            "driver": driver,  # Store the complete driver object
             "serviceType": data["serviceType"],
             "status": data.get("status", "pending"),
             "description": data["description"],
@@ -141,7 +180,7 @@ def update_maintenance_record(record_id):
         # Track changes for history
         changes = []
         editable_fields = [
-            "date", "transportUnit", "serviceType", "status", "description", "cost",
+            "date", "transportUnit", "driver", "serviceType", "status", "description", "cost",
             "mechanic", "odometerReading", "nextDueDate", "nextDueOdometer", "notes"
         ]
         
@@ -164,7 +203,20 @@ def update_maintenance_record(record_id):
                         updates[field] = new_val
                         print(f"TransportUnit changed from '{old_name}' to '{new_name}'")
                 
-                # For other fields
+                # For driver, compare the name field
+                elif field == "driver":
+                    old_name = old_val.get('name') if old_val else None
+                    new_name = new_val.get('name') if new_val else None
+                    if old_name != new_name:
+                        changes.append({
+                            "field": field,
+                            "old": old_val,
+                            "new": new_val
+                        })
+                        updates[field] = new_val
+                        print(f"Driver changed from '{old_name}' to '{new_name}'")
+                
+                # For cost field
                 elif field == "cost":
                     old_val = float(old_val) if old_val else 0
                     new_val = float(new_val) if new_val else 0
@@ -423,6 +475,51 @@ def get_maintenance_alerts():
         
     except Exception as e:
         print(f"Error in get_maintenance_alerts: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ---------------- SCHEDULE MAINTENANCE ----------------
+@maintenance_transactions_bp.route("/schedules", methods=["POST"])
+@superadmin_required
+def schedule_maintenance():
+    try:
+        data = request.get_json()
+        
+        # Get user info from cookies
+        user_email = request.cookies.get("user_email", "system")
+        user_full_name = request.cookies.get("user_full_name", "System")
+        
+        # Validate required fields
+        required_fields = ["transportUnit", "serviceType", "scheduledDate"]
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+        
+        # Create schedule record
+        schedule_data = {
+            "transportUnit": data["transportUnit"],
+            "driver": data.get("driver"),
+            "serviceType": data["serviceType"],
+            "scheduledDate": data["scheduledDate"],
+            "scheduledTime": data.get("scheduledTime"),
+            "notes": data.get("notes", ""),
+            "status": "scheduled",
+            "createdAt": datetime.now().isoformat(),
+            "createdBy": user_full_name,
+            "createdByEmail": user_email
+        }
+        
+        # Save to Firebase
+        ref = db.reference("maintenanceSchedules").push()
+        ref.set(schedule_data)
+        
+        return jsonify({
+            "success": True,
+            "id": ref.key,
+            "message": "Maintenance scheduled successfully"
+        }), 201
+        
+    except Exception as e:
+        print(f"Error in schedule_maintenance: {e}")
         return jsonify({"error": str(e)}), 500
 
 # ---------------- BULK OPERATIONS ----------------

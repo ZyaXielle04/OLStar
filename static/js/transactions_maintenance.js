@@ -46,6 +46,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const transportUnitSelect = document.getElementById("transportUnit");
     const scheduleUnitSelect = document.getElementById("scheduleUnit");
     
+    // Driver select elements
+    const driverSelect = document.getElementById("driver");
+    const scheduleDriverSelect = document.getElementById("scheduleDriver");
+    
     // Pagination elements
     const prevPage = document.getElementById("prevPage");
     const nextPage = document.getElementById("nextPage");
@@ -75,6 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let allRecords = [];
     let filteredRecords = [];
     let transportUnits = [];
+    let drivers = [];
     let currentPage = 1;
     const recordsPerPage = 10;
     let charts = {};
@@ -82,6 +87,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // ---------------- Initialize ----------------
     function init() {
         fetchTransportUnits();
+        fetchDrivers();
         fetchMaintenanceRecords();
         fetchStatistics();
         fetchAlerts();
@@ -151,19 +157,28 @@ document.addEventListener("DOMContentLoaded", () => {
             transportUnits = data.transportUnits || [];
             console.log("Processed transport units:", transportUnits);
             
-            // Log each unit's structure
-            transportUnits.forEach((unit, index) => {
-                console.log(`Unit ${index + 1}:`, {
-                    id: unit.id,
-                    transportUnit: unit.transportUnit,
-                    plateNumber: unit.plateNumber
-                });
-            });
-            
             populateUnitFilters();
         } catch (err) {
             console.error("Error fetching transport units:", err);
             showToast("Failed to load transport units", "error");
+        }
+    }
+
+    async function fetchDrivers() {
+        try {
+            const response = await fetch("/api/maintenance/drivers");
+            if (!response.ok) throw new Error("Failed to fetch drivers");
+            
+            const data = await response.json();
+            console.log("Drivers API response:", data);
+            
+            drivers = data.drivers || [];
+            console.log("Processed drivers:", drivers);
+            
+            populateDriverDropdowns();
+        } catch (err) {
+            console.error("Error fetching drivers:", err);
+            showToast("Failed to load drivers", "error");
         }
     }
 
@@ -226,7 +241,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const searchTerm = searchInput.value.toLowerCase();
         const status = statusFilter.value;
         const type = typeFilter.value;
-        const unitName = unitFilter.value; // This now contains the unit name, not ID
+        const unitName = unitFilter.value;
         const dateRange = dateRangeFilter.value;
         
         filteredRecords = allRecords.filter(record => {
@@ -237,7 +252,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     (record.transportUnit?.plateNumber || "").toLowerCase().includes(searchTerm) ||
                     (record.description || "").toLowerCase().includes(searchTerm) ||
                     (record.serviceType || "").toLowerCase().includes(searchTerm) ||
-                    (record.notes || "").toLowerCase().includes(searchTerm);
+                    (record.notes || "").toLowerCase().includes(searchTerm) ||
+                    (record.driver?.name || "").toLowerCase().includes(searchTerm);
                 
                 if (!matchesSearch) return false;
             }
@@ -248,7 +264,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Type filter
             if (type !== "all" && record.serviceType !== type) return false;
             
-            // Unit filter (now filtering by unit name instead of ID)
+            // Unit filter
             if (unitName && record.transportUnit?.name !== unitName) return false;
             
             // Date range filter
@@ -345,7 +361,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function updateStatistics(statistics) {
-        // This would update any additional statistics displays
         console.log("Statistics:", statistics);
     }
 
@@ -353,7 +368,6 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateCharts() {
         if (!costByTypeChart || !monthlyTrendChart || !statusChart) return;
         
-        // Destroy existing charts properly
         if (charts.costByType) {
             charts.costByType.destroy();
             charts.costByType = null;
@@ -367,7 +381,6 @@ document.addEventListener("DOMContentLoaded", () => {
             charts.status = null;
         }
         
-        // Clear the canvases by resetting their dimensions
         [costByTypeChart, monthlyTrendChart, statusChart].forEach(canvas => {
             if (canvas) {
                 const parent = canvas.parentElement;
@@ -570,7 +583,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ctx.fillText('No data available', statusChart.width/2, statusChart.height/2);
             }
             
-            // Top Units List (now using stored transportUnit data)
+            // Top Units List
             const unitCosts = {};
             filteredRecords.forEach(record => {
                 if (record.transportUnit?.name) {
@@ -585,7 +598,6 @@ document.addEventListener("DOMContentLoaded", () => {
             
             if (topUnits.length > 0) {
                 topUnitsList.innerHTML = topUnits.map(([unitName, cost]) => {
-                    // Find the first record with this unit to get plate number
                     const record = filteredRecords.find(r => r.transportUnit?.name === unitName);
                     return `
                         <div class="unit-item">
@@ -631,7 +643,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <td><strong>₱${parseFloat(record.cost || 0).toLocaleString()}</strong></td>
                     <td><span class="status-badge ${statusClass}">${formatStatus(record.status)}</span></td>
                     <td>${record.mechanic || "—"}</td>
-                    <td>${record.nextDueDate ? formatDate(record.nextDueDate) : "—"}</td>
+                    <td>${record.driver?.name || "—"}</td>
                     <td>
                         <button class="action-btn view" data-id="${record.id}" title="View Details">
                             <i class="fas fa-eye"></i>
@@ -650,7 +662,6 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }).join("");
         
-        // Attach event listeners to action buttons
         document.querySelectorAll(".action-btn.view").forEach(btn => {
             btn.addEventListener("click", (e) => {
                 e.preventDefault();
@@ -717,7 +728,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 recordId.value = record.id;
                 document.getElementById("maintenanceDate").value = record.date || "";
                 
-                // Set the select value to the unit name
                 const unitSelect = document.getElementById("transportUnit");
                 if (record.transportUnit?.name) {
                     unitSelect.value = record.transportUnit.name;
@@ -730,9 +740,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 document.getElementById("description").value = record.description || "";
                 document.getElementById("cost").value = record.cost || "";
                 document.getElementById("mechanic").value = record.mechanic || "";
+                
+                // Set driver if exists
+                if (record.driver && driverSelect) {
+                    for (let i = 0; i < driverSelect.options.length; i++) {
+                        if (driverSelect.options[i].value === record.driver.uid) {
+                            driverSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+                
                 document.getElementById("odometerReading").value = record.odometerReading || "";
-                document.getElementById("nextDueDate").value = record.nextDueDate || "";
-                document.getElementById("nextDueOdometer").value = record.nextDueOdometer || "";
                 document.getElementById("notes").value = record.notes || "";
             }
         } else {
@@ -740,6 +759,7 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("maintenanceDate").value = new Date().toISOString().split("T")[0];
             document.getElementById("maintenanceStatus").value = "pending";
             document.getElementById("transportUnit").value = "";
+            if (driverSelect) driverSelect.value = "";
         }
         
         maintenanceModal.style.display = "block";
@@ -748,6 +768,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function openScheduleModal() {
         scheduleModal.style.display = "block";
         document.getElementById("scheduledDate").value = new Date().toISOString().split("T")[0];
+        if (scheduleDriverSelect) scheduleDriverSelect.value = "";
     }
 
     async function viewRecord(id) {
@@ -792,6 +813,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 
                 <div class="detail-group">
+                    <h3>Driver Information</h3>
+                    <div class="detail-row">
+                        <div>
+                            <div class="detail-label">Assigned Driver</div>
+                            <div class="detail-value">${record.driver?.name || "—"}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="detail-group">
                     <h3>Service Details</h3>
                     <div class="detail-row">
                         <div>
@@ -811,20 +842,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         <div>
                             <div class="detail-label">Odometer Reading</div>
                             <div class="detail-value">${record.odometerReading ? record.odometerReading.toLocaleString() + " km" : "—"}</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="detail-group">
-                    <h3>Next Maintenance</h3>
-                    <div class="detail-row">
-                        <div>
-                            <div class="detail-label">Due Date</div>
-                            <div class="detail-value">${record.nextDueDate ? formatDate(record.nextDueDate) : "—"}</div>
-                        </div>
-                        <div>
-                            <div class="detail-label">Due Odometer</div>
-                            <div class="detail-value">${record.nextDueOdometer ? record.nextDueOdometer.toLocaleString() + " km" : "—"}</div>
                         </div>
                     </div>
                 </div>
@@ -883,11 +900,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const formData = new FormData(maintenanceForm);
         const id = recordId.value;
         
-        // Get the selected transport unit
         const selectedUnitName = formData.get("unitId");
         const selectedUnit = transportUnits.find(u => u.transportUnit === selectedUnitName);
         
-        // Store the complete transport unit information
         const transportUnitData = selectedUnit ? {
             id: selectedUnit.id,
             name: selectedUnit.transportUnit,
@@ -896,21 +911,34 @@ document.addEventListener("DOMContentLoaded", () => {
             unitType: selectedUnit.unitType
         } : null;
         
+        // Get driver data
+        const selectedDriverId = formData.get("driverId");
+        let driverData = null;
+        
+        if (selectedDriverId && driverSelect) {
+            const selectedOption = driverSelect.options[driverSelect.selectedIndex];
+            if (selectedOption && selectedOption.value) {
+                driverData = {
+                    uid: selectedOption.value,
+                    name: selectedOption.text
+                };
+            }
+        }
+        
         const recordData = {
             date: formData.get("date"),
-            transportUnit: transportUnitData,  // Store the whole unit object
+            transportUnit: transportUnitData,
+            driver: driverData,
             serviceType: formData.get("serviceType"),
             status: formData.get("status"),
             description: formData.get("description"),
             cost: parseFloat(formData.get("cost")) || 0,
             mechanic: formData.get("mechanic") || "",
             odometerReading: parseInt(formData.get("odometerReading")) || null,
-            nextDueDate: formData.get("nextDueDate") || null,
-            nextDueOdometer: parseInt(formData.get("nextDueOdometer")) || null,
             notes: formData.get("notes") || ""
         };
         
-        console.log("Submitting maintenance record with transport unit:", recordData.transportUnit);
+        console.log("Submitting maintenance record:", recordData);
         
         try {
             const url = id ? `/api/maintenance/records/${id}` : "/api/maintenance/records";
@@ -953,9 +981,22 @@ document.addEventListener("DOMContentLoaded", () => {
         
         const formData = new FormData(scheduleForm);
         
-        // Get the selected transport unit
         const selectedUnitName = formData.get("unitId");
         const selectedUnit = transportUnits.find(u => u.transportUnit === selectedUnitName);
+        
+        // Get driver data
+        const selectedDriverId = formData.get("driverId");
+        let driverData = null;
+        
+        if (selectedDriverId && scheduleDriverSelect) {
+            const selectedOption = scheduleDriverSelect.options[scheduleDriverSelect.selectedIndex];
+            if (selectedOption && selectedOption.value) {
+                driverData = {
+                    uid: selectedOption.value,
+                    name: selectedOption.text
+                };
+            }
+        }
         
         const scheduleData = {
             transportUnit: selectedUnit ? {
@@ -963,6 +1004,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 name: selectedUnit.transportUnit,
                 plateNumber: selectedUnit.plateNumber
             } : null,
+            driver: driverData,
             serviceType: formData.get("serviceType"),
             scheduledDate: formData.get("scheduledDate"),
             scheduledTime: formData.get("scheduledTime") || null,
@@ -1050,13 +1092,21 @@ document.addEventListener("DOMContentLoaded", () => {
                             ${entry.changes ? `
                                 <div style="margin-top: 8px;">
                                     ${entry.changes.map(change => {
-                                        // Format the change display for transportUnit
                                         if (change.field === "transportUnit") {
                                             const oldName = change.old?.name || "(empty)";
                                             const newName = change.new?.name || "(empty)";
                                             return `
                                                 <div style="font-size: 12px; padding: 2px 0;">
                                                     <strong>Transport Unit:</strong> 
+                                                    ${oldName} → ${newName}
+                                                </div>
+                                            `;
+                                        } else if (change.field === "driver") {
+                                            const oldName = change.old?.name || "(empty)";
+                                            const newName = change.new?.name || "(empty)";
+                                            return `
+                                                <div style="font-size: 12px; padding: 2px 0;">
+                                                    <strong>Driver:</strong> 
                                                     ${oldName} → ${newName}
                                                 </div>
                                             `;
@@ -1094,7 +1144,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const options = ['<option value="">All Transport Units</option>'];
         const unitOptions = ['<option value="">— Select Transport Unit —</option>'];
         
-        // Get unique unit names
         const uniqueUnits = new Map();
         transportUnits.forEach(unit => {
             if (!uniqueUnits.has(unit.transportUnit)) {
@@ -1111,6 +1160,20 @@ document.addEventListener("DOMContentLoaded", () => {
         unitFilter.innerHTML = options.join("");
         transportUnitSelect.innerHTML = unitOptions.join("");
         scheduleUnitSelect.innerHTML = unitOptions.join("");
+    }
+
+    function populateDriverDropdowns() {
+        const options = ['<option value="">— Select Driver —</option>'];
+        
+        drivers.forEach(driver => {
+            const fullName = `${driver.firstName || ''} ${driver.middleName || ''} ${driver.lastName || ''}`.trim();
+            const option = `<option value="${driver.uid}">${fullName}</option>`;
+            options.push(option);
+        });
+        
+        const optionsHtml = options.join('');
+        if (driverSelect) driverSelect.innerHTML = optionsHtml;
+        if (scheduleDriverSelect) scheduleDriverSelect.innerHTML = optionsHtml;
     }
 
     function setDefaultDates() {
@@ -1202,6 +1265,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function refreshData() {
         fetchTransportUnits();
+        fetchDrivers();
         fetchMaintenanceRecords();
         fetchStatistics();
         fetchAlerts();
@@ -1227,12 +1291,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     Date: formatDate(record.date),
                     "Transport Unit": record.transportUnit?.name || "",
                     "Plate Number": record.transportUnit?.plateNumber || "",
+                    Driver: record.driver?.name || "",
                     "Service Type": formatServiceType(record.serviceType),
                     Description: record.description,
                     Cost: record.cost,
                     Status: formatStatus(record.status),
                     Mechanic: record.mechanic,
-                    "Next Due Date": record.nextDueDate ? formatDate(record.nextDueDate) : "",
                     Notes: record.notes
                 };
             });

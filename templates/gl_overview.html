@@ -134,7 +134,7 @@
         <div class="net-worth-details">
           <h3>Total Expenses</h3>
           <div class="net-worth-value" id="totalExpenses">₱0</div>
-          <span class="net-worth-period">Salaries + Transactions</span>
+          <span class="net-worth-period">Salaries + Operating</span>
         </div>
       </div>
 
@@ -204,11 +204,37 @@
         </div>
       </div>
 
+      <!-- Operating Expenses -->
+      <div class="summary-card expense-card">
+        <div class="summary-header">
+          <i class="fas fa-gas-pump"></i>
+          <h3>Operating Expenses</h3>
+        </div>
+        <div class="summary-body">
+          <div class="summary-row">
+            <span>Gas:</span>
+            <span class="summary-value" id="gasExpenses">₱0</span>
+          </div>
+          <div class="summary-row">
+            <span>RFID:</span>
+            <span class="summary-value" id="rfidExpenses">₱0</span>
+          </div>
+          <div class="summary-row">
+            <span>Maintenance:</span>
+            <span class="summary-value" id="maintenanceExpenses">₱0</span>
+          </div>
+          <div class="summary-row total">
+            <span>Total Operating:</span>
+            <span class="summary-value" id="totalOperating">₱0</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Salaries -->
       <div class="summary-card expense-card">
         <div class="summary-header">
           <i class="fas fa-user-tie"></i>
-          <h3>Salaries</h3>
+          <h3>Salaries (Net Pay)</h3>
         </div>
         <div class="summary-body">
           <div class="summary-row">
@@ -226,37 +252,11 @@
         </div>
       </div>
 
-      <!-- Advances -->
-      <div class="summary-card advance-card">
-        <div class="summary-header">
-          <i class="fas fa-hand-holding-usd"></i>
-          <h3>Advances</h3>
-        </div>
-        <div class="summary-body">
-          <div class="summary-row">
-            <span>Total Advanced:</span>
-            <span class="summary-value" id="totalAdvanced">₱0</span>
-          </div>
-          <div class="summary-row">
-            <span>Paid Back:</span>
-            <span class="summary-value" id="advancePaid">₱0</span>
-          </div>
-          <div class="summary-row">
-            <span>Outstanding:</span>
-            <span class="summary-value" id="advanceOutstanding">₱0</span>
-          </div>
-          <div class="summary-row warning">
-            <span>Pending Requests:</span>
-            <span class="summary-value" id="pendingAdvances">0</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Deductions -->
+      <!-- Deductions (Information Only) -->
       <div class="summary-card deduction-card">
         <div class="summary-header">
           <i class="fas fa-minus-circle"></i>
-          <h3>Deductions</h3>
+          <h3>Deductions (Withheld)</h3>
         </div>
         <div class="summary-body">
           <div class="summary-row">
@@ -276,7 +276,7 @@
             <span class="summary-value" id="deductionsTax">₱0</span>
           </div>
           <div class="summary-row total">
-            <span>Total Deductions:</span>
+            <span>Total Withheld:</span>
             <span class="summary-value" id="totalDeductions">₱0</span>
           </div>
         </div>
@@ -325,31 +325,7 @@
           </div>
         </div>
 
-        <!-- Admin Salaries (already in summary) -->
-        <div class="category-card">
-          <div class="category-icon admin">
-            <i class="fas fa-user-tie"></i>
-          </div>
-          <div class="category-details">
-            <h3>Admin Payroll</h3>
-            <div class="category-amount" id="adminPayrollTotal">₱0</div>
-            <div class="category-count" id="adminPayrollCount">0 employees</div>
-          </div>
-        </div>
-
-        <!-- Driver Salaries (already in summary) -->
-        <div class="category-card">
-          <div class="category-icon driver">
-            <i class="fas fa-truck"></i>
-          </div>
-          <div class="category-details">
-            <h3>Driver Payroll</h3>
-            <div class="category-amount" id="driverPayrollTotal">₱0</div>
-            <div class="category-count" id="driverPayrollCount">0 drivers</div>
-          </div>
-        </div>
-
-        <!-- Advances (already in summary) -->
+        <!-- Advances -->
         <div class="category-card">
           <div class="category-icon advance">
             <i class="fas fa-hand-holding-usd"></i>
@@ -427,9 +403,9 @@
             <tr>
               <th>Month</th>
               <th>Income (Trips)</th>
-              <th>Driver Payout</th>
-              <th>Salaries</th>
-              <th>Expenses</th>
+              <th>Operating Expenses</th>
+              <th>Salaries (Net)</th>
+              <th>Total Expenses</th>
               <th>Net Profit</th>
             </tr>
           </thead>

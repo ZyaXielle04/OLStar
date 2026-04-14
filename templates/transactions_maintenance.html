@@ -84,9 +84,6 @@
       <button id="btnToggleSidebar" class="hamburger">☰</button>
       <div class="header-with-badge">
         <h1>Maintenance Transactions</h1>
-        <span class="superadmin-badge">
-          <i class="fas fa-shield-alt"></i> Superadmin Only
-        </span>
       </div>
       <p class="subtitle">Track and manage vehicle maintenance, repairs, and service history</p>
     </header>
@@ -301,13 +298,12 @@
               <th>Cost (₱)</th>
               <th>Status</th>
               <th>Mechanic/Shop</th>
-              <th>Next Due</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="maintenanceTableBody">
             <tr>
-              <td colspan="10" class="text-center">Loading maintenance records...</td>
+              <td colspan="9" class="text-center">Loading maintenance records...</td>
             </tr>
           </tbody>
         </table>
@@ -399,26 +395,21 @@
 
       <div class="form-row">
         <div class="form-group">
+          <label for="driver">Driver (if applicable)</label>
+          <select id="driver" name="driverId">
+              <option value="">— Select Driver —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
           <label for="odometerReading">Odometer Reading (km)</label>
           <input type="number" id="odometerReading" name="odometerReading" min="0" placeholder="e.g., 50000">
         </div>
-
-        <div class="form-group">
-          <label for="nextDueDate">Next Due Date</label>
-          <input type="date" id="nextDueDate" name="nextDueDate">
-        </div>
       </div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label for="nextDueOdometer">Next Due Odometer (km)</label>
-          <input type="number" id="nextDueOdometer" name="nextDueOdometer" min="0" placeholder="e.g., 55000">
-        </div>
-
-        <div class="form-group">
-          <label for="attachments">Attachments</label>
-          <input type="file" id="attachments" name="attachments" multiple accept=".pdf,.jpg,.jpeg,.png">
-        </div>
+      <div class="form-group">
+        <label for="attachments">Attachments</label>
+        <input type="file" id="attachments" name="attachments" multiple accept=".pdf,.jpg,.jpeg,.png">
       </div>
 
       <div class="form-group">
@@ -428,8 +419,8 @@
       </div>
 
       <div class="form-actions">
-        <button type="button" class="btn-secondary cancel-btn">Cancel</button>
-        <button type="submit" class="btn-primary" id="saveMaintenanceBtn">Save Record</button>
+        <button type="button" class="btn btn-secondary cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="saveMaintenanceBtn">Save Record</button>
       </div>
     </form>
   </div>
@@ -459,6 +450,13 @@
           <option value="inspection">Inspection</option>
           <option value="oil-change">Oil Change</option>
           <option value="tire">Tire Service</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="scheduleDriver">Assign Driver</label>
+        <select id="scheduleDriver" name="driverId">
+            <option value="">— Select Driver —</option>
         </select>
       </div>
 
@@ -501,8 +499,8 @@
     </div>
     
     <div class="modal-footer">
-      <button class="btn-secondary close-btn">Close</button>
-      <button class="btn-primary" id="editFromDetailsBtn">Edit Record</button>
+      <button type="button" class="btn btn-secondary cancel-btn">Close</button>
+      <button class="btn btn-primary" id="editFromDetailsBtn">Edit Record</button>
     </div>
   </div>
 </div>

@@ -330,6 +330,16 @@
     });
   </script>
 
+  <!-- In your schedule page template -->
+  <script>
+    // Debug - check if values are being passed
+    window.userRole = "{{ session.get('role', '') }}";
+    window.userEmail = "{{ session.get('email', '') }}";
+    
+    console.log("User Role from Flask:", window.userRole);
+    console.log("User Email from Flask:", window.userEmail);
+  </script>
+
   <!-- Your script (NOT module) -->
   <script src="{{ url_for('static', filename='js/schedules.js') }}"></script>
 

@@ -1,49 +1,30 @@
 from flask import Blueprint, request, jsonify, current_app, session
 from firebase_admin import db
-from decorators import superadmin_required
+from decorators import admin_required
 from datetime import datetime
 import traceback
 
 admin_rfid_api = Blueprint("admin_rfid_api", __name__)
 
-# -----------------------
-# GET ALL RFID CARDS
-# -----------------------
 @admin_rfid_api.route("/api/admin/rfid/cards", methods=["GET"])
-@superadmin_required
+@admin_required
 def get_rfid_cards():
     try:
         cards_ref = db.reference("rfidCards")
         cards = cards_ref.get() or {}
         
-        # Get transport units for reference
-        units_ref = db.reference("transportUnits")
-        units = units_ref.get() or {}
-        
         cards_list = []
         for card_id, card_data in cards.items():
-            # Get unit info if assigned
-            unit_info = None
-            if card_data.get("unitId"):
-                unit = units.get(card_data["unitId"])
-                if unit:
-                    unit_info = {
-                        "unitId": card_data["unitId"],
-                        "unitName": unit.get("transportUnit", ""),
-                        "plateNumber": unit.get("plateNumber", "")
-                    }
-            
             cards_list.append({
                 "id": card_id,
                 "cardNumber": card_data.get("cardNumber", ""),
                 "unitId": card_data.get("unitId", ""),
-                "unitName": unit_info["unitName"] if unit_info else None,
-                "unitPlate": unit_info["plateNumber"] if unit_info else None,
+                "unitName": card_data.get("unitName"),      # ← Now stored directly
+                "unitPlate": card_data.get("plateNumber"),  # ← Now stored directly
                 "balance": float(card_data.get("balance", 0)),
                 "status": card_data.get("status", "active"),
                 "notes": card_data.get("notes", ""),
                 "lastUpdated": card_data.get("lastUpdated", ""),
-                "lastAdjustment": card_data.get("lastAdjustment"),
                 "createdAt": card_data.get("createdAt", "")
             })
         
@@ -57,7 +38,7 @@ def get_rfid_cards():
 # GET SINGLE RFID CARD
 # -----------------------
 @admin_rfid_api.route("/api/admin/rfid/cards/<card_id>", methods=["GET"])
-@superadmin_required
+@admin_required
 def get_rfid_card(card_id):
     try:
         card_ref = db.reference(f"rfidCards/{card_id}")
@@ -81,11 +62,8 @@ def get_rfid_card(card_id):
         current_app.logger.error(f"Error fetching RFID card: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-# -----------------------
-# CREATE NEW RFID CARD
-# -----------------------
 @admin_rfid_api.route("/api/admin/rfid/cards", methods=["POST"])
-@superadmin_required
+@admin_required
 def create_rfid_card():
     try:
         data = request.get_json() or {}
@@ -102,10 +80,23 @@ def create_rfid_card():
             if card_data.get("cardNumber") == data["cardNumber"]:
                 return jsonify({"error": "Card number already exists"}), 409
         
-        # Prepare card data
+        # Get unit info if unitId is provided
+        unit_name = None
+        plate_number = None
+        
+        if data.get("unitId"):
+            unit_ref = db.reference(f"transportUnits/{data['unitId']}")
+            unit = unit_ref.get()
+            if unit:
+                unit_name = unit.get("transportUnit", "")
+                plate_number = unit.get("plateNumber", "")
+        
+        # Prepare card data with unit info
         card_data = {
             "cardNumber": data["cardNumber"],
             "unitId": data.get("unitId") or None,
+            "unitName": unit_name,           # ← ADD THIS
+            "plateNumber": plate_number,     # ← ADD THIS
             "balance": float(data.get("balance", 0)),
             "status": data.get("status", "active"),
             "notes": data.get("notes", ""),
@@ -117,12 +108,13 @@ def create_rfid_card():
         new_card_ref = cards_ref.push(card_data)
         card_id = new_card_ref.key
         
-        # Add to balance history (initial creation)
+        # Add to balance history
         if float(data.get("balance", 0)) > 0:
             history_ref = db.reference("rfidBalanceHistory")
             history_ref.push({
                 "cardId": card_id,
                 "cardNumber": data["cardNumber"],
+                "plateNumber": plate_number,  # ← ADD THIS
                 "type": "initial_balance",
                 "amount": float(data.get("balance", 0)),
                 "oldBalance": 0,
@@ -141,12 +133,9 @@ def create_rfid_card():
     except Exception as e:
         current_app.logger.error(f"Error creating RFID card: {str(e)}")
         return jsonify({"error": str(e)}), 500
-
-# -----------------------
-# UPDATE RFID CARD
-# -----------------------
+    
 @admin_rfid_api.route("/api/admin/rfid/cards/<card_id>", methods=["PUT"])
-@superadmin_required
+@admin_required
 def update_rfid_card(card_id):
     try:
         data = request.get_json() or {}
@@ -173,17 +162,36 @@ def update_rfid_card(card_id):
         
         # Prepare update data
         update_data = {}
-        allowed_fields = ["cardNumber", "unitId", "status", "notes"]
+        allowed_fields = ["cardNumber", "status", "notes"]
         
         for field in allowed_fields:
             if field in data:
                 update_data[field] = data[field] if data[field] else None
         
+        # Handle unitId changes - fetch unit info if changed
+        if "unitId" in data:
+            new_unit_id = data["unitId"] if data["unitId"] else None
+            old_unit_id = existing.get("unitId")
+            
+            if new_unit_id != old_unit_id:
+                update_data["unitId"] = new_unit_id
+                
+                # Fetch and update unit info
+                if new_unit_id:
+                    unit_ref = db.reference(f"transportUnits/{new_unit_id}")
+                    unit = unit_ref.get()
+                    if unit:
+                        update_data["unitName"] = unit.get("transportUnit", "")
+                        update_data["plateNumber"] = unit.get("plateNumber", "")
+                else:
+                    update_data["unitName"] = None
+                    update_data["plateNumber"] = None
+        
         # Handle balance separately
         if "balance" in data and new_balance != old_balance:
             update_data["balance"] = new_balance
             
-            # Create adjustment record for balance change
+            # Create adjustment record
             adjustment = {
                 "type": "manual_update",
                 "oldBalance": old_balance,
@@ -198,6 +206,7 @@ def update_rfid_card(card_id):
             history_ref.push({
                 "cardId": card_id,
                 "cardNumber": data.get("cardNumber", existing.get("cardNumber")),
+                "plateNumber": existing.get("plateNumber"),  # ← ADD THIS
                 "type": "manual_update",
                 "amount": abs(new_balance - old_balance),
                 "oldBalance": old_balance,
@@ -223,7 +232,7 @@ def update_rfid_card(card_id):
 # UPDATE BALANCE ONLY (PATCH)
 # -----------------------
 @admin_rfid_api.route("/api/admin/rfid/cards/<card_id>/balance", methods=["PATCH"])
-@superadmin_required
+@admin_required
 def update_balance(card_id):
     try:
         data = request.get_json() or {}
@@ -292,7 +301,7 @@ def update_balance(card_id):
 # ADJUST BALANCE (ADD/SUBTRACT)
 # -----------------------
 @admin_rfid_api.route("/api/admin/rfid/cards/<card_id>/adjust", methods=["POST"])
-@superadmin_required
+@admin_required
 def adjust_balance(card_id):
     try:
         data = request.get_json() or {}
@@ -377,7 +386,7 @@ def adjust_balance(card_id):
 # DELETE RFID CARD
 # -----------------------
 @admin_rfid_api.route("/api/admin/rfid/cards/<card_id>", methods=["DELETE"])
-@superadmin_required
+@admin_required
 def delete_rfid_card(card_id):
     try:
         # Check if card exists
@@ -415,7 +424,7 @@ def delete_rfid_card(card_id):
 # BULK UPDATE BALANCES
 # -----------------------
 @admin_rfid_api.route("/api/admin/rfid/cards/bulk/update", methods=["POST"])
-@superadmin_required
+@admin_required
 def bulk_update_balances():
     try:
         data = request.get_json() or {}
@@ -520,7 +529,7 @@ def bulk_update_balances():
 # GET BALANCE HISTORY FOR A CARD
 # -----------------------
 @admin_rfid_api.route("/api/admin/rfid/cards/<card_id>/history", methods=["GET"])
-@superadmin_required
+@admin_required
 def get_card_history(card_id):
     try:
         # Check if card exists
@@ -557,7 +566,7 @@ def get_card_history(card_id):
 # GET ALL BALANCE HISTORY (for General Ledger)
 # -----------------------
 @admin_rfid_api.route("/api/admin/rfid/history", methods=["GET"])
-@superadmin_required
+@admin_required
 def get_all_history():
     try:
         # Get query parameters for filtering
@@ -627,7 +636,7 @@ def get_all_history():
 # GET BALANCE HISTORY SUMMARY (for General Ledger dashboard)
 # -----------------------
 @admin_rfid_api.route("/api/admin/rfid/history/summary", methods=["GET"])
-@superadmin_required
+@admin_required
 def get_history_summary():
     try:
         # Get date range parameters
@@ -701,7 +710,7 @@ def get_history_summary():
 # GET TRANSPORT UNITS FOR DROPDOWN
 # -----------------------
 @admin_rfid_api.route("/api/admin/transport-units/list", methods=["GET"])
-@superadmin_required
+@admin_required
 def get_transport_units_list():
     try:
         units_ref = db.reference("transportUnits")
@@ -728,7 +737,7 @@ def get_transport_units_list():
         # Add to your admin_rfid_api.py or create a new users API file
 
 @admin_rfid_api.route("/api/admin/users/list", methods=["GET"])
-@superadmin_required
+@admin_required
 def get_users_list():
     try:
         users_ref = db.reference("users")
