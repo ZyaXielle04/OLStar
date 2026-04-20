@@ -148,18 +148,30 @@ document.addEventListener("DOMContentLoaded", () => {
     // ---------------- API Calls ----------------
     async function fetchTransportUnits() {
         try {
+            console.log("🔍 FETCHING transport units from /api/transportUnits...");
+            
             const response = await fetch("/api/transportUnits");
+            console.log("📡 Response status:", response.status, response.statusText);
+            
             if (!response.ok) throw new Error("Failed to fetch transport units");
             
             const data = await response.json();
-            console.log("Transport units API response:", data);
+            console.log("📦 RAW API Response:", JSON.stringify(data, null, 2));
+            console.log("📊 Response type:", typeof data);
+            console.log("🔑 Response keys:", Object.keys(data));
             
             transportUnits = data.transportUnits || [];
-            console.log("Processed transport units:", transportUnits);
+            console.log(`✅ Transport units loaded: ${transportUnits.length} units`);
+            console.log("📋 First 3 units (sample):", transportUnits.slice(0, 3));
+            
+            if (transportUnits.length === 0) {
+                console.warn("⚠️ No transport units found in response! Check if data.transportUnits exists or if the endpoint returns data in different format.");
+            }
             
             populateUnitFilters();
         } catch (err) {
-            console.error("Error fetching transport units:", err);
+            console.error("❌ Error fetching transport units:", err);
+            console.trace(); // This will show the full stack trace
             showToast("Failed to load transport units", "error");
         }
     }
@@ -1141,25 +1153,43 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------------- Helper Functions ----------------
     function populateUnitFilters() {
+        console.log(`🎯 Populating ${transportUnits.length} transport units (including same names with different plates)`);
+        
         const options = ['<option value="">All Transport Units</option>'];
         const unitOptions = ['<option value="">— Select Transport Unit —</option>'];
         
-        const uniqueUnits = new Map();
+        // Direct loop - NO deduplication
         transportUnits.forEach(unit => {
-            if (!uniqueUnits.has(unit.transportUnit)) {
-                uniqueUnits.set(unit.transportUnit, unit);
-            }
-        });
-        
-        Array.from(uniqueUnits.values()).forEach(unit => {
-            const option = `<option value="${unit.transportUnit}">${unit.transportUnit} (${unit.plateNumber})</option>`;
+            // Create a unique identifier using both name AND plate number
+            const displayText = `${unit.transportUnit} (${unit.plateNumber})`;
+            const optionValue = `${unit.transportUnit}|${unit.plateNumber}`; // Unique combo
+            
+            const option = `<option value="${optionValue}">${displayText}</option>`;
             options.push(option);
             unitOptions.push(option);
+            
+            console.log(`✅ Added: ${displayText}`);
         });
+        
+        console.log(`📊 Total options created: ${options.length - 1} unique units`);
         
         unitFilter.innerHTML = options.join("");
         transportUnitSelect.innerHTML = unitOptions.join("");
         scheduleUnitSelect.innerHTML = unitOptions.join("");
+        
+        // Verify counts
+        console.log(`🔍 Verification - unitFilter has ${unitFilter.options.length - 1} units`);
+        console.log(`🔍 Verification - transportUnitSelect has ${transportUnitSelect.options.length - 1} units`);
+    }
+
+    // Add this right after populateUnitFilters() is called
+    function verifyDropdowns() {
+        console.log("🔍 VERIFYING dropdowns:");
+        console.log("  - unitFilter options count:", unitFilter.options.length);
+        console.log("  - transportUnitSelect options count:", transportUnitSelect.options.length);
+        console.log("  - scheduleUnitSelect options count:", scheduleUnitSelect.options.length);
+        
+        console.log("  - unitFilter values:", Array.from(unitFilter.options).map(opt => opt.value));
     }
 
     function populateDriverDropdowns() {

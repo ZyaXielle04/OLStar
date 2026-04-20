@@ -582,3 +582,28 @@ def bulk_operation():
     except Exception as e:
         print(f"Error in bulk_operation: {e}")
         return jsonify({"error": str(e)}), 500
+    
+@maintenance_transactions_bp.route("/transportUnits", methods=["GET"])
+@superadmin_required
+def get_transport_units():
+    try:
+        # Assuming units are stored in Firebase
+        units_ref = db.reference("transportUnits")  # or whatever your node is called
+        units_data = units_ref.get() or {}
+        
+        units = []
+        for unit_id, unit in units_data.items():
+            units.append({
+                "id": unit_id,
+                "transportUnit": unit.get("name", ""),
+                "plateNumber": unit.get("plateNumber", ""),
+                "color": unit.get("color", ""),
+                "unitType": unit.get("unitType", "")
+            })
+        
+        return jsonify({
+            "success": True,
+            "transportUnits": units
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
