@@ -1,5 +1,5 @@
 // =======================
-// SCHEDULES MANAGEMENT - OPTIMIZED VERSION
+// SCHEDULES MANAGEMENT - OPTIMIZED VERSION WITH DOWNLOAD
 // =======================
 
 // =======================
@@ -236,6 +236,144 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function shouldBeCancelled(schedule) {
         return schedule.note && schedule.note.toLowerCase().includes("cancel");
+    }
+
+    // =======================
+    // STRUCTURED DOWNLOAD FUNCTIONS (INSIDE DOMContentLoaded)
+    // =======================
+    
+    function formatTimeForFolder(timeStr) {
+        if (!timeStr) return "0000";
+        
+        const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (!match) return timeStr.replace(/[^0-9]/g, '');
+        
+        let [, hour, minute, period] = match;
+        hour = parseInt(hour, 10);
+        minute = parseInt(minute, 10);
+        
+        if (period.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+        if (period.toUpperCase() === 'AM' && hour === 12) hour = 0;
+        
+        return `${String(hour).padStart(2, '0')}${String(minute).padStart(2, '0')}`;
+    }
+
+    async function downloadStructuredImage(imageUrl, schedule, imageType, imageIndex = 1) {
+        if (!imageUrl) {
+            showToast(`No ${imageType} image available`, "info");
+            return false;
+        }
+        
+        const timeFolder = formatTimeForFolder(schedule.time);
+        const displayTime = schedule.time || "0000";
+        const filename = `${imageType}_${imageIndex}.jpg`;
+        
+        Swal.fire({
+            title: 'Downloading...',
+            text: `Saving to: ${schedule.date}/${displayTime}/${filename}`,
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+        
+        try {
+            const response = await fetch('/api/schedules/download-structured', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    imageUrl: imageUrl,
+                    dateFolder: schedule.date,
+                    timeFolder: timeFolder,
+                    filename: filename,
+                    scheduleId: schedule.transactionID,
+                    imageType: imageType
+                })
+            });
+            
+            const data = await response.json();
+            Swal.close();
+            
+            if (data.success) {
+                showToast(`✅ Downloaded: ${schedule.date}/${displayTime}/${filename}`, "success");
+                return true;
+            } else {
+                showToast(`❌ Failed: ${data.error}`, "error");
+                return false;
+            }
+        } catch (error) {
+            Swal.close();
+            console.error('Download failed:', error);
+            showToast("Failed to download image", "error");
+            return false;
+        }
+    }
+
+    async function downloadAllScheduleImages(schedule) {
+        const images = [];
+        
+        const flightScreenshot = schedule.PhotoUrl?.flightAwareUrl || schedule.flightScreenshot;
+        const pendingPhoto = schedule.PhotoUrl?.pendingPhotoUrl;
+        const confirmedPhoto = schedule.PhotoUrl?.confirmedPhotoUrl;
+        const arrivedPhoto = schedule.PhotoUrl?.arrivedPhotoUrl;
+        const onRoutePhoto = schedule.PhotoUrl?.OnRoutePhotoUrl;
+        
+        if (flightScreenshot) images.push({ url: flightScreenshot, type: 'flight' });
+        if (pendingPhoto) images.push({ url: pendingPhoto, type: 'pending' });
+        if (confirmedPhoto) images.push({ url: confirmedPhoto, type: 'confirmed' });
+        if (arrivedPhoto) images.push({ url: arrivedPhoto, type: 'arrived' });
+        if (onRoutePhoto) images.push({ url: onRoutePhoto, type: 'onroute' });
+        
+        if (images.length === 0) {
+            showToast("No images available for this schedule", "info");
+            return;
+        }
+        
+        Swal.fire({
+            title: 'Downloading All Images',
+            html: `Downloading ${images.length} images for schedule ${schedule.transactionID}...<br><progress id="downloadProgress" value="0" max="${images.length}" style="width: 100%; margin-top: 10px;"></progress>`,
+            allowOutsideClick: false,
+            showConfirmButton: false
+        });
+        
+        let successCount = 0;
+        for (let i = 0; i < images.length; i++) {
+            const img = images[i];
+            const timeFolder = formatTimeForFolder(schedule.time);
+            const filename = `${img.type}_${schedule.transactionID}.jpg`;
+            
+            try {
+                const response = await fetch('/api/schedules/download-structured', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        imageUrl: img.url,
+                        dateFolder: schedule.date,
+                        timeFolder: timeFolder,
+                        filename: filename,
+                        scheduleId: schedule.transactionID,
+                        imageType: img.type
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) successCount++;
+                
+                const progress = document.getElementById('downloadProgress');
+                if (progress) progress.value = i + 1;
+                
+                // Add delay between images from same schedule
+                if (i < images.length - 1) {
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+                
+            } catch (error) {
+                console.error('Download failed:', error);
+                const progress = document.getElementById('downloadProgress');
+                if (progress) progress.value = i + 1;
+            }
+        }
+        
+        Swal.close();
+        showToast(`✅ Downloaded ${successCount}/${images.length} images for ${schedule.transactionID}`, "success");
     }
 
     // =======================
@@ -511,7 +649,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     `;
                 });
                 
-                historyHtml += `</tbody></table></div></div>`;
+                historyHtml += `</tbody>}}</div></div>`;
             });
             historyContent.innerHTML = historyHtml;
         }
@@ -726,7 +864,6 @@ This is an automated message. Please do not reply.`;
     // =======================
     // CREATE CALENDAR EVENT
     // =======================
-    // Check if user is superadmin
     function isSuperAdmin() {
         const superadminEmails = [
             "zyacodesservices@gmail.com",
@@ -734,7 +871,6 @@ This is an automated message. Please do not reply.`;
             "far.ana@gmail.com"
         ];
         
-        // Make sure we have the values
         const userRole = window.userRole || "";
         const userEmail = window.userEmail || "";
         
@@ -816,6 +952,7 @@ This is an automated message. Please do not reply.`;
                             <button class="btn-driver-transfer">🚕 Driver Transfer</button>
                             <button class="btn-email-client">📧 Email Client</button>
                             <button class="btn-ring-driver" data-transaction="${data.transactionID}">🔔 Ring Driver</button>
+                            <button class="btn-download-images" data-schedule='${JSON.stringify(data)}'>⬇️ Download Images</button>
                         </div>
                         <div class="action-center">
                             <button class="btn-edit">Edit</button>
@@ -864,6 +1001,40 @@ This is an automated message. Please do not reply.`;
             screenshotIndicator.addEventListener('click', (e) => {
                 e.stopPropagation();
                 viewExistingFlightScreenshot(data);
+            });
+        }
+
+        // Download Images Button
+        const btnDownloadImages = event.querySelector(".btn-download-images");
+        if (btnDownloadImages) {
+            btnDownloadImages.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                let scheduleData;
+                try {
+                    scheduleData = JSON.parse(btnDownloadImages.getAttribute('data-schedule'));
+                } catch (err) {
+                    scheduleData = data;
+                }
+                const result = await Swal.fire({
+                    title: 'Download Options',
+                    text: 'What would you like to download?',
+                    icon: 'question',
+                    showDenyButton: true,
+                    confirmButtonText: '📸 All Images for This Trip',
+                    denyButtonText: '✈️ Flight Screenshot Only',
+                    cancelButtonText: 'Cancel'
+                });
+                
+                if (result.isConfirmed) {
+                    await downloadAllScheduleImages(scheduleData);
+                } else if (result.isDenied) {
+                    const flightScreenshot = scheduleData.PhotoUrl?.flightAwareUrl || scheduleData.flightScreenshot;
+                    if (flightScreenshot) {
+                        await downloadStructuredImage(flightScreenshot, scheduleData, 'flight', 1);
+                    } else {
+                        showToast("No flight screenshot available", "info");
+                    }
+                }
             });
         }
 
@@ -1399,6 +1570,155 @@ This is an automated message. Please do not reply.`;
             await fetchSchedules(selectedDate);
             showToast("All filtered schedules deleted.", "success");
         }
+    });
+
+    // =======================
+    // UNIVERSAL DOWNLOAD FOR DATE
+    // =======================
+
+    async function downloadAllImagesForDate(date) {
+        if (!date) {
+            date = dateFilter?.value || getPHLocalISODate();
+        }
+        
+        // Get all schedules for this date
+        const schedulesForDate = allSchedules.filter(s => s.date === date);
+        
+        if (schedulesForDate.length === 0) {
+            showToast(`No schedules found for ${date}`, "info");
+            return;
+        }
+        
+        // Count total images
+        let totalImages = 0;
+        const imageJobs = [];
+        
+        for (const schedule of schedulesForDate) {
+            const flightScreenshot = schedule.PhotoUrl?.flightAwareUrl || schedule.flightScreenshot;
+            const pendingPhoto = schedule.PhotoUrl?.pendingPhotoUrl;
+            const confirmedPhoto = schedule.PhotoUrl?.confirmedPhotoUrl;
+            const arrivedPhoto = schedule.PhotoUrl?.arrivedPhotoUrl;
+            const onRoutePhoto = schedule.PhotoUrl?.OnRoutePhotoUrl;
+            
+            if (flightScreenshot) imageJobs.push({ url: flightScreenshot, schedule: schedule, type: 'flight' });
+            if (pendingPhoto) imageJobs.push({ url: pendingPhoto, schedule: schedule, type: 'pending' });
+            if (confirmedPhoto) imageJobs.push({ url: confirmedPhoto, schedule: schedule, type: 'confirmed' });
+            if (arrivedPhoto) imageJobs.push({ url: arrivedPhoto, schedule: schedule, type: 'arrived' });
+            if (onRoutePhoto) imageJobs.push({ url: onRoutePhoto, schedule: schedule, type: 'onroute' });
+        }
+        
+        totalImages = imageJobs.length;
+        
+        if (totalImages === 0) {
+            showToast(`No images found for ${date}`, "info");
+            return;
+        }
+        
+        // Check if we're about to hit rate limit
+        const estimatedTimeNeeded = imageJobs.length * 2.5; // 2.5 seconds per request
+        const warningThreshold = 50; // 50 images = ~125 seconds
+        
+        if (imageJobs.length > warningThreshold) {
+            const result = await Swal.fire({
+                title: 'Large Download',
+                text: `You are about to download ${imageJobs.length} images. This may take approximately ${Math.ceil(estimatedTimeNeeded / 60)} minutes. Do you want to continue?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, continue',
+                cancelButtonText: 'Cancel'
+            });
+            
+            if (!result.isConfirmed) {
+                return;
+            }
+        }
+        
+        Swal.fire({
+            title: 'Downloading All Images',
+            html: `Downloading ${totalImages} images for ${date}...<br><progress id="universalDownloadProgress" value="0" max="${totalImages}" style="width: 100%; margin-top: 10px;"></progress><br><small id="downloadStatusMsg" style="color: #666;">Starting downloads...</small>`,
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        let successCount = 0;
+        let imageIndex = 0;
+        let failedCount = 0;
+        
+        for (const job of imageJobs) {
+            imageIndex++;
+            const timeFolder = formatTimeForFolder(job.schedule.time);
+            const displayTime = job.schedule.time || "0000";
+            const filename = `${job.type}_${job.schedule.transactionID}.jpg`;
+            
+            // Update status message
+            const statusMsg = document.getElementById('downloadStatusMsg');
+            if (statusMsg) {
+                statusMsg.innerHTML = `Downloading ${imageIndex} of ${totalImages}: ${job.type} image for ${job.schedule.transactionID}...`;
+            }
+            
+            try {
+                const response = await fetch('/api/schedules/download-structured', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        imageUrl: job.url,
+                        dateFolder: job.schedule.date,
+                        timeFolder: timeFolder,
+                        filename: filename,
+                        scheduleId: job.schedule.transactionID,
+                        imageType: job.type
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    successCount++;
+                } else {
+                    failedCount++;
+                    console.error('Download failed:', data);
+                }
+                
+                const progress = document.getElementById('universalDownloadProgress');
+                if (progress) progress.value = imageIndex;
+                
+                // CRITICAL: Add delay between requests to avoid rate limiting
+                // 2 seconds between each request (30 requests per minute = 2 seconds per request)
+                if (imageIndex < totalImages) {
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+                
+            } catch (error) {
+                console.error('Download failed:', error);
+                failedCount++;
+                
+                const progress = document.getElementById('universalDownloadProgress');
+                if (progress) progress.value = imageIndex;
+                
+                // Still add delay even on error
+                if (imageIndex < totalImages) {
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+            }
+        }
+        
+        Swal.close();
+        
+        // Show summary
+        if (failedCount === 0) {
+            showToast(`✅ Successfully downloaded all ${successCount} images for ${date}!`, "success");
+        } else {
+            showToast(`⚠️ Downloaded ${successCount}/${totalImages} images. ${failedCount} failed.`, "warning");
+        }
+    }
+
+    // Add event listener for the universal download button
+    document.getElementById("downloadAllImagesBtn")?.addEventListener("click", async () => {
+        const selectedDate = dateFilter?.value || getPHLocalISODate();
+        await downloadAllImagesForDate(selectedDate);
     });
 
     document.getElementById("getSchedulesBtn")?.addEventListener("click", async () => {

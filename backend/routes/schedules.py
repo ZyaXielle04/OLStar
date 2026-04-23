@@ -14,6 +14,7 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from functools import wraps
 import logging
+import requests
 
 schedules_api = Blueprint("schedules_api", __name__)
 
@@ -24,6 +25,9 @@ EDITABLE_FIELDS = {
     "bookingType", "transportUnit", "color",
     "plateNumber", "luggage", "tripType"
 }
+
+# Configure download path for structured downloads
+DOWNLOAD_BASE_PATH = os.getenv("DOWNLOAD_BASE_PATH", os.path.expanduser("~/Downloads/OlStar_Schedules"))
 
 # =======================
 # CACHING SYSTEM
@@ -408,7 +412,57 @@ def get_schedule_history(transaction_id):
         return jsonify({"error": str(e)}), 500
 
 # =======================
-# OPTIMIZED: FLIGHTAWARE SCREENSHOT
+# STRUCTURED DOWNLOAD FOR SCHEDULES
+# =======================
+@admin_required
+@schedules_api.route("/api/schedules/download-structured", methods=["POST"])
+@rate_limit
+def download_structured():
+    """Download image to structured folder: /YYYY-MM-DD/HHMM/filename"""
+    try:
+        data = request.json
+        image_url = data.get('imageUrl')
+        date_folder = data.get('dateFolder')  # e.g., "2026-04-12"
+        time_folder = data.get('timeFolder')  # e.g., "0030"
+        filename = data.get('filename')       # e.g., "flight_1.jpg"
+        schedule_id = data.get('scheduleId')
+        image_type = data.get('imageType')
+        
+        if not image_url:
+            return jsonify({'error': 'No image URL provided'}), 400
+        
+        # Create full path: ~/Downloads/OlStar_Schedules/2026-04-12/0030/
+        full_path = os.path.join(DOWNLOAD_BASE_PATH, date_folder, time_folder)
+        os.makedirs(full_path, exist_ok=True)
+        
+        # Full file path
+        filepath = os.path.join(full_path, filename)
+        
+        # Download image from Cloudinary
+        response = requests.get(image_url, stream=True)
+        
+        if response.status_code == 200:
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            # Log the download
+            logging.info(f"Downloaded {image_type} image for schedule {schedule_id} to {filepath}")
+            
+            return jsonify({
+                'success': True,
+                'message': f'Image saved to {filepath}',
+                'filepath': filepath
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to download image from Cloudinary'}), 500
+            
+    except Exception as e:
+        logging.error(f"Error in download_structured: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# =======================
+# FLIGHTAWARE SCREENSHOT (Legacy - kept for compatibility)
 # =======================
 @admin_required
 @schedules_api.route("/api/flightaware/screenshot/<flight_number>", methods=["GET"])

@@ -86,7 +86,7 @@
         <h1>Schedules</h1>
         <p class="subtitle">View and manage all booking schedules</p>
 
-        <!-- Action Buttons - Added Get Schedules button here -->
+        <!-- Action Buttons -->
         <div class="actions">
           <label for="importDate">Import schedules for date:</label>
           <input type="date" id="dateFilter" class="date-filter" />
@@ -98,9 +98,14 @@
           <label for="fileInput" class="btn">Upload XLS/XLSX</label>
           <button class="btn" id="addManualBtn">Add Schedule Manually</button>
           
-          <!-- NEW: Get Schedules Button -->
+          <!-- Get Schedules Button -->
           <button class="btn-get-schedules" id="getSchedulesBtn">
             <span>📋</span> Get Schedules
+          </button>
+
+          <!-- UNIVERSAL DOWNLOAD BUTTON -->
+          <button class="btn-download-all" id="downloadAllImagesBtn">
+            <i class="fas fa-download"></i> Download All Images for This Date
           </button>
 
           <button class="btn btn-danger" id="bulkDeleteBtn" disabled>
@@ -330,9 +335,8 @@
     });
   </script>
 
-  <!-- In your schedule page template -->
+  <!-- Debug - check if values are being passed -->
   <script>
-    // Debug - check if values are being passed
     window.userRole = "{{ session.get('role', '') }}";
     window.userEmail = "{{ session.get('email', '') }}";
     
@@ -340,7 +344,7 @@
     console.log("User Email from Flask:", window.userEmail);
   </script>
 
-  <!-- Your script (NOT module) -->
+  <!-- Your schedule script -->
   <script src="{{ url_for('static', filename='js/schedules.js') }}"></script>
 
 </body>
