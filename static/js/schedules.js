@@ -1746,7 +1746,6 @@ This is an automated message. Please do not reply.`;
             return;
         }
         
-        // Show progress
         Swal.fire({
             title: 'Creating ZIP File',
             text: `Preparing ${images.length} images for download...`,
@@ -1755,6 +1754,8 @@ This is an automated message. Please do not reply.`;
         });
         
         try {
+            console.log(`Sending request to backend with ${images.length} images...`);
+            
             const response = await fetch('/api/schedules/download-all-zip', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1765,8 +1766,21 @@ This is an automated message. Please do not reply.`;
                 })
             });
             
+            console.log('Response status:', response.status);
+            
             if (!response.ok) {
-                throw new Error('Download failed');
+                const errorText = await response.text();
+                console.error('Error response:', errorText);
+                
+                let errorMessage = `Server error: ${response.status}`;
+                try {
+                    const errorData = JSON.parse(errorText);
+                    errorMessage = errorData.error || errorMessage;
+                } catch(e) {
+                    // If not JSON, use status text
+                    errorMessage = response.statusText || errorMessage;
+                }
+                throw new Error(errorMessage);
             }
             
             // Download the ZIP file
@@ -1782,27 +1796,28 @@ This is an automated message. Please do not reply.`;
             
             Swal.close();
             
-            // Show success message with instructions
-            await Swal.fire({
-                title: '✅ Download Complete!',
-                html: `<div style="text-align: left;">
-                    <p>Downloaded <strong>${images.length}</strong> images as a ZIP file.</p>
-                    <p><strong>To extract:</strong></p>
-                    <ul>
-                        <li><strong>Windows:</strong> Right-click → Extract All</li>
-                        <li><strong>Mac:</strong> Double-click to unzip</li>
-                    </ul>
-                    <p>The ZIP contains the folder structure:<br>
-                    <code>${date}/HHMM/image_type_ID.jpg</code></p>
-                </div>`,
-                icon: 'success',
-                confirmButtonText: 'OK'
-            });
+            showToast(`✅ Downloaded ZIP with ${images.length} images!`, "success");
             
         } catch (error) {
             Swal.close();
             console.error('ZIP download failed:', error);
-            showToast(`Failed to create ZIP: ${error.message}`, "error");
+            
+            // Show detailed error to user
+            await Swal.fire({
+                title: 'Download Failed',
+                html: `<div style="text-align: left;">
+                    <p><strong>Error:</strong> ${error.message}</p>
+                    <p><strong>Possible causes:</strong></p>
+                    <ul>
+                        <li>Backend endpoint not available (502 error)</li>
+                        <li>Network connectivity issue</li>
+                        <li>Server timeout or overload</li>
+                    </ul>
+                    <p>Please try downloading images one by one instead.</p>
+                </div>`,
+                icon: 'error',
+                confirmButtonText: 'OK'
+            });
         }
     }
 

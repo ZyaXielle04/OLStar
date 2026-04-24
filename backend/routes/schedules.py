@@ -29,9 +29,6 @@ EDITABLE_FIELDS = {
     "plateNumber", "luggage", "tripType"
 }
 
-# Configure download path for structured downloads
-DOWNLOAD_BASE_PATH = os.getenv("DOWNLOAD_BASE_PATH", os.path.expanduser("~/Downloads/OlStar_Schedules"))
-
 # =======================
 # CACHING SYSTEM
 # =======================
@@ -569,6 +566,9 @@ def clear_schedule_cache():
     schedule_cache.clear()
     return jsonify({"message": "Schedule cache cleared successfully"})
 
+# =======================
+# ZIP DOWNLOAD FOR SCHEDULES - PRODUCTION FIX
+# =======================
 @admin_required
 @schedules_api.route("/api/schedules/download-all-zip", methods=["POST"])
 @rate_limit
@@ -579,33 +579,76 @@ def download_all_as_zip():
         date = data.get('date')
         images = data.get('images', [])
         
+        if not date:
+            return jsonify({'success': False, 'error': 'Date is required'}), 400
+        
         if not images:
             return jsonify({'success': False, 'error': 'No images to download'}), 400
         
+        logging.info(f"Creating ZIP for date {date} with {len(images)} images")
+        
         # Create ZIP in memory
         zip_buffer = BytesIO()
+        success_count = 0
         
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            for img in images:
-                # Format time folder (e.g., "1430")
-                time_str = img['schedule'].get('time', '')
-                time_folder = format_time_for_folder(time_str)
-                
-                # Create filename and path
-                filename = f"{img['type']}_{img['schedule']['transactionID']}.jpg"
-                folder_path = f"{date}/{time_folder}"
-                full_path = f"{folder_path}/{filename}"
-                
-                # Download and add to ZIP
-                response = requests.get(img['url'], timeout=30, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                })
-                
-                if response.status_code == 200:
-                    zip_file.writestr(full_path, response.content)
+            for idx, img in enumerate(images):
+                try:
+                    # Get schedule info
+                    schedule = img.get('schedule', {})
+                    time_str = schedule.get('time', '')
+                    transaction_id = schedule.get('transactionID', 'unknown')
+                    img_type = img.get('type', 'image')
+                    img_url = img.get('url', '')
+                    
+                    if not img_url:
+                        logging.warning(f"Skipping image {idx}: No URL")
+                        continue
+                    
+                    # Format time folder (e.g., "10:30 AM" -> "1030")
+                    time_folder = format_time_for_folder(time_str)
+                    
+                    # Create filename and path
+                    filename = f"{img_type}_{transaction_id}.jpg"
+                    folder_path = f"{date}/{time_folder}"
+                    full_path = f"{folder_path}/{filename}"
+                    
+                    logging.info(f"Downloading {full_path} from {img_url[:100]}...")
+                    
+                    # Download image from Cloudinary
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                    
+                    # Fix URL encoding
+                    if 'cloudinary.com' in img_url:
+                        img_url = img_url.replace(' ', '%20')
+                    
+                    response = requests.get(img_url, headers=headers, timeout=30)
+                    
+                    if response.status_code == 200:
+                        # Add to ZIP with folder structure
+                        zip_file.writestr(full_path, response.content)
+                        success_count += 1
+                        logging.info(f"✓ Added {full_path} to ZIP ({success_count}/{len(images)})")
+                    else:
+                        logging.warning(f"✗ Failed to download {img_url}: HTTP {response.status_code}")
+                        
+                except requests.exceptions.Timeout:
+                    logging.error(f"Timeout downloading image {idx}")
+                    continue
+                except Exception as e:
+                    logging.error(f"Error downloading image {idx}: {str(e)}")
+                    continue
         
         zip_buffer.seek(0)
         
+        if success_count == 0:
+            return jsonify({'success': False, 'error': 'No images could be downloaded'}), 400
+        
+        logging.info(f"ZIP created successfully with {success_count} images")
+        
+        # Send ZIP file to client
         return send_file(
             zip_buffer,
             mimetype='application/zip',
@@ -615,24 +658,45 @@ def download_all_as_zip():
         
     except Exception as e:
         logging.error(f"Error creating ZIP: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# =======================
+# HELPER FUNCTION: FORMAT TIME FOR FOLDER
+# =======================
 def format_time_for_folder(time_str):
     """Convert time like '10:30 AM' to '1030' for folder name"""
     if not time_str:
         return "0000"
     
-    match = re.match(r'(\d{1,2}):(\d{2})\s*(AM|PM)', time_str, re.I)
+    # Try to match time pattern like "10:30 AM" or "2:45 PM" or "10:30AM" (no space)
+    match = re.match(r'(\d{1,2}):(\d{2})\s*(AM|PM)?', time_str.strip(), re.I)
     if not match:
-        return time_str.replace(':', '').replace(' ', '')[:4]
+        # If no match, just remove non-digits
+        digits = re.sub(r'[^0-9]', '', time_str)
+        return digits[:4] if len(digits) >= 4 else digits.ljust(4, '0')
     
-    hour = int(match[1])
-    minute = match[2]
-    period = match[3].upper()
+    hour = int(match.group(1))
+    minute = match.group(2)
+    period = match.group(3).upper() if match.group(3) else None
     
-    if period == 'PM' and hour != 12:
-        hour += 12
-    if period == 'AM' and hour == 12:
-        hour = 0
+    # Convert to 24-hour format if period is provided
+    if period:
+        if period == 'PM' and hour != 12:
+            hour += 12
+        if period == 'AM' and hour == 12:
+            hour = 0
     
     return f"{hour:02d}{minute}"
+
+# =======================
+# HELPER FUNCTION: FORCE REFRESH CACHE (for debugging)
+# =======================
+@admin_required
+@schedules_api.route("/api/schedules/force-refresh", methods=["POST"])
+@rate_limit
+def force_refresh_cache():
+    """Force refresh all caches"""
+    schedule_cache.clear()
+    return jsonify({"message": "All caches cleared and will refresh on next request"}), 200
