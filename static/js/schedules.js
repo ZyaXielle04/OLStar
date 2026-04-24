@@ -266,39 +266,35 @@ document.addEventListener("DOMContentLoaded", () => {
         
         const timeFolder = formatTimeForFolder(schedule.time);
         const displayTime = schedule.time || "0000";
-        const filename = `${imageType}_${imageIndex}.jpg`;
+        const extension = imageUrl.includes('.png') ? 'png' : 'jpg';
+        const filename = `${imageType}_${imageIndex}.${extension}`;
+        const fullPath = `${schedule.date}/${displayTime}/${filename}`;
         
         Swal.fire({
             title: 'Downloading...',
-            text: `Saving to: ${schedule.date}/${displayTime}/${filename}`,
+            text: `Saving to: ${fullPath}`,
             allowOutsideClick: false,
             didOpen: () => { Swal.showLoading(); }
         });
         
         try {
-            const response = await fetch('/api/schedules/download-structured', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    imageUrl: imageUrl,
-                    dateFolder: schedule.date,
-                    timeFolder: timeFolder,
-                    filename: filename,
-                    scheduleId: schedule.transactionID,
-                    imageType: imageType
-                })
-            });
+            // Direct download using fetch and blob
+            const response = await fetch(imageUrl);
+            const blob = await response.blob();
             
-            const data = await response.json();
+            // Create download link
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fullPath; // This suggests the folder structure
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
             Swal.close();
-            
-            if (data.success) {
-                showToast(`✅ Downloaded: ${schedule.date}/${displayTime}/${filename}`, "success");
-                return true;
-            } else {
-                showToast(`❌ Failed: ${data.error}`, "error");
-                return false;
-            }
+            showToast(`✅ Downloaded: ${fullPath}`, "success");
+            return true;
         } catch (error) {
             Swal.close();
             console.error('Download failed:', error);
