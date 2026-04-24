@@ -700,3 +700,84 @@ def force_refresh_cache():
     """Force refresh all caches"""
     schedule_cache.clear()
     return jsonify({"message": "All caches cleared and will refresh on next request"}), 200
+
+# =======================
+# BATCHED ZIP DOWNLOAD - BEST SOLUTION
+# =======================
+@admin_required
+@schedules_api.route("/api/schedules/download-batch-zip", methods=["POST"])
+@rate_limit
+def download_batch_zip():
+    """Download images in batches to prevent timeout"""
+    try:
+        data = request.json
+        date = data.get('date')
+        images = data.get('images', [])
+        batch_number = data.get('batchNumber', 1)
+        total_batches = data.get('totalBatches', 1)
+        
+        if not date or not images:
+            return jsonify({'success': False, 'error': 'Missing parameters'}), 400
+        
+        logging.info(f"Creating batch {batch_number}/{total_batches} with {len(images)} images")
+        
+        # Create ZIP in memory
+        zip_buffer = BytesIO()
+        success_count = 0
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for img in images:
+                try:
+                    schedule = img.get('schedule', {})
+                    time_str = schedule.get('time', '')
+                    transaction_id = schedule.get('transactionID', 'unknown')
+                    img_type = img.get('type', 'image')
+                    img_url = img.get('url', '')
+                    
+                    if not img_url:
+                        continue
+                    
+                    # Format time folder
+                    time_folder = format_time_for_folder(time_str)
+                    
+                    # Create filename and path
+                    filename = f"{img_type}_{transaction_id}.jpg"
+                    folder_path = f"{date}/{time_folder}"
+                    full_path = f"{folder_path}/{filename}"
+                    
+                    # Download image
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                    if 'cloudinary.com' in img_url:
+                        img_url = img_url.replace(' ', '%20')
+                    
+                    response = requests.get(img_url, headers=headers, timeout=20)
+                    
+                    if response.status_code == 200:
+                        zip_file.writestr(full_path, response.content)
+                        success_count += 1
+                        
+                except Exception as e:
+                    logging.error(f"Error in batch {batch_number}: {str(e)}")
+                    continue
+        
+        zip_buffer.seek(0)
+        
+        if success_count == 0:
+            return jsonify({'success': False, 'error': 'No images downloaded'}), 400
+        
+        # Create filename with batch info
+        if total_batches > 1:
+            filename = f"{date}_batch_{batch_number}_of_{total_batches}.zip"
+        else:
+            filename = f"{date}_schedules_images.zip"
+        
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logging.error(f"Error creating batch ZIP: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500

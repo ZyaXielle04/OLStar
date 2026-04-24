@@ -1746,44 +1746,44 @@ This is an automated message. Please do not reply.`;
             return;
         }
         
+        // Set batch size (adjust based on your server capacity)
+        const BATCH_SIZE = 20; // 20 images per ZIP
+        
+        if (images.length <= BATCH_SIZE) {
+            // Single batch - simple download
+            await downloadSingleBatch(date, images);
+        } else {
+            // Multiple batches - show progress dialog
+            await downloadMultipleBatches(date, images, BATCH_SIZE);
+        }
+    }
+
+    // Download single batch
+    async function downloadSingleBatch(date, images) {
         Swal.fire({
-            title: 'Creating ZIP File',
-            text: `Preparing ${images.length} images for download...`,
+            title: 'Preparing Download',
+            text: `Creating ZIP file with ${images.length} images...`,
             allowOutsideClick: false,
             didOpen: () => { Swal.showLoading(); }
         });
         
         try {
-            console.log(`Sending request to backend with ${images.length} images...`);
-            
-            const response = await fetch('/api/schedules/download-all-zip', {
+            const response = await fetch('/api/schedules/download-batch-zip', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify({
                     date: date,
-                    images: images
+                    images: images,
+                    batchNumber: 1,
+                    totalBatches: 1
                 })
             });
             
-            console.log('Response status:', response.status);
-            
             if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Error response:', errorText);
-                
-                let errorMessage = `Server error: ${response.status}`;
-                try {
-                    const errorData = JSON.parse(errorText);
-                    errorMessage = errorData.error || errorMessage;
-                } catch(e) {
-                    // If not JSON, use status text
-                    errorMessage = response.statusText || errorMessage;
-                }
-                throw new Error(errorMessage);
+                throw new Error(`Server error: ${response.status}`);
             }
             
-            // Download the ZIP file
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -1795,29 +1795,143 @@ This is an automated message. Please do not reply.`;
             window.URL.revokeObjectURL(url);
             
             Swal.close();
-            
-            showToast(`✅ Downloaded ZIP with ${images.length} images!`, "success");
+            showToast(`✅ Downloaded ${images.length} images successfully!`, "success");
             
         } catch (error) {
             Swal.close();
-            console.error('ZIP download failed:', error);
+            console.error('Download failed:', error);
+            showToast(`Failed: ${error.message}`, "error");
+        }
+    }
+
+    // Download multiple batches with progress
+    async function downloadMultipleBatches(date, allImages, batchSize) {
+        const totalBatches = Math.ceil(allImages.length / batchSize);
+        let completedBatches = 0;
+        let failedBatches = 0;
+        
+        // Create progress dialog
+        Swal.fire({
+            title: 'Downloading Images',
+            html: `
+                <div style="text-align: left;">
+                    <p>Downloading <strong>${allImages.length}</strong> images in <strong>${totalBatches}</strong> batches</p>
+                    <div style="margin: 20px 0;">
+                        <div style="background: #e0e0e0; border-radius: 10px; overflow: hidden;">
+                            <div id="batchProgressBar" style="width: 0%; background: #4caf50; height: 30px; line-height: 30px; color: white; text-align: center; transition: width 0.3s;">0%</div>
+                        </div>
+                    </div>
+                    <div id="batchStatus" style="color: #666; font-size: 14px;">Preparing batch 1 of ${totalBatches}...</div>
+                </div>
+            `,
+            allowOutsideClick: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                // Start downloading batches
+                downloadNextBatch(0);
+            }
+        });
+        
+        async function downloadNextBatch(batchIndex) {
+            if (batchIndex >= totalBatches) {
+                // All batches complete
+                const statusMsg = failedBatches === 0 
+                    ? `✅ Successfully downloaded all ${completedBatches} batches!`
+                    : `⚠️ Downloaded ${completedBatches} batches, ${failedBatches} failed.`;
+                
+                Swal.fire({
+                    title: failedBatches === 0 ? 'Download Complete!' : 'Partial Download Complete',
+                    html: statusMsg,
+                    icon: failedBatches === 0 ? 'success' : 'warning',
+                    confirmButtonText: 'OK'
+                });
+                return;
+            }
             
-            // Show detailed error to user
-            await Swal.fire({
-                title: 'Download Failed',
-                html: `<div style="text-align: left;">
-                    <p><strong>Error:</strong> ${error.message}</p>
-                    <p><strong>Possible causes:</strong></p>
-                    <ul>
-                        <li>Backend endpoint not available (502 error)</li>
-                        <li>Network connectivity issue</li>
-                        <li>Server timeout or overload</li>
-                    </ul>
-                    <p>Please try downloading images one by one instead.</p>
-                </div>`,
-                icon: 'error',
-                confirmButtonText: 'OK'
-            });
+            // Calculate batch range
+            const start = batchIndex * batchSize;
+            const end = Math.min(start + batchSize, allImages.length);
+            const batchImages = allImages.slice(start, end);
+            const batchNumber = batchIndex + 1;
+            
+            // Update progress UI
+            const percentComplete = Math.round((batchIndex / totalBatches) * 100);
+            const progressBar = document.getElementById('batchProgressBar');
+            const statusDiv = document.getElementById('batchStatus');
+            
+            if (progressBar) {
+                progressBar.style.width = `${percentComplete}%`;
+                progressBar.textContent = `${percentComplete}%`;
+            }
+            
+            if (statusDiv) {
+                statusDiv.innerHTML = `📦 Downloading batch ${batchNumber}/${totalBatches} (${batchImages.length} images)...<br>Please wait, do not close this window.`;
+            }
+            
+            try {
+                const response = await fetch('/api/schedules/download-batch-zip', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        date: date,
+                        images: batchImages,
+                        batchNumber: batchNumber,
+                        totalBatches: totalBatches
+                    })
+                });
+                
+                if (response.ok) {
+                    // Download the ZIP file
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${date}_batch_${batchNumber}_of_${totalBatches}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    completedBatches++;
+                    
+                    if (statusDiv) {
+                        statusDiv.innerHTML = `✅ Completed batch ${batchNumber}/${totalBatches}<br>Starting next batch in 2 seconds...`;
+                    }
+                    
+                    // Wait 2 seconds before next batch to avoid overwhelming
+                    await new Promise(r => setTimeout(r, 2000));
+                    
+                    // Update progress for next batch
+                    const newPercent = Math.round(((batchIndex + 1) / totalBatches) * 100);
+                    if (progressBar) {
+                        progressBar.style.width = `${newPercent}%`;
+                        progressBar.textContent = `${newPercent}%`;
+                    }
+                    
+                    // Download next batch
+                    await downloadNextBatch(batchIndex + 1);
+                } else {
+                    failedBatches++;
+                    if (statusDiv) {
+                        statusDiv.innerHTML = `❌ Batch ${batchNumber} failed. Continuing with next batch...`;
+                    }
+                    await new Promise(r => setTimeout(r, 1000));
+                    await downloadNextBatch(batchIndex + 1);
+                }
+                
+            } catch (error) {
+                console.error(`Batch ${batchNumber} failed:`, error);
+                failedBatches++;
+                
+                const statusDiv = document.getElementById('batchStatus');
+                if (statusDiv) {
+                    statusDiv.innerHTML = `❌ Batch ${batchNumber} failed: ${error.message}<br>Continuing with next batch...`;
+                }
+                
+                await new Promise(r => setTimeout(r, 1000));
+                await downloadNextBatch(batchIndex + 1);
+            }
         }
     }
 
