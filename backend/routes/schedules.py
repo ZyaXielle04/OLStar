@@ -15,6 +15,9 @@ from webdriver_manager.chrome import ChromeDriverManager
 from functools import wraps
 import logging
 import requests
+import zipfile
+import re
+from io import BytesIO
 
 schedules_api = Blueprint("schedules_api", __name__)
 
@@ -412,13 +415,13 @@ def get_schedule_history(transaction_id):
         return jsonify({"error": str(e)}), 500
 
 # =======================
-# STRUCTURED DOWNLOAD FOR SCHEDULES
+# STRUCTURED DOWNLOAD FOR SCHEDULES - PRODUCTION FIX
 # =======================
 @admin_required
 @schedules_api.route("/api/schedules/download-structured", methods=["POST"])
 @rate_limit
 def download_structured():
-    """Download image to structured folder: /YYYY-MM-DD/HHMM/filename"""
+    """Download image and send directly to client browser"""
     try:
         data = request.json
         image_url = data.get('imageUrl')
@@ -429,37 +432,74 @@ def download_structured():
         image_type = data.get('imageType')
         
         if not image_url:
-            return jsonify({'error': 'No image URL provided'}), 400
+            return jsonify({'success': False, 'error': 'No image URL provided'}), 400
         
-        # Create full path: ~/Downloads/OlStar_Schedules/2026-04-12/0030/
-        full_path = os.path.join(DOWNLOAD_BASE_PATH, date_folder, time_folder)
-        os.makedirs(full_path, exist_ok=True)
+        # Fix Cloudinary URLs
+        if 'cloudinary.com' in image_url:
+            # URL encode spaces
+            image_url = image_url.replace(' ', '%20')
         
-        # Full file path
-        filepath = os.path.join(full_path, filename)
-        
-        # Download image from Cloudinary
-        response = requests.get(image_url, stream=True)
-        
-        if response.status_code == 200:
-            with open(filepath, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
-            # Log the download
-            logging.info(f"Downloaded {image_type} image for schedule {schedule_id} to {filepath}")
-            
-            return jsonify({
-                'success': True,
-                'message': f'Image saved to {filepath}',
-                'filepath': filepath
-            }), 200
+        # Determine content type
+        if image_url.lower().endswith('.png'):
+            content_type = 'image/png'
+            extension = 'png'
+        elif image_url.lower().endswith('.gif'):
+            content_type = 'image/gif'
+            extension = 'gif'
         else:
-            return jsonify({'error': 'Failed to download image from Cloudinary'}), 500
-            
+            content_type = 'image/jpeg'
+            extension = 'jpg'
+        
+        # Ensure filename has correct extension
+        if not filename.endswith(f'.{extension}'):
+            base = filename.rsplit('.', 1)[0] if '.' in filename else filename
+            filename = f"{base}.{extension}"
+        
+        # Create folder path for download name (browser will handle folder structure)
+        folder_path = f"{date_folder}/{time_folder}"
+        full_download_name = f"{folder_path}/{filename}"
+        
+        # Download image from Cloudinary with proper headers
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        # Use timeout to avoid hanging
+        response = requests.get(image_url, headers=headers, timeout=30)
+        
+        if response.status_code != 200:
+            logging.error(f"Failed to download image: HTTP {response.status_code} from {image_url}")
+            return jsonify({
+                'success': False, 
+                'error': f'Failed to download image: HTTP {response.status_code}'
+            }), 400
+        
+        # Get the image data
+        image_data = response.content
+        
+        # Create BytesIO object
+        from io import BytesIO
+        image_io = BytesIO(image_data)
+        
+        # Send file directly to client browser
+        return send_file(
+            image_io,
+            mimetype=content_type,
+            as_attachment=True,
+            download_name=full_download_name
+        )
+        
+    except requests.exceptions.Timeout:
+        logging.error("Download timeout")
+        return jsonify({'success': False, 'error': 'Download timeout - please try again'}), 408
+    except requests.exceptions.ConnectionError as e:
+        logging.error(f"Connection error: {str(e)}")
+        return jsonify({'success': False, 'error': 'Cannot connect to image server'}), 500
     except Exception as e:
         logging.error(f"Error in download_structured: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # =======================
 # FLIGHTAWARE SCREENSHOT (Legacy - kept for compatibility)
@@ -528,3 +568,71 @@ def clear_schedule_cache():
     """Manually clear the schedule cache"""
     schedule_cache.clear()
     return jsonify({"message": "Schedule cache cleared successfully"})
+
+@admin_required
+@schedules_api.route("/api/schedules/download-all-zip", methods=["POST"])
+@rate_limit
+def download_all_as_zip():
+    """Download all images for a date as a ZIP file with folder structure"""
+    try:
+        data = request.json
+        date = data.get('date')
+        images = data.get('images', [])
+        
+        if not images:
+            return jsonify({'success': False, 'error': 'No images to download'}), 400
+        
+        # Create ZIP in memory
+        zip_buffer = BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for img in images:
+                # Format time folder (e.g., "1430")
+                time_str = img['schedule'].get('time', '')
+                time_folder = format_time_for_folder(time_str)
+                
+                # Create filename and path
+                filename = f"{img['type']}_{img['schedule']['transactionID']}.jpg"
+                folder_path = f"{date}/{time_folder}"
+                full_path = f"{folder_path}/{filename}"
+                
+                # Download and add to ZIP
+                response = requests.get(img['url'], timeout=30, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                })
+                
+                if response.status_code == 200:
+                    zip_file.writestr(full_path, response.content)
+        
+        zip_buffer.seek(0)
+        
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f"{date}_schedules_images.zip"
+        )
+        
+    except Exception as e:
+        logging.error(f"Error creating ZIP: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def format_time_for_folder(time_str):
+    """Convert time like '10:30 AM' to '1030' for folder name"""
+    if not time_str:
+        return "0000"
+    
+    match = re.match(r'(\d{1,2}):(\d{2})\s*(AM|PM)', time_str, re.I)
+    if not match:
+        return time_str.replace(':', '').replace(' ', '')[:4]
+    
+    hour = int(match[1])
+    minute = match[2]
+    period = match[3].upper()
+    
+    if period == 'PM' and hour != 12:
+        hour += 12
+    if period == 'AM' and hour == 12:
+        hour = 0
+    
+    return f"{hour:02d}{minute}"
