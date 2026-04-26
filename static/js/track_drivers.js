@@ -5,6 +5,7 @@ window.lastValidSpeed = {};
 window.lastUpdateTime = {};
 window.addressCache = new Map();
 window.activeInfoWindow = null;
+window.map = null; // Make map globally available
 
 // OPTIMIZATION: ONLY REQUEST UPDATES EVERY 10 SECONDS
 // Instead of listening to real-time updates, we poll on a schedule
@@ -13,7 +14,6 @@ window.pollingDelay = 10000; // Get updates every 10 seconds (90% reduction)
 window.lastDataHash = {}; // Track data changes to avoid unnecessary updates
 window.isUpdating = false;
 
-let map;
 const origin = { lat: 14.5222733, lng: 120.999655 };
 let trafficLayer;
 let trafficVisible = false;
@@ -35,7 +35,7 @@ window.initMap = function() {
   }
 
   try {
-    map = new google.maps.Map(mapContainer, {
+    window.map = new google.maps.Map(mapContainer, {
       center: origin,
       zoom: 18,
       mapTypeId: "roadmap",
@@ -48,7 +48,7 @@ window.initMap = function() {
     // Origin Marker (Garage)
     new google.maps.Marker({
       position: origin,
-      map: map,
+      map: window.map,
       title: "My Garage",
       icon: {
         url: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
@@ -66,7 +66,7 @@ window.initMap = function() {
       newBtn.addEventListener("click", () => {
         trafficVisible = !trafficVisible;
         if (trafficVisible) {
-          trafficLayer.setMap(map);
+          trafficLayer.setMap(window.map);
           newBtn.innerText = "Hide Traffic";
           newBtn.classList.add("active");
         } else {
@@ -77,15 +77,15 @@ window.initMap = function() {
       });
     }
 
-    map.addListener("click", () => {
+    window.map.addListener("click", () => {
       closeActiveInfoWindow();
     });
 
     // START POLLING INSTEAD OF REAL-TIME LISTENERS
     startPollingDrivers();
     
-    google.maps.event.trigger(map, 'resize');
-    console.log("Map initialized successfully - Polling mode active (every ${window.pollingDelay/1000} seconds)");
+    google.maps.event.trigger(window.map, 'resize');
+    console.log(`Map initialized successfully - Polling mode active (every ${window.pollingDelay/1000} seconds)`);
     
   } catch (error) {
     console.error("Error initializing map:", error);
@@ -217,6 +217,11 @@ async function fetchDriversData() {
       console.log("No changes detected, skipping UI update");
     }
     
+    // Trigger panel update
+    if (window.updateDriverPanelList) {
+      setTimeout(window.updateDriverPanelList, 100);
+    }
+    
   } catch (error) {
     console.error("Error fetching drivers:", error);
   } finally {
@@ -261,7 +266,7 @@ function processDriverUpdate(uid, user, loc, timestamp) {
 function createDriverMarker(uid, user, loc, speedKmh) {
   const marker = new google.maps.Marker({
     position: { lat: loc.latitude, lng: loc.longitude },
-    map: map,
+    map: window.map,
     title: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Driver",
     animation: google.maps.Animation.DROP
   });
@@ -291,7 +296,7 @@ function createDriverMarker(uid, user, loc, speedKmh) {
         currentData.speedKmh, 
         address
       ));
-      infoWindow.open(map, marker);
+      infoWindow.open(window.map, marker);
       window.activeInfoWindow = infoWindow;
     });
   });
@@ -561,7 +566,7 @@ document.addEventListener('DOMContentLoaded', function() {
   console.log("DOM loaded, checking for map...");
   
   if (document.getElementById('map')) {
-    if (typeof google !== 'undefined' && google.maps && typeof window.initMap === 'function' && !map) {
+    if (typeof google !== 'undefined' && google.maps && typeof window.initMap === 'function' && !window.map) {
       console.log("Google Maps loaded, calling initMap from DOMContentLoaded");
       window.initMap();
     }
@@ -570,14 +575,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Handle page visibility changes
 document.addEventListener('visibilitychange', function() {
-  if (!document.hidden && map) {
-    google.maps.event.trigger(map, 'resize');
+  if (!document.hidden && window.map) {
+    google.maps.event.trigger(window.map, 'resize');
   }
 });
 
 window.addEventListener('resize', function() {
-  if (map) {
-    google.maps.event.trigger(map, 'resize');
+  if (window.map) {
+    google.maps.event.trigger(window.map, 'resize');
   }
 });
 

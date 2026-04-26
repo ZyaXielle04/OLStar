@@ -15,6 +15,23 @@
   
   <!-- Custom CSS -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/demo.css') }}">
+  
+  <style>
+    /* Additional styles for driver list clickability */
+    .driver-item {
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .driver-item:hover {
+      background-color: rgba(66, 133, 244, 0.1);
+      transform: translateX(4px);
+    }
+    
+    .driver-item:active {
+      background-color: rgba(66, 133, 244, 0.2);
+    }
+  </style>
 </head>
 <body>
 
@@ -26,10 +43,7 @@
       <div class="logo-icon">
         <i class="fas fa-chart-line"></i>
       </div>
-      <h1>OLStar <span style="font-weight:400">| Driver Tracking Demo</span></h1>
-      <span class="demo-badge">
-        <i class="fas fa-flask"></i> DEMO MODE
-      </span>
+      <h1>OLStar <span style="font-weight:400">| Driver Tracking</span></h1>
     </div>
     <div class="header-controls">
       <button id="btnToggleTraffic" class="control-btn">
@@ -82,10 +96,10 @@
   defer
 ></script>
 
-<!-- Page Logic - Your existing track_drivers.js -->
+<!-- Page Logic - track_drivers.js -->
 <script src="{{ url_for('static', filename='js/track_drivers.js') }}"></script>
 
-<!-- Additional UI helpers for panel and toast -->
+<!-- Driver Panel UI Logic -->
 <script>
   // Panel collapse/expand functionality
   const driverPanel = document.getElementById('driverPanel');
@@ -111,7 +125,7 @@
   }
   
   // Toast function for demo
-  function showToastMessage(message) {
+  window.showToastMessage = function(message) {
     const toast = document.getElementById('toast');
     const toastMessage = document.getElementById('toastMessage');
     if (toast && toastMessage) {
@@ -121,10 +135,77 @@
         toast.classList.remove('show');
       }, 2000);
     }
-  }
+  };
+  
+  // Function to focus on a driver and open info window
+  window.focusOnDriver = function(uid, driverName) {
+    console.log("Focusing on driver:", uid, driverName);
+    const marker = window.driverMarkers[uid];
+    
+    if (!marker) {
+      console.error("Marker not found for uid:", uid);
+      window.showToastMessage(`⚠️ Driver ${driverName} location not available`);
+      return;
+    }
+    
+    if (!window.map) {
+      console.error("Map not found");
+      return;
+    }
+    
+    try {
+      const position = marker.getPosition();
+      if (!position) {
+        console.error("Marker has no position");
+        return;
+      }
+      
+      // Center and zoom map
+      window.map.setCenter(position);
+      window.map.setZoom(17);
+      
+      // Close any open info window
+      if (window.activeInfoWindow) {
+        window.activeInfoWindow.close();
+        window.activeInfoWindow = null;
+      }
+      
+      // Get the marker's data
+      const currentData = marker.userData;
+      if (!currentData || !currentData.loc) {
+        console.error("No location data for marker");
+        return;
+      }
+      
+      // Create and open info window
+      window.reverseGeocode(currentData.loc.latitude, currentData.loc.longitude).then(address => {
+        const infoContent = window.createInfoWindowContent(
+          currentData.user, 
+          currentData.loc, 
+          currentData.speedKmh, 
+          address
+        );
+        
+        marker.infoWindow.setContent(infoContent);
+        marker.infoWindow.open(window.map, marker);
+        window.activeInfoWindow = marker.infoWindow;
+        window.showToastMessage(`📍 Focused on ${driverName}`);
+      }).catch(error => {
+        console.error("Geocoding error:", error);
+        // Fallback - open without address
+        marker.infoWindow.open(window.map, marker);
+        window.activeInfoWindow = marker.infoWindow;
+        window.showToastMessage(`📍 Focused on ${driverName}`);
+      });
+      
+    } catch (error) {
+      console.error("Error focusing on driver:", error);
+      window.showToastMessage(`⚠️ Error focusing on ${driverName}`);
+    }
+  };
   
   // Update driver panel with data from markers
-  function updateDriverPanelList() {
+  window.updateDriverPanelList = function() {
     const driverListEl = document.getElementById('driverList');
     const driverCountEl = document.getElementById('driverCount');
     
@@ -149,6 +230,7 @@
       return;
     }
     
+    // Create the HTML
     driverListEl.innerHTML = drivers.map(driver => {
       let speedClass = 'speed-normal';
       let speedText = 'Normal';
@@ -163,7 +245,7 @@
       const initials = driver.name.split(' ').map(n => n[0]).join('').toUpperCase();
       
       return `
-        <div class="driver-item" data-uid="${driver.uid}">
+        <div class="driver-item" data-uid="${driver.uid}" data-driver-name="${driver.name}" style="cursor: pointer;">
           <div class="driver-avatar">${initials || 'D'}</div>
           <div class="driver-info">
             <div class="driver-name">${driver.name}</div>
@@ -179,43 +261,44 @@
       `;
     }).join('');
     
-    // Add click handlers to focus on driver
-    document.querySelectorAll('.driver-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const uid = item.dataset.uid;
-        const marker = window.driverMarkers[uid];
-        if (marker && window.map) {
-          const position = marker.getPosition();
-          window.map.setCenter(position);
-          window.map.setZoom(17);
-          google.maps.event.trigger(marker, 'click');
-          showToastMessage(`Focusing on ${item.querySelector('.driver-name').textContent}`);
-        }
+    // Add click handlers - DIRECT event binding
+    const driverItems = document.querySelectorAll('.driver-item');
+    console.log(`Found ${driverItems.length} driver items to attach handlers to`);
+    
+    driverItems.forEach(item => {
+      // Remove any existing click listeners by replacing with a clone
+      const newItem = item.cloneNode(true);
+      item.parentNode.replaceChild(newItem, item);
+      
+      // Add fresh click listener
+      newItem.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const uid = this.getAttribute('data-uid');
+        const driverName = this.getAttribute('data-driver-name');
+        console.log("Driver item clicked:", uid, driverName);
+        window.focusOnDriver(uid, driverName);
       });
     });
-  }
+  };
   
-  // Override processDriverUpdate to update panel
-  const originalProcessDriverUpdate = window.processDriverUpdate;
-  if (originalProcessDriverUpdate) {
-    window.processDriverUpdate = function(uid, user, loc, timestamp) {
-      originalProcessDriverUpdate(uid, user, loc, timestamp);
-      setTimeout(updateDriverPanelList, 50);
-    };
-  }
+  // Initial panel update and set interval
+  setTimeout(() => {
+    window.updateDriverPanelList();
+    console.log("Initial driver panel update complete");
+  }, 2000);
   
-  // Override createDriverMarker to update panel
-  const originalCreateDriverMarker = window.createDriverMarker;
-  if (originalCreateDriverMarker) {
-    window.createDriverMarker = function(uid, user, loc, speedKmh) {
-      originalCreateDriverMarker(uid, user, loc, speedKmh);
-      setTimeout(updateDriverPanelList, 100);
-    };
-  }
+  // Update panel every 3 seconds
+  setInterval(window.updateDriverPanelList, 3000);
   
-  // Initial panel update
-  setTimeout(updateDriverPanelList, 2000);
-  setInterval(updateDriverPanelList, 5000);
+  // Also update when visibility changes
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+      setTimeout(window.updateDriverPanelList, 500);
+    }
+  });
+  
+  console.log("Driver panel UI initialized");
 </script>
 
 </body>
