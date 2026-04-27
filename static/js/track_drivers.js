@@ -12,6 +12,10 @@ window.groups = {};
 window.activeGroupId = null;
 window.nextGroupId = 1;
 window.openGroupPanelId = null;
+window.groupsModified = false;
+window.cachedDriverList = [];
+window.uiUpdateTimer = null;
+window.isRendering = false;
 
 // SweetAlert Toast configuration
 const Toast = Swal.mixin({
@@ -93,6 +97,7 @@ async function saveGroupsToFirebase() {
         }
         
         console.log('Groups saved to Firebase');
+        window.groupsModified = true;
     } catch (error) {
         console.error('Error saving to Firebase:', error);
         saveGroupsToStorage();
@@ -107,11 +112,13 @@ async function loadGroupsFromFirebase() {
         
         const data = await response.json();
         
-        if (data.groups) {
+        if (data && data.groups && typeof data.groups === 'object') {
             window.groups = {};
             for (const [id, group] of Object.entries(data.groups)) {
+                if (!group) continue;
+                
                 window.groups[id] = {
-                    name: group.name,
+                    name: group.name || 'Unnamed Group',
                     driverIds: new Set(group.driverIds || []),
                     visible: group.visible !== false
                 };
@@ -120,12 +127,18 @@ async function loadGroupsFromFirebase() {
             const ids = Object.keys(window.groups).map(Number).filter(id => !isNaN(id));
             if (ids.length > 0) {
                 window.nextGroupId = Math.max(...ids) + 1;
+            } else {
+                window.nextGroupId = 1;
             }
             
-            console.log('Groups loaded from Firebase');
+            console.log('Groups loaded from Firebase', Object.keys(window.groups).length);
             return true;
+        } else {
+            console.log('No groups found in Firebase, initializing empty');
+            window.groups = {};
+            window.nextGroupId = 1;
+            return false;
         }
-        return false;
     } catch (error) {
         console.error('Error loading from Firebase:', error);
         return false;
@@ -167,6 +180,7 @@ function saveGroupsToStorage() {
     }
     localStorage.setItem('fleetGroups', JSON.stringify(toSave));
     console.log('Groups saved to localStorage');
+    window.groupsModified = true;
 }
 
 // ==================== GROUP CRUD OPERATIONS ====================
@@ -250,7 +264,6 @@ window.updateGroupName = async function(groupId, newName) {
     const group = window.groups[groupId];
     if (!group || !newName.trim()) return false;
     
-    const oldName = group.name;
     group.name = newName.trim();
     await saveGroupsToFirebase();
     renderGroupsList();
@@ -370,12 +383,16 @@ window.toggleDriverPanel = function(groupId, event) {
         }
         driversPanel.style.display = 'flex';
         window.openGroupPanelId = groupId;
-        populateDriverCheckboxes(groupId);
+        
+        // Use setTimeout to ensure the panel is visible before populating
+        setTimeout(() => {
+            populateDriverCheckboxes(groupId, true);
+        }, 10);
     }
 };
 
-// Populate driver checkboxes
-function populateDriverCheckboxes(groupId) {
+// Optimized populate driver checkboxes - NO FLICKER
+window.populateDriverCheckboxes = function(groupId, preserveScroll = true) {
     const groupElement = document.querySelector(`.group-item[data-group-id="${groupId}"]`);
     if (!groupElement) return;
     
@@ -385,6 +402,13 @@ function populateDriverCheckboxes(groupId) {
     const group = window.groups[groupId];
     if (!group) return;
     
+    // Save scroll position
+    let savedScrollTop = 0;
+    if (preserveScroll) {
+        savedScrollTop = checkboxesContainer.scrollTop;
+    }
+    
+    // Build driver list
     const drivers = [];
     for (const [uid, marker] of Object.entries(window.driverMarkers)) {
         if (marker && marker.userData) {
@@ -393,18 +417,77 @@ function populateDriverCheckboxes(groupId) {
         }
     }
     
+    drivers.sort((a, b) => a.name.localeCompare(b.name));
+    
     if (drivers.length === 0) {
         checkboxesContainer.innerHTML = '<div style="padding: 0.5rem; text-align: center; color: #9aa0a6;">No drivers available</div>';
         return;
     }
     
-    checkboxesContainer.innerHTML = drivers.map(driver => `
-        <label class="driver-checkbox-label">
-            <input type="checkbox" class="driver-checkbox" value="${driver.uid}" ${group.driverIds.has(driver.uid) ? 'checked' : ''}>
-            <span>${escapeHtml(driver.name)}</span>
-        </label>
-    `).join('');
-}
+    // Use requestAnimationFrame to batch DOM updates
+    requestAnimationFrame(() => {
+        // Disable transitions temporarily
+        const style = document.createElement('style');
+        style.id = 'temp-no-transition';
+        style.textContent = `.driver-checkbox-label { transition: none !important; animation: none !important; }`;
+        document.head.appendChild(style);
+        
+        const existingLabels = checkboxesContainer.querySelectorAll('.driver-checkbox-label');
+        
+        if (existingLabels.length === drivers.length) {
+            // Update in place
+            existingLabels.forEach((label, index) => {
+                const checkbox = label.querySelector('.driver-checkbox');
+                const span = label.querySelector('span');
+                const driver = drivers[index];
+                
+                if (checkbox && span) {
+                    if (span.textContent !== driver.name) {
+                        span.textContent = driver.name;
+                    }
+                    const shouldBeChecked = group.driverIds.has(driver.uid);
+                    if (checkbox.checked !== shouldBeChecked) {
+                        checkbox.checked = shouldBeChecked;
+                    }
+                }
+            });
+        } else {
+            // Rebuild if necessary
+            const fragment = document.createDocumentFragment();
+            drivers.forEach(driver => {
+                const label = document.createElement('label');
+                label.className = 'driver-checkbox-label';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'driver-checkbox';
+                checkbox.value = driver.uid;
+                checkbox.checked = group.driverIds.has(driver.uid);
+                
+                const span = document.createElement('span');
+                span.textContent = driver.name;
+                
+                label.appendChild(checkbox);
+                label.appendChild(span);
+                fragment.appendChild(label);
+            });
+            
+            checkboxesContainer.innerHTML = '';
+            checkboxesContainer.appendChild(fragment);
+        }
+        
+        // Restore scroll position
+        if (preserveScroll && savedScrollTop) {
+            checkboxesContainer.scrollTop = savedScrollTop;
+        }
+        
+        // Remove temp style after next frame
+        requestAnimationFrame(() => {
+            const tempStyle = document.getElementById('temp-no-transition');
+            if (tempStyle) tempStyle.remove();
+        });
+    });
+};
 
 // Save driver assignments for a group
 window.saveDriverAssignments = async function(groupId, event) {
@@ -426,11 +509,17 @@ window.saveDriverAssignments = async function(groupId, event) {
         
         await saveGroupsToFirebase();
         
+        // Close the panel
         driversPanel.style.display = 'none';
         window.openGroupPanelId = null;
         
-        renderGroupsList();
+        // Update only the driver count for this group instead of full rebuild
+        const countElement = groupElement.querySelector('.group-count');
+        if (countElement) {
+            countElement.textContent = `(${group.driverIds.size})`;
+        }
         
+        // Update the group item active styling if needed
         if (window.activeGroupId === groupId) {
             applyGroupFilter();
         }
@@ -459,10 +548,16 @@ window.cancelDriverAssignments = function(groupId, event) {
     }
 };
 
-// Render the groups list in UI
+// Optimized render groups list - NO FLICKER
 function renderGroupsList() {
+    if (window.isRendering) return;
+    window.isRendering = true;
+    
     const groupsContainer = document.getElementById('groupsList');
-    if (!groupsContainer) return;
+    if (!groupsContainer) {
+        window.isRendering = false;
+        return;
+    }
     
     const groupsArray = Object.entries(window.groups);
     
@@ -474,109 +569,149 @@ function renderGroupsList() {
                 <span style="font-size: 0.75rem;">Click + to create a group</span>
             </div>
         `;
+        window.groupsModified = false;
+        window.isRendering = false;
         return;
     }
     
-    groupsContainer.innerHTML = groupsArray.map(([groupId, group]) => {
-        const isActive = window.activeGroupId === groupId;
-        const driverCount = group.driverIds.size;
-        const isPanelOpen = window.openGroupPanelId === groupId;
-        
-        return `
-            <div class="group-item ${isActive ? 'active-group' : ''}" data-group-id="${groupId}">
-                <div class="group-header">
-                    <div class="group-info" data-group-id="${groupId}">
-                        <i class="fas fa-layer-group" style="font-size: 0.9rem; width: 20px; color: ${isActive ? '#1a73e8' : '#5f6368'}"></i>
-                        <span class="group-name">${escapeHtml(group.name)}</span>
-                        <span class="group-count">(${driverCount})</span>
+    // Check if we need to rebuild or just update counts
+    const existingGroups = groupsContainer.querySelectorAll('.group-item');
+    if (existingGroups.length === groupsArray.length && !window.groupsModified) {
+        // Just update counts and names without full rebuild
+        groupsArray.forEach(([groupId, group]) => {
+            const groupElement = groupsContainer.querySelector(`.group-item[data-group-id="${groupId}"]`);
+            if (groupElement) {
+                const countElement = groupElement.querySelector('.group-count');
+                if (countElement && countElement.textContent !== `(${group.driverIds.size})`) {
+                    countElement.textContent = `(${group.driverIds.size})`;
+                }
+                const nameElement = groupElement.querySelector('.group-name');
+                if (nameElement && nameElement.textContent !== group.name) {
+                    nameElement.textContent = group.name;
+                }
+                const iconElement = groupElement.querySelector('.group-info i');
+                if (iconElement && window.activeGroupId === groupId) {
+                    iconElement.style.color = '#1a73e8';
+                    groupElement.classList.add('active-group');
+                } else if (iconElement) {
+                    iconElement.style.color = '#5f6368';
+                    groupElement.classList.remove('active-group');
+                }
+            }
+        });
+        window.groupsModified = false;
+        window.isRendering = false;
+        return;
+    }
+    
+    // Full rebuild only when necessary
+    requestAnimationFrame(() => {
+        const html = groupsArray.map(([groupId, group]) => {
+            const isActive = window.activeGroupId === groupId;
+            const driverCount = group.driverIds.size;
+            const isPanelOpen = window.openGroupPanelId === groupId;
+            
+            return `
+                <div class="group-item ${isActive ? 'active-group' : ''}" data-group-id="${groupId}">
+                    <div class="group-header">
+                        <div class="group-info" data-group-id="${groupId}">
+                            <i class="fas fa-layer-group" style="font-size: 0.9rem; width: 20px; color: ${isActive ? '#1a73e8' : '#5f6368'}"></i>
+                            <span class="group-name">${escapeHtml(group.name)}</span>
+                            <span class="group-count">(${driverCount})</span>
+                        </div>
+                        <div class="group-actions">
+                            <button class="group-action-btn group-assign" data-group-id="${groupId}" data-action="assign" title="Assign Drivers">
+                                <i class="fas fa-user-plus"></i>
+                            </button>
+                            <button class="group-action-btn group-edit" data-group-id="${groupId}" data-action="edit" title="Edit Group Name">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <button class="group-action-btn group-delete" data-group-id="${groupId}" data-action="delete" title="Delete Group">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div class="group-actions">
-                        <button class="group-action-btn group-assign" data-group-id="${groupId}" data-action="assign" title="Assign Drivers">
-                            <i class="fas fa-user-plus"></i>
-                        </button>
-                        <button class="group-action-btn group-edit" data-group-id="${groupId}" data-action="edit" title="Edit Group Name">
-                            <i class="fas fa-pen"></i>
-                        </button>
-                        <button class="group-action-btn group-delete" data-group-id="${groupId}" data-action="delete" title="Delete Group">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="group-drivers" data-group-id="${groupId}" style="display: ${isPanelOpen ? 'flex' : 'none'};">
-                    <div class="driver-selector">
-                        <div class="driver-selector-header">
-                            <span><i class="fas fa-users"></i> Assign Drivers to "${escapeHtml(group.name)}"</span>
-                            <div class="selector-actions">
-                                <button class="done-assigning-btn" data-group-id="${groupId}"><i class="fas fa-check"></i> Save</button>
-                                <button class="cancel-assigning-btn" data-group-id="${groupId}"><i class="fas fa-times"></i> Cancel</button>
+                    <div class="group-drivers" data-group-id="${groupId}" style="display: ${isPanelOpen ? 'flex' : 'none'};">
+                        <div class="driver-selector">
+                            <div class="driver-selector-header">
+                                <span><i class="fas fa-users"></i> Assign Drivers to "${escapeHtml(group.name)}"</span>
+                                <div class="selector-actions">
+                                    <button class="done-assigning-btn" data-group-id="${groupId}"><i class="fas fa-check"></i> Save</button>
+                                    <button class="cancel-assigning-btn" data-group-id="${groupId}"><i class="fas fa-times"></i> Cancel</button>
+                                </div>
+                            </div>
+                            <div class="driver-checkboxes" data-group-id="${groupId}">
+                                <div style="padding: 0.5rem; text-align: center; color: #9aa0a6;">Loading drivers...</div>
                             </div>
                         </div>
-                        <div class="driver-checkboxes" data-group-id="${groupId}">
-                            <div style="padding: 0.5rem; text-align: center; color: #9aa0a6;">Loading drivers...</div>
-                        </div>
                     </div>
                 </div>
-            </div>
-        `;
-    }).join('');
-    
-    // Attach event listeners
-    groupsArray.forEach(([groupId]) => {
-        const groupElement = document.querySelector(`.group-item[data-group-id="${groupId}"]`);
-        if (!groupElement) return;
+            `;
+        }).join('');
         
-        const groupInfo = groupElement.querySelector('.group-info');
-        if (groupInfo) {
-            groupInfo.addEventListener('click', (e) => {
-                e.stopPropagation();
-                window.selectGroup(groupId);
-            });
+        groupsContainer.innerHTML = html;
+        
+        // Attach event listeners
+        groupsArray.forEach(([groupId]) => {
+            const groupElement = document.querySelector(`.group-item[data-group-id="${groupId}"]`);
+            if (!groupElement) return;
+            
+            const groupInfo = groupElement.querySelector('.group-info');
+            if (groupInfo) {
+                groupInfo.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.selectGroup(groupId);
+                });
+            }
+            
+            const assignBtn = groupElement.querySelector('.group-assign');
+            if (assignBtn) {
+                assignBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.toggleDriverPanel(groupId, e);
+                });
+            }
+            
+            const editBtn = groupElement.querySelector('.group-edit');
+            if (editBtn) {
+                editBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showEditGroupDialog(groupId);
+                });
+            }
+            
+            const deleteBtn = groupElement.querySelector('.group-delete');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.deleteGroup(groupId);
+                });
+            }
+            
+            const saveBtn = groupElement.querySelector('.done-assigning-btn');
+            if (saveBtn) {
+                saveBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.saveDriverAssignments(groupId, e);
+                });
+            }
+            
+            const cancelBtn = groupElement.querySelector('.cancel-assigning-btn');
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.cancelDriverAssignments(groupId, e);
+                });
+            }
+        });
+        
+        if (window.openGroupPanelId && window.groups[window.openGroupPanelId]) {
+            populateDriverCheckboxes(window.openGroupPanelId);
         }
         
-        const assignBtn = groupElement.querySelector('.group-assign');
-        if (assignBtn) {
-            assignBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                window.toggleDriverPanel(groupId, e);
-            });
-        }
-        
-        const editBtn = groupElement.querySelector('.group-edit');
-        if (editBtn) {
-            editBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                showEditGroupDialog(groupId);
-            });
-        }
-        
-        const deleteBtn = groupElement.querySelector('.group-delete');
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                window.deleteGroup(groupId);
-            });
-        }
-        
-        const saveBtn = groupElement.querySelector('.done-assigning-btn');
-        if (saveBtn) {
-            saveBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                window.saveDriverAssignments(groupId, e);
-            });
-        }
-        
-        const cancelBtn = groupElement.querySelector('.cancel-assigning-btn');
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                window.cancelDriverAssignments(groupId, e);
-            });
-        }
+        window.groupsModified = false;
+        window.isRendering = false;
     });
-    
-    if (window.openGroupPanelId && window.groups[window.openGroupPanelId]) {
-        populateDriverCheckboxes(window.openGroupPanelId);
-    }
 }
 
 // Show edit group dialog with SweetAlert
@@ -650,7 +785,6 @@ async function initializeGroups() {
     
     const createGroupBtn = document.getElementById('createGroupBtn');
     if (createGroupBtn) {
-        // Remove existing listeners to avoid duplicates
         const newBtn = createGroupBtn.cloneNode(true);
         createGroupBtn.parentNode.replaceChild(newBtn, createGroupBtn);
         newBtn.addEventListener('click', showCreateGroupDialog);
@@ -671,7 +805,6 @@ let trafficVisible = false;
 function initializeMap() {
     console.log("initializeMap called");
     
-    // Check if Google Maps is blocked
     if (isGoogleMapsBlocked()) {
         console.error("Google Maps is blocked");
         showGoogleMapsBlockedError();
@@ -695,7 +828,6 @@ function initializeMap() {
             zoomControl: true
         });
 
-        // Origin Marker (Garage)
         new google.maps.Marker({
             position: origin,
             map: window.map,
@@ -706,7 +838,6 @@ function initializeMap() {
             }
         });
 
-        // Initialize Traffic Layer
         trafficLayer = new google.maps.TrafficLayer();
 
         const trafficBtn = document.getElementById("btnToggleTraffic");
@@ -764,16 +895,12 @@ function initializeMap() {
     }
 }
 
-// Expose initMap for Google Maps callback
 window.initMap = function() {
-    // Small delay to ensure everything is ready
     setTimeout(initializeMap, 100);
 };
 
-// Also try to initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
     console.log("DOM ready, checking for map...");
-    // If Google Maps is already loaded, initialize immediately
     if (!isGoogleMapsBlocked() && document.getElementById('map')) {
         setTimeout(initializeMap, 100);
     }
@@ -821,9 +948,34 @@ function startPollingDrivers() {
     console.log(`Polling started - fetching driver data every ${window.pollingDelay} ms`);
 }
 
+function hasDriverListChanged() {
+    const currentDrivers = [];
+    for (const [uid, marker] of Object.entries(window.driverMarkers)) {
+        if (marker && marker.userData) {
+            const name = `${marker.userData.user.firstName || ''} ${marker.userData.user.lastName || ''}`.trim() || 'Driver';
+            currentDrivers.push({ uid, name });
+        }
+    }
+    currentDrivers.sort((a, b) => a.name.localeCompare(b.name));
+    
+    if (currentDrivers.length !== window.cachedDriverList.length) {
+        window.cachedDriverList = currentDrivers;
+        return true;
+    }
+    
+    for (let i = 0; i < currentDrivers.length; i++) {
+        if (currentDrivers[i].uid !== window.cachedDriverList[i].uid ||
+            currentDrivers[i].name !== window.cachedDriverList[i].name) {
+            window.cachedDriverList = currentDrivers;
+            return true;
+        }
+    }
+    
+    return false;
+}
+
 async function fetchDriversData() {
     if (window.isUpdating) return;
-
     window.isUpdating = true;
 
     try {
@@ -854,6 +1006,7 @@ async function fetchDriversData() {
         }
 
         const now = Date.now();
+        let markersChanged = false;
 
         for (const [uid, user] of Object.entries(users)) {
             const loc = user.currentLocation;
@@ -869,6 +1022,7 @@ async function fetchDriversData() {
                     delete window.lastValidSpeed[uid];
                     delete window.lastUpdateTime[uid];
                     delete window.lastDataHash[uid];
+                    markersChanged = true;
                 }
                 continue;
             }
@@ -883,6 +1037,7 @@ async function fetchDriversData() {
             if (window.lastDataHash[uid] !== locationHash) {
                 window.lastDataHash[uid] = locationHash;
                 processDriverUpdate(uid, user, loc, now);
+                markersChanged = true;
             }
         }
         
@@ -899,6 +1054,7 @@ async function fetchDriversData() {
                 delete window.lastValidSpeed[uid];
                 delete window.lastUpdateTime[uid];
                 delete window.lastDataHash[uid];
+                markersChanged = true;
             }
         });
         
@@ -906,12 +1062,67 @@ async function fetchDriversData() {
             setTimeout(window.updateDriverPanelList, 50);
         }
         
-        if (window.openGroupPanelId) {
-            populateDriverCheckboxes(window.openGroupPanelId);
-            updateGroupCountsOnly();
-        } else {
-            renderGroupsList();
+        // Debounced UI updates to prevent flicker
+        if (window.uiUpdateTimer) {
+            clearTimeout(window.uiUpdateTimer);
         }
+        
+        window.uiUpdateTimer = setTimeout(() => {
+            if (markersChanged || window.groupsModified) {
+                if (window.openGroupPanelId && window.groups[window.openGroupPanelId]) {
+                    const currentSelections = {};
+                    let savedScrollTop = 0;
+                    const currentGroupElement = document.querySelector(`.group-item[data-group-id="${window.openGroupPanelId}"]`);
+                    if (currentGroupElement) {
+                        const currentCheckboxes = currentGroupElement.querySelectorAll('.driver-checkbox');
+                        currentCheckboxes.forEach(cb => {
+                            currentSelections[cb.value] = cb.checked;
+                        });
+                        const currentContainer = currentGroupElement.querySelector('.driver-checkboxes');
+                        if (currentContainer) {
+                            savedScrollTop = currentContainer.scrollTop;
+                        }
+                    }
+                    
+                    renderGroupsList();
+                    
+                    setTimeout(() => {
+                        const groupElement = document.querySelector(`.group-item[data-group-id="${window.openGroupPanelId}"]`);
+                        if (groupElement) {
+                            const driversPanel = groupElement.querySelector('.group-drivers');
+                            if (driversPanel) {
+                                driversPanel.style.display = 'flex';
+                                const checkboxesContainer = groupElement.querySelector('.driver-checkboxes');
+                                if (checkboxesContainer && savedScrollTop) {
+                                    checkboxesContainer.scrollTop = savedScrollTop;
+                                }
+                                const checkboxes = groupElement.querySelectorAll('.driver-checkbox');
+                                checkboxes.forEach(cb => {
+                                    if (currentSelections.hasOwnProperty(cb.value)) {
+                                        cb.checked = currentSelections[cb.value];
+                                    }
+                                });
+                                const group = window.groups[window.openGroupPanelId];
+                                if (group) {
+                                    const selectedValues = Array.from(checkboxes)
+                                        .filter(cb => cb.checked)
+                                        .map(cb => cb.value);
+                                    group.driverIds.clear();
+                                    selectedValues.forEach(id => group.driverIds.add(id));
+                                }
+                            }
+                        }
+                    }, 50);
+                } else {
+                    renderGroupsList();
+                }
+            } else if (window.openGroupPanelId && window.groups[window.openGroupPanelId]) {
+                if (hasDriverListChanged()) {
+                    populateDriverCheckboxes(window.openGroupPanelId, true);
+                }
+                updateGroupCountsOnly();
+            }
+        }, 100);
         
     } catch (error) {
         console.error("Error fetching drivers:", error);
@@ -923,7 +1134,7 @@ async function fetchDriversData() {
 function updateGroupCountsOnly() {
     for (const [groupId, group] of Object.entries(window.groups)) {
         const countElement = document.querySelector(`.group-item[data-group-id="${groupId}"] .group-count`);
-        if (countElement) {
+        if (countElement && countElement.textContent !== `(${group.driverIds.size})`) {
             countElement.textContent = `(${group.driverIds.size})`;
         }
     }
@@ -1290,6 +1501,9 @@ window.addEventListener('beforeunload', () => {
     if (window.pollingInterval) {
         clearInterval(window.pollingInterval);
     }
+    if (window.uiUpdateTimer) {
+        clearTimeout(window.uiUpdateTimer);
+    }
 });
 
 window.showToastMessage = function(message) {
@@ -1368,6 +1582,7 @@ window.focusOnDriver = function(uid, driverName) {
     }
 };
 
+// Replace the updateDriverPanelList function with this optimized version
 window.updateDriverPanelList = function() {
     const driverListEl = document.getElementById('driverList');
     const driverCountEl = document.getElementById('driverCount');
@@ -1398,7 +1613,126 @@ window.updateDriverPanelList = function() {
         return;
     }
     
-    driverListEl.innerHTML = drivers.map(driver => {
+    // Get existing driver items
+    const existingItems = driverListEl.querySelectorAll('.driver-item');
+    
+    // If number of drivers changed, rebuild entirely
+    if (existingItems.length !== drivers.length) {
+        rebuildDriverList(drivers);
+        return;
+    }
+    
+    // Otherwise, update existing items in place
+    let needsRebuild = false;
+    
+    drivers.forEach((driver, index) => {
+        const existingItem = existingItems[index];
+        if (!existingItem) {
+            needsRebuild = true;
+            return;
+        }
+        
+        const existingUid = existingItem.getAttribute('data-uid');
+        if (existingUid !== driver.uid) {
+            needsRebuild = true;
+            return;
+        }
+        
+        // Update driver name
+        const nameElement = existingItem.querySelector('.driver-name');
+        if (nameElement) {
+            const nameWithoutBadge = nameElement.childNodes[0]?.nodeValue || '';
+            const newNameText = escapeHtml(driver.name);
+            if (nameWithoutBadge.trim() !== newNameText) {
+                // Update the text node while preserving the stale badge
+                const staleBadgeSpan = nameElement.querySelector('span');
+                if (staleBadgeSpan) {
+                    nameElement.innerHTML = `${escapeHtml(driver.name)} ${staleBadgeSpan.outerHTML}`;
+                } else {
+                    nameElement.innerHTML = escapeHtml(driver.name);
+                }
+            }
+        }
+        
+        // Update stale class and badge
+        const staleBadgeSpan = existingItem.querySelector('.driver-name span');
+        if (driver.isStale) {
+            existingItem.classList.add('stale-driver');
+            if (!staleBadgeSpan) {
+                const nameElement2 = existingItem.querySelector('.driver-name');
+                if (nameElement2) {
+                    nameElement2.innerHTML = `${escapeHtml(driver.name)} <span style="margin-left: 6px; font-size: 0.6rem; color: #ff9800;">⏳ stale</span>`;
+                }
+            }
+        } else {
+            existingItem.classList.remove('stale-driver');
+            if (staleBadgeSpan) {
+                const nameElement2 = existingItem.querySelector('.driver-name');
+                if (nameElement2) {
+                    nameElement2.innerHTML = escapeHtml(driver.name);
+                }
+            }
+        }
+        
+        // Update speed badge
+        const speedBadge = existingItem.querySelector('.speed-badge');
+        if (speedBadge) {
+            let speedClass = 'speed-normal';
+            let speedText = 'Normal';
+            let speedIcon = '🚗';
+            
+            if (driver.speed > 60) {
+                speedClass = 'speed-speeding';
+                speedText = 'Speeding!';
+                speedIcon = '🚨';
+            } else if (driver.speed > 30) {
+                speedClass = 'speed-moderate';
+                speedText = 'Moderate';
+                speedIcon = '⚡';
+            } else if (driver.speed === 0) {
+                speedIcon = '🅿️';
+            }
+            
+            const currentSpeedText = speedBadge.textContent;
+            const newSpeedText = `${speedIcon} ${driver.speed.toFixed(1)} km/h`;
+            const currentClass = speedBadge.className;
+            const newClass = `speed-badge ${speedClass}`;
+            
+            if (currentSpeedText !== newSpeedText) {
+                speedBadge.innerHTML = `${speedIcon} ${driver.speed.toFixed(1)} km/h`;
+            }
+            if (currentClass !== newClass) {
+                speedBadge.className = newClass;
+            }
+            
+            // Update speed text span
+            const speedTextSpan = existingItem.querySelector('.driver-speed span:last-child');
+            if (speedTextSpan && speedTextSpan.textContent !== speedText) {
+                speedTextSpan.textContent = speedText;
+            }
+        }
+        
+        // Update avatar initials
+        const avatar = existingItem.querySelector('.driver-avatar');
+        if (avatar) {
+            const initials = driver.name.split(' ').map(n => n[0]).join('').toUpperCase();
+            if (avatar.textContent !== (initials || 'D')) {
+                avatar.textContent = initials || 'D';
+            }
+        }
+    });
+    
+    if (needsRebuild) {
+        rebuildDriverList(drivers);
+    }
+};
+
+// New helper function to rebuild driver list
+function rebuildDriverList(drivers) {
+    const driverListEl = document.getElementById('driverList');
+    if (!driverListEl) return;
+    
+    const html = drivers.map(driver => {
         let speedClass = 'speed-normal';
         let speedText = 'Normal';
         let speedIcon = '🚗';
@@ -1436,12 +1770,12 @@ window.updateDriverPanelList = function() {
         `;
     }).join('');
     
+    driverListEl.innerHTML = html;
+    
+    // Attach click events
     const driverItems = document.querySelectorAll('.driver-item');
     driverItems.forEach(item => {
-        const newItem = item.cloneNode(true);
-        item.parentNode.replaceChild(newItem, item);
-        
-        newItem.addEventListener('click', function(e) {
+        item.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
             const uid = this.getAttribute('data-uid');
@@ -1449,7 +1783,7 @@ window.updateDriverPanelList = function() {
             window.focusOnDriver(uid, driverName);
         });
     });
-};
+}
 
 const driverPanel = document.getElementById('driverPanel');
 const panelHeader = document.getElementById('panelHeader');
@@ -1468,4 +1802,4 @@ window.gm_authFailure = function() {
     showGoogleMapsBlockedError();
 };
 
-console.log("TRACK DRIVERS SCRIPT LOADED - With SweetAlert2 & Firebase Cloud Storage");
+console.log("TRACK DRIVERS SCRIPT LOADED - With SweetAlert2 & Firebase Cloud Storage - OPTIMIZED");

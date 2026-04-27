@@ -557,3 +557,26 @@
         font-size: 0.75rem;
     }
 }
+
+/* Add to your CSS to prevent hover flicker */
+.driver-item {
+    transition: background-color 0.2s ease;
+}
+
+.driver-item:hover {
+    background-color: #f8f9fa;
+    transform: none; /* Prevent any transform that might cause repaint */
+}
+
+.driver-avatar, .driver-info, .driver-speed, .speed-badge {
+    transition: none; /* Disable all transitions on child elements */
+}
+
+/* Prevent any layout shifts during updates */
+.driver-list {
+    contain: layout style paint;
+}
+
+.driver-item {
+    contain: layout style;
+}
