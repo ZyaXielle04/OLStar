@@ -107,6 +107,7 @@ try:
     from routes.gl_admin_salary import gl_admin_salary_bp
     from routes.gl_drivers_salary import gl_drivers_salary_bp
     from routes.gl_overview import gl_overview_bp
+    from routes.track_drivers import groups_bp
 except ModuleNotFoundError:
     raise RuntimeError("routes modules not found in /routes")
 
@@ -132,6 +133,7 @@ app.register_blueprint(maintenance_transactions_bp)
 app.register_blueprint(gl_admin_salary_bp)
 app.register_blueprint(gl_drivers_salary_bp)
 app.register_blueprint(gl_overview_bp)
+app.register_blueprint(groups_bp)
 
 # -----------------------
 # Inject CSRF token cookie for JS

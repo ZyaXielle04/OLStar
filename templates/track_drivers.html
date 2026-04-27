@@ -13,6 +13,10 @@
   
   <!-- Font Awesome for icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+  <!-- SweetAlert2 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
 
@@ -33,7 +37,7 @@
       <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
       <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link active">Track Drivers</a>
       
-      <!-- Transactions Dropdown using details/summary (works without JS) -->
+      <!-- Transactions Dropdown -->
       <details class="nav-group" open>
           <summary>
               <span>Expenses</span>
@@ -81,17 +85,51 @@
   <main class="content">
     <header class="page-header">
       <button id="btnToggleSidebar" class="hamburger">☰</button>
-      <h1>Track Drivers</h1>
-      <p class="subtitle">Monitor your drivers in real time on the map below.</p>
+      <div class="header-text">
+        <h1>Track Drivers</h1>
+        <p class="subtitle">Monitor your drivers in real time on the map below.</p>
+      </div>
       <button id="btnToggleTraffic" class="traffic-btn">Show Traffic</button>
     </header>
 
-    <!-- Map Section -->
-    <section class="map-section">
-      <div id="map" style="width:100%; height:100%;"></div>
-    </section>
+    <!-- Map Section with Left Groups Panel -->
+    <div class="map-section">
+      <!-- Groups Panel - Left Side -->
+      <div class="groups-panel expanded" id="groupsPanel">
+          <div class="groups-header" id="groupsHeader">
+              <h3><i class="fas fa-users"></i> Driver Groups</h3>
+              <button id="createGroupBtn" class="create-group-btn" title="Create New Group">
+                  <i class="fas fa-plus"></i>
+              </button>
+              <i class="fas fa-chevron-up"></i>
+          </div>
+          <div id="groupsList" class="groups-list">
+              <div class="loading-placeholder">Loading groups...</div>
+          </div>
+      </div>
+
+      <!-- Map Container -->
+      <div id="map"></div>
+
+      <!-- Driver Status Panel - Bottom Right of Map -->
+      <div class="driver-panel expanded" id="driverPanel">
+        <div class="panel-header" id="panelHeader">
+          <h3><i class="fas fa-truck-moving"></i> All Drivers</h3>
+          <span class="driver-count" id="driverCount">0</span>
+          <i class="fas fa-chevron-up" id="panelToggleIcon"></i>
+        </div>
+        <div class="driver-list" id="driverList">
+          <div class="loading-placeholder">Loading drivers...</div>
+        </div>
+      </div>
+    </div>
   </main>
 
+</div>
+
+<!-- Toast Notification -->
+<div id="toast" class="toast">
+  <span id="toastMessage"></span>
 </div>
 
 <!-- ================= SCRIPTS ================= -->
@@ -111,7 +149,7 @@
   defer
 ></script>
 
-<!-- Page Logic -->
+<!-- Page Logic - track_drivers.js (with full group management) -->
 <script src="{{ url_for('static', filename='js/track_drivers.js') }}"></script>
 
 </body>

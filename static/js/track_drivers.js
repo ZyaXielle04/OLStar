@@ -11,9 +11,128 @@ window.map = null;
 window.groups = {};
 window.activeGroupId = null;
 window.nextGroupId = 1;
-window.openGroupPanelId = null; // Track which group's driver selection panel is open
+window.openGroupPanelId = null;
 
-// Load groups from localStorage
+// SweetAlert Toast configuration
+const Toast = Swal.mixin({
+    toast: true,
+    position: 'bottom-end',
+    showConfirmButton: false,
+    timer: 3000,
+    timerProgressBar: true,
+    didOpen: (toast) => {
+        toast.addEventListener('mouseenter', Swal.stopTimer);
+        toast.addEventListener('mouseleave', Swal.resumeTimer);
+    }
+});
+
+// Check if Google Maps is blocked
+function isGoogleMapsBlocked() {
+    return typeof google === 'undefined' || !google.maps || !google.maps.Map;
+}
+
+// Show error when Google Maps is blocked
+function showGoogleMapsBlockedError() {
+    const mapContainer = document.getElementById("map");
+    if (mapContainer) {
+        mapContainer.innerHTML = `
+            <div style="display: flex; justify-content: center; align-items: center; height: 100%; background: #f8f9fa; border-radius: 8px; padding: 20px; text-align: center; flex-direction: column;">
+                <i class="fas fa-map-marked-alt" style="font-size: 48px; color: #dc3545; margin-bottom: 15px;"></i>
+                <h3 style="color: #dc3545; margin-bottom: 10px;">⚠️ Google Maps Blocked</h3>
+                <p style="color: #6c757d; margin-bottom: 15px;">Google Maps API is being blocked by an ad blocker or browser extension.</p>
+                <div style="background: #f1f3f4; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: left;">
+                    <p style="margin: 5px 0;"><strong>Solutions:</strong></p>
+                    <ul style="margin: 5px 0 0 20px; color: #5f6368;">
+                        <li>Disable ad blocker for this site</li>
+                        <li>Disable privacy extensions (uBlock Origin, Privacy Badger, etc.)</li>
+                        <li>Try in incognito/private mode</li>
+                        <li>Use a different browser</li>
+                    </ul>
+                </div>
+                <button onclick="location.reload()" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    <i class="fas fa-sync-alt"></i> Retry
+                </button>
+            </div>
+        `;
+    }
+}
+
+// Groups Panel collapsible
+const groupsPanel = document.getElementById('groupsPanel');
+const groupsHeader = document.getElementById('groupsHeader');
+
+if (groupsHeader) {
+    groupsHeader.addEventListener('click', (e) => {
+        if (e.target.closest('.create-group-btn')) return;
+        groupsPanel.classList.toggle('expanded');
+    });
+}
+
+// ==================== FIREBASE STORAGE FUNCTIONS ====================
+
+// Save groups to Firebase
+async function saveGroupsToFirebase() {
+    try {
+        const toSave = {};
+        for (const [id, group] of Object.entries(window.groups)) {
+            toSave[id] = {
+                name: group.name,
+                driverIds: Array.from(group.driverIds),
+                visible: group.visible
+            };
+        }
+        
+        const response = await fetch('/api/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groups: toSave })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to save to Firebase');
+        }
+        
+        console.log('Groups saved to Firebase');
+    } catch (error) {
+        console.error('Error saving to Firebase:', error);
+        saveGroupsToStorage();
+    }
+}
+
+// Load groups from Firebase
+async function loadGroupsFromFirebase() {
+    try {
+        const response = await fetch('/api/groups');
+        if (!response.ok) throw new Error('Failed to load from Firebase');
+        
+        const data = await response.json();
+        
+        if (data.groups) {
+            window.groups = {};
+            for (const [id, group] of Object.entries(data.groups)) {
+                window.groups[id] = {
+                    name: group.name,
+                    driverIds: new Set(group.driverIds || []),
+                    visible: group.visible !== false
+                };
+            }
+            
+            const ids = Object.keys(window.groups).map(Number).filter(id => !isNaN(id));
+            if (ids.length > 0) {
+                window.nextGroupId = Math.max(...ids) + 1;
+            }
+            
+            console.log('Groups loaded from Firebase');
+            return true;
+        }
+        return false;
+    } catch (error) {
+        console.error('Error loading from Firebase:', error);
+        return false;
+    }
+}
+
+// Fallback: Load groups from localStorage
 function loadGroupsFromStorage() {
     const saved = localStorage.getItem('fleetGroups');
     if (saved) {
@@ -31,11 +150,12 @@ function loadGroupsFromStorage() {
             if (ids.length > 0) {
                 window.nextGroupId = Math.max(...ids) + 1;
             }
+            console.log('Groups loaded from localStorage');
         } catch(e) { console.warn("Failed to parse groups", e); }
     }
 }
 
-// Save groups to localStorage
+// Fallback: Save groups to localStorage
 function saveGroupsToStorage() {
     const toSave = {};
     for (const [id, group] of Object.entries(window.groups)) {
@@ -46,12 +166,20 @@ function saveGroupsToStorage() {
         };
     }
     localStorage.setItem('fleetGroups', JSON.stringify(toSave));
+    console.log('Groups saved to localStorage');
 }
 
+// ==================== GROUP CRUD OPERATIONS ====================
+
 // Create a new group
-window.createGroup = function(groupName, selectedDriverIds = []) {
+window.createGroup = async function(groupName, selectedDriverIds = []) {
     if (!groupName || groupName.trim() === '') {
-        showToastMessage('Please enter a group name');
+        Toast.fire({
+            icon: 'error',
+            title: 'Please enter a group name',
+            background: '#fff',
+            color: '#333'
+        });
         return null;
     }
     
@@ -62,54 +190,113 @@ window.createGroup = function(groupName, selectedDriverIds = []) {
         visible: true
     };
     
-    saveGroupsToStorage();
+    await saveGroupsToFirebase();
     renderGroupsList();
-    showToastMessage(`Group "${groupName}" created`);
+    
+    Toast.fire({
+        icon: 'success',
+        title: `Group "${groupName}" created successfully!`,
+        background: '#fff',
+        color: '#333'
+    });
+    
     return groupId;
 };
 
 // Delete a group
-window.deleteGroup = function(groupId) {
+window.deleteGroup = async function(groupId) {
     if (!window.groups[groupId]) return;
     
     const groupName = window.groups[groupId].name;
-    delete window.groups[groupId];
     
-    if (window.activeGroupId === groupId) {
-        window.activeGroupId = null;
+    const result = await Swal.fire({
+        title: 'Delete Group?',
+        html: `Are you sure you want to delete "<strong>${escapeHtml(groupName)}</strong>"?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Yes, delete it!',
+        cancelButtonText: 'Cancel',
+        background: '#fff'
+    });
+    
+    if (result.isConfirmed) {
+        delete window.groups[groupId];
+        
+        if (window.activeGroupId === groupId) {
+            window.activeGroupId = null;
+        }
+        
+        if (window.openGroupPanelId === groupId) {
+            window.openGroupPanelId = null;
+        }
+        
+        await saveGroupsToFirebase();
+        renderGroupsList();
+        applyGroupFilter();
+        
+        Toast.fire({
+            icon: 'success',
+            title: `Group "${groupName}" deleted`,
+            background: '#fff',
+            color: '#333'
+        });
     }
-    
-    if (window.openGroupPanelId === groupId) {
-        window.openGroupPanelId = null;
-    }
-    
-    saveGroupsToStorage();
-    renderGroupsList();
-    applyGroupFilter();
-    showToastMessage(`Group "${groupName}" deleted`);
 };
 
 // Update group name
-window.updateGroupName = function(groupId, newName) {
+window.updateGroupName = async function(groupId, newName) {
     const group = window.groups[groupId];
     if (!group || !newName.trim()) return false;
     
+    const oldName = group.name;
     group.name = newName.trim();
-    saveGroupsToStorage();
+    await saveGroupsToFirebase();
     renderGroupsList();
+    
+    Toast.fire({
+        icon: 'success',
+        title: `Group renamed to "${group.name}"`,
+        background: '#fff',
+        color: '#333'
+    });
+    
     return true;
 };
 
 // Select a group to show only its drivers on map
 window.selectGroup = function(groupId) {
+    if (!window.map) {
+        Toast.fire({
+            icon: 'warning',
+            title: 'Map not ready',
+            text: 'Please wait for the map to load',
+            background: '#fff',
+            color: '#333'
+        });
+        return;
+    }
+    
     if (groupId === window.activeGroupId) {
         window.activeGroupId = null;
-        showToastMessage('Showing all drivers');
+        Toast.fire({
+            icon: 'info',
+            title: 'Showing all drivers',
+            background: '#fff',
+            color: '#333'
+        });
     } else {
         window.activeGroupId = groupId;
         const group = window.groups[groupId];
         if (group) {
-            showToastMessage(`Showing group: ${group.name} (${group.driverIds.size} drivers)`);
+            Toast.fire({
+                icon: 'success',
+                title: `Showing group: ${group.name}`,
+                html: `<span style="font-size: 0.9rem;">${group.driverIds.size} drivers in this group</span>`,
+                background: '#fff',
+                color: '#333'
+            });
         }
     }
     
@@ -126,6 +313,8 @@ window.selectGroup = function(groupId) {
 
 // Apply current group filter to map markers
 window.applyGroupFilter = function() {
+    if (!window.driverMarkers) return;
+    
     if (!window.activeGroupId) {
         for (const uid in window.driverMarkers) {
             if (window.driverMarkers[uid]) {
@@ -169,11 +358,9 @@ window.toggleDriverPanel = function(groupId, event) {
     if (!driversPanel) return;
     
     if (window.openGroupPanelId === groupId) {
-        // Close this panel
         driversPanel.style.display = 'none';
         window.openGroupPanelId = null;
     } else {
-        // Close any open panel first
         if (window.openGroupPanelId) {
             const prevOpenElement = document.querySelector(`.group-item[data-group-id="${window.openGroupPanelId}"]`);
             if (prevOpenElement) {
@@ -181,7 +368,6 @@ window.toggleDriverPanel = function(groupId, event) {
                 if (prevPanel) prevPanel.style.display = 'none';
             }
         }
-        // Open this panel
         driversPanel.style.display = 'flex';
         window.openGroupPanelId = groupId;
         populateDriverCheckboxes(groupId);
@@ -221,7 +407,7 @@ function populateDriverCheckboxes(groupId) {
 }
 
 // Save driver assignments for a group
-window.saveDriverAssignments = function(groupId, event) {
+window.saveDriverAssignments = async function(groupId, event) {
     if (event) event.stopPropagation();
     
     const groupElement = document.querySelector(`.group-item[data-group-id="${groupId}"]`);
@@ -237,20 +423,25 @@ window.saveDriverAssignments = function(groupId, event) {
     if (group) {
         group.driverIds.clear();
         selectedDriverIds.forEach(id => group.driverIds.add(id));
-        saveGroupsToStorage();
         
-        // Close the panel
+        await saveGroupsToFirebase();
+        
         driversPanel.style.display = 'none';
         window.openGroupPanelId = null;
         
-        // Re-render groups list to update count
         renderGroupsList();
         
-        // Reapply filter if this group is active
         if (window.activeGroupId === groupId) {
             applyGroupFilter();
         }
-        showToastMessage(`Updated drivers for "${group.name}"`);
+        
+        Toast.fire({
+            icon: 'success',
+            title: 'Drivers Updated',
+            html: `Updated drivers for "<strong>${escapeHtml(group.name)}</strong>"<br><span style="font-size: 0.85rem;">${selectedDriverIds.length} drivers assigned</span>`,
+            background: '#fff',
+            color: '#333'
+        });
     }
 };
 
@@ -268,7 +459,7 @@ window.cancelDriverAssignments = function(groupId, event) {
     }
 };
 
-// Render the groups list in UI (bottom-left)
+// Render the groups list in UI
 function renderGroupsList() {
     const groupsContainer = document.getElementById('groupsList');
     if (!groupsContainer) return;
@@ -277,8 +468,9 @@ function renderGroupsList() {
     
     if (groupsArray.length === 0) {
         groupsContainer.innerHTML = `
-            <div style="padding: 0.8rem; text-align: center; color: #9aa0a6; font-size: 0.85rem;">
-                <i class="fas fa-users-slash"></i> No groups yet<br>
+            <div style="padding: 2rem; text-align: center; color: #9aa0a6; font-size: 0.85rem;">
+                <i class="fas fa-users-slash" style="font-size: 2rem; margin-bottom: 10px; display: block;"></i>
+                No groups yet<br>
                 <span style="font-size: 0.75rem;">Click + to create a group</span>
             </div>
         `;
@@ -294,7 +486,7 @@ function renderGroupsList() {
             <div class="group-item ${isActive ? 'active-group' : ''}" data-group-id="${groupId}">
                 <div class="group-header">
                     <div class="group-info" data-group-id="${groupId}">
-                        <i class="fas fa-layer-group" style="font-size: 0.9rem; width: 20px;"></i>
+                        <i class="fas fa-layer-group" style="font-size: 0.9rem; width: 20px; color: ${isActive ? '#1a73e8' : '#5f6368'}"></i>
                         <span class="group-name">${escapeHtml(group.name)}</span>
                         <span class="group-count">(${driverCount})</span>
                     </div>
@@ -315,8 +507,8 @@ function renderGroupsList() {
                         <div class="driver-selector-header">
                             <span><i class="fas fa-users"></i> Assign Drivers to "${escapeHtml(group.name)}"</span>
                             <div class="selector-actions">
-                                <button class="done-assigning-btn" data-group-id="${groupId}">✅ Save</button>
-                                <button class="cancel-assigning-btn" data-group-id="${groupId}">✖️ Cancel</button>
+                                <button class="done-assigning-btn" data-group-id="${groupId}"><i class="fas fa-check"></i> Save</button>
+                                <button class="cancel-assigning-btn" data-group-id="${groupId}"><i class="fas fa-times"></i> Cancel</button>
                             </div>
                         </div>
                         <div class="driver-checkboxes" data-group-id="${groupId}">
@@ -333,7 +525,6 @@ function renderGroupsList() {
         const groupElement = document.querySelector(`.group-item[data-group-id="${groupId}"]`);
         if (!groupElement) return;
         
-        // Click on group info selects the group
         const groupInfo = groupElement.querySelector('.group-info');
         if (groupInfo) {
             groupInfo.addEventListener('click', (e) => {
@@ -342,7 +533,6 @@ function renderGroupsList() {
             });
         }
         
-        // Assign button - opens driver assignment panel
         const assignBtn = groupElement.querySelector('.group-assign');
         if (assignBtn) {
             assignBtn.addEventListener('click', (e) => {
@@ -351,7 +541,6 @@ function renderGroupsList() {
             });
         }
         
-        // Edit button
         const editBtn = groupElement.querySelector('.group-edit');
         if (editBtn) {
             editBtn.addEventListener('click', (e) => {
@@ -360,18 +549,14 @@ function renderGroupsList() {
             });
         }
         
-        // Delete button
         const deleteBtn = groupElement.querySelector('.group-delete');
         if (deleteBtn) {
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (confirm(`Delete group "${window.groups[groupId]?.name}"?`)) {
-                    window.deleteGroup(groupId);
-                }
+                window.deleteGroup(groupId);
             });
         }
         
-        // Save button
         const saveBtn = groupElement.querySelector('.done-assigning-btn');
         if (saveBtn) {
             saveBtn.addEventListener('click', (e) => {
@@ -380,7 +565,6 @@ function renderGroupsList() {
             });
         }
         
-        // Cancel button
         const cancelBtn = groupElement.querySelector('.cancel-assigning-btn');
         if (cancelBtn) {
             cancelBtn.addEventListener('click', (e) => {
@@ -390,26 +574,59 @@ function renderGroupsList() {
         }
     });
     
-    // If a panel is supposed to be open, populate its checkboxes
     if (window.openGroupPanelId && window.groups[window.openGroupPanelId]) {
         populateDriverCheckboxes(window.openGroupPanelId);
     }
 }
 
-function showEditGroupDialog(groupId) {
+// Show edit group dialog with SweetAlert
+async function showEditGroupDialog(groupId) {
     const group = window.groups[groupId];
     if (!group) return;
     
-    const newName = prompt('Enter new group name:', group.name);
-    if (newName && newName.trim() && newName.trim() !== group.name) {
-        window.updateGroupName(groupId, newName.trim());
+    const { value: newName } = await Swal.fire({
+        title: 'Edit Group Name',
+        input: 'text',
+        inputLabel: 'Enter new group name',
+        inputValue: group.name,
+        showCancelButton: true,
+        confirmButtonColor: '#1a73e8',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Save',
+        cancelButtonText: 'Cancel',
+        inputValidator: (value) => {
+            if (!value || !value.trim()) {
+                return 'Group name cannot be empty!';
+            }
+        }
+    });
+    
+    if (newName && newName.trim() !== group.name) {
+        await window.updateGroupName(groupId, newName.trim());
     }
 }
 
-function showCreateGroupDialog() {
-    const groupName = prompt('Enter group name:');
-    if (groupName && groupName.trim()) {
-        window.createGroup(groupName, []);
+// Show create group dialog with SweetAlert
+async function showCreateGroupDialog() {
+    const { value: groupName } = await Swal.fire({
+        title: 'Create New Group',
+        input: 'text',
+        inputLabel: 'Enter group name',
+        inputPlaceholder: 'e.g., Morning Shift, VIP Drivers, etc.',
+        showCancelButton: true,
+        confirmButtonColor: '#1a73e8',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Create',
+        cancelButtonText: 'Cancel',
+        inputValidator: (value) => {
+            if (!value || !value.trim()) {
+                return 'Group name cannot be empty!';
+            }
+        }
+    });
+    
+    if (groupName) {
+        await window.createGroup(groupName, []);
     }
 }
 
@@ -423,268 +640,21 @@ function escapeHtml(str) {
     });
 }
 
-// Insert group panel UI into the page
-function injectGroupPanelUI() {
-    if (document.getElementById('groupPanel')) return;
-    
-    const mapContainer = document.querySelector('.map-container');
-    
-    const groupPanel = document.createElement('div');
-    groupPanel.id = 'groupPanel';
-    groupPanel.className = 'group-panel';
-    groupPanel.innerHTML = `
-        <div class="group-panel-header">
-            <h3><i class="fas fa-users"></i> Driver Groups</h3>
-            <button id="createGroupBtn" class="create-group-btn" title="Create New Group">
-                <i class="fas fa-plus"></i>
-            </button>
-        </div>
-        <div id="groupsList" class="groups-list">
-            <div style="padding: 0.8rem; text-align: center; color: #9aa0a6;">Loading groups...</div>
-        </div>
-    `;
-    
-    if (mapContainer) {
-        mapContainer.appendChild(groupPanel);
-    } else {
-        document.body.appendChild(groupPanel);
+// Initialize groups
+async function initializeGroups() {
+    const loaded = await loadGroupsFromFirebase();
+    if (!loaded) {
+        loadGroupsFromStorage();
     }
-    
-    const createBtn = document.getElementById('createGroupBtn');
-    if (createBtn) {
-        createBtn.addEventListener('click', showCreateGroupDialog);
-    }
-    
-    // Add CSS for group panel
-    if (!document.getElementById('group-panel-styles')) {
-        const style = document.createElement('style');
-        style.id = 'group-panel-styles';
-        style.textContent = `
-            .group-panel {
-                position: absolute;
-                bottom: 20px;
-                left: 20px;
-                width: 320px;
-                background: white;
-                border-radius: 12px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                z-index: 1000;
-                font-family: 'Inter', sans-serif;
-                overflow: hidden;
-            }
-            
-            .group-panel-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 12px 16px;
-                background: #1a73e8;
-                color: white;
-            }
-            
-            .group-panel-header h3 {
-                margin: 0;
-                font-size: 1rem;
-                font-weight: 600;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-            
-            .create-group-btn {
-                background: rgba(255,255,255,0.2);
-                border: none;
-                color: white;
-                width: 28px;
-                height: 28px;
-                border-radius: 50%;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: background 0.2s;
-            }
-            
-            .create-group-btn:hover {
-                background: rgba(255,255,255,0.3);
-            }
-            
-            .groups-list {
-                max-height: 350px;
-                overflow-y: auto;
-                background: white;
-            }
-            
-            .group-item {
-                border-bottom: 1px solid #e8eaed;
-            }
-            
-            .group-item.active-group {
-                background: #e8f0fe;
-                border-left: 3px solid #1a73e8;
-            }
-            
-            .group-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 10px 12px;
-            }
-            
-            .group-header:hover {
-                background: #f8f9fa;
-            }
-            
-            .group-info {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                flex: 1;
-                cursor: pointer;
-            }
-            
-            .group-name {
-                font-size: 0.9rem;
-                font-weight: 500;
-                color: #202124;
-            }
-            
-            .group-count {
-                font-size: 0.75rem;
-                color: #5f6368;
-                background: #f1f3f4;
-                padding: 2px 6px;
-                border-radius: 12px;
-            }
-            
-            .group-actions {
-                display: flex;
-                gap: 4px;
-            }
-            
-            .group-action-btn {
-                background: none;
-                border: none;
-                cursor: pointer;
-                padding: 6px;
-                border-radius: 4px;
-                color: #5f6368;
-                font-size: 0.8rem;
-                transition: all 0.2s;
-            }
-            
-            .group-action-btn:hover {
-                background: #e8eaed;
-            }
-            
-            .group-delete:hover {
-                color: #dc3545;
-            }
-            
-            .group-edit:hover {
-                color: #1a73e8;
-            }
-            
-            .group-assign:hover {
-                color: #1a73e8;
-            }
-            
-            .group-drivers {
-                display: none;
-                flex-direction: column;
-                padding: 12px;
-                background: #f8f9fa;
-                border-top: 1px solid #e8eaed;
-            }
-            
-            .driver-selector-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 12px;
-                font-size: 0.85rem;
-                font-weight: 500;
-                color: #202124;
-                padding-bottom: 8px;
-                border-bottom: 1px solid #e8eaed;
-            }
-            
-            .selector-actions {
-                display: flex;
-                gap: 8px;
-            }
-            
-            .done-assigning-btn, .cancel-assigning-btn {
-                background: none;
-                border: none;
-                cursor: pointer;
-                padding: 4px 8px;
-                border-radius: 6px;
-                font-size: 0.75rem;
-                transition: all 0.2s;
-            }
-            
-            .done-assigning-btn {
-                background: #1a73e8;
-                color: white;
-            }
-            
-            .done-assigning-btn:hover {
-                background: #1557b0;
-            }
-            
-            .cancel-assigning-btn {
-                background: #e8eaed;
-                color: #5f6368;
-            }
-            
-            .cancel-assigning-btn:hover {
-                background: #dadce0;
-            }
-            
-            .driver-checkboxes {
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-                max-height: 200px;
-                overflow-y: auto;
-            }
-            
-            .driver-checkbox-label {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                font-size: 0.85rem;
-                padding: 6px 8px;
-                cursor: pointer;
-                border-radius: 6px;
-                transition: background 0.2s;
-            }
-            
-            .driver-checkbox-label:hover {
-                background: #e8eaed;
-            }
-            
-            .driver-checkbox-label input {
-                cursor: pointer;
-            }
-            
-            @media (max-width: 768px) {
-                .group-panel {
-                    width: 280px;
-                    bottom: 10px;
-                    left: 10px;
-                }
-                .groups-list {
-                    max-height: 250px;
-                }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-    
-    loadGroupsFromStorage();
     renderGroupsList();
+    
+    const createGroupBtn = document.getElementById('createGroupBtn');
+    if (createGroupBtn) {
+        // Remove existing listeners to avoid duplicates
+        const newBtn = createGroupBtn.cloneNode(true);
+        createGroupBtn.parentNode.replaceChild(newBtn, createGroupBtn);
+        newBtn.addEventListener('click', showCreateGroupDialog);
+    }
 }
 
 // POLLING EVERY 1 SECOND
@@ -697,259 +667,259 @@ const origin = { lat: 14.5222733, lng: 120.999655 };
 let trafficLayer;
 let trafficVisible = false;
 
-// ---------------- Initialize Google Map ----------------
-window.initMap = function() {
-  console.log("initMap called");
-  
-  const mapContainer = document.getElementById("map");
-  if (!mapContainer) {
-    console.error("Map container not found, retrying...");
-    setTimeout(window.initMap, 500);
-    return;
-  }
+// Initialize Google Map
+function initializeMap() {
+    console.log("initializeMap called");
+    
+    // Check if Google Maps is blocked
+    if (isGoogleMapsBlocked()) {
+        console.error("Google Maps is blocked");
+        showGoogleMapsBlockedError();
+        return;
+    }
+    
+    const mapContainer = document.getElementById("map");
+    if (!mapContainer) {
+        console.error("Map container not found");
+        setTimeout(initializeMap, 500);
+        return;
+    }
 
-  if (typeof google === 'undefined' || !google.maps) {
-    console.error("Google Maps API not loaded");
-    return;
-  }
+    try {
+        window.map = new google.maps.Map(mapContainer, {
+            center: origin,
+            zoom: 18,
+            mapTypeId: "roadmap",
+            streetViewControl: false,
+            fullscreenControl: true,
+            zoomControl: true
+        });
 
-  try {
-    window.map = new google.maps.Map(mapContainer, {
-      center: origin,
-      zoom: 18,
-      mapTypeId: "roadmap",
-      mapId: "DEMO_MAP_ID",
-      streetViewControl: false,
-      fullscreenControl: true,
-      zoomControl: true
-    });
+        // Origin Marker (Garage)
+        new google.maps.Marker({
+            position: origin,
+            map: window.map,
+            title: "My Garage",
+            icon: {
+                url: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
+                scaledSize: new google.maps.Size(32, 32)
+            }
+        });
 
-    // Origin Marker (Garage)
-    new google.maps.Marker({
-      position: origin,
-      map: window.map,
-      title: "My Garage",
-      icon: {
-        url: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
-        scaledSize: new google.maps.Size(32, 32)
-      }
-    });
+        // Initialize Traffic Layer
+        trafficLayer = new google.maps.TrafficLayer();
 
-    // Initialize Traffic Layer
-    trafficLayer = new google.maps.TrafficLayer();
-
-    const trafficBtn = document.getElementById("btnToggleTraffic");
-    if (trafficBtn) {
-      trafficBtn.replaceWith(trafficBtn.cloneNode(true));
-      const newTrafficBtn = document.getElementById("btnToggleTraffic");
-      newTrafficBtn.addEventListener("click", () => {
-        trafficVisible = !trafficVisible;
-        if (trafficVisible) {
-          trafficLayer.setMap(window.map);
-          newTrafficBtn.innerText = "Hide Traffic";
-          newTrafficBtn.classList.add("active");
-        } else {
-          trafficLayer.setMap(null);
-          newTrafficBtn.innerText = "Show Traffic";
-          newTrafficBtn.classList.remove("active");
+        const trafficBtn = document.getElementById("btnToggleTraffic");
+        if (trafficBtn) {
+            const newTrafficBtn = trafficBtn.cloneNode(true);
+            trafficBtn.parentNode.replaceChild(newTrafficBtn, trafficBtn);
+            newTrafficBtn.addEventListener("click", () => {
+                trafficVisible = !trafficVisible;
+                if (trafficVisible) {
+                    trafficLayer.setMap(window.map);
+                    newTrafficBtn.innerHTML = '<i class="fas fa-map"></i> Hide Traffic';
+                    newTrafficBtn.classList.add("active");
+                    Toast.fire({
+                        icon: 'info',
+                        title: 'Traffic layer enabled',
+                        timer: 1500
+                    });
+                } else {
+                    trafficLayer.setMap(null);
+                    newTrafficBtn.innerHTML = '<i class="fas fa-map"></i> Show Traffic';
+                    newTrafficBtn.classList.remove("active");
+                    Toast.fire({
+                        icon: 'info',
+                        title: 'Traffic layer disabled',
+                        timer: 1500
+                    });
+                }
+            });
         }
-      });
+
+        window.map.addListener("click", () => {
+            closeActiveInfoWindow();
+        });
+
+        initializeGroups();
+        startPollingDrivers();
+        
+        google.maps.event.trigger(window.map, 'resize');
+        console.log("Map initialized successfully");
+        
+        Toast.fire({
+            icon: 'success',
+            title: 'Map Loaded',
+            text: 'Tracking drivers in real-time',
+            timer: 2000
+        });
+        
+    } catch (error) {
+        console.error("Error initializing map:", error);
+        if (error.message && error.message.includes('Map is not a constructor')) {
+            showGoogleMapsBlockedError();
+        } else {
+            showMapError("Failed to initialize map. Please refresh the page.");
+        }
     }
+}
 
-    // LOGOUT BUTTON
-    const logoutBtn = document.getElementById("btnLogout");
-    if (logoutBtn) {
-      logoutBtn.addEventListener("click", () => {
-        console.log("Logout clicked - redirecting to login");
-        
-        fetch('/logout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin'
-        }).catch(err => console.warn("Logout fetch error:", err));
-        
-        localStorage.clear();
-        sessionStorage.clear();
-        
-        showToastMessage("Logging out...");
-        
-        setTimeout(() => {
-          window.location.href = "/login";
-        }, 500);
-      });
-    }
-
-    window.map.addListener("click", () => {
-      closeActiveInfoWindow();
-    });
-
-    // Inject group panel UI
-    injectGroupPanelUI();
-    
-    // START POLLING
-    startPollingDrivers();
-    
-    google.maps.event.trigger(window.map, 'resize');
-    console.log(`Map initialized successfully - Polling mode active (every ${window.pollingDelay} ms)`);
-    
-  } catch (error) {
-    console.error("Error initializing map:", error);
-    showMapError("Failed to initialize map. Please refresh the page.");
-  }
+// Expose initMap for Google Maps callback
+window.initMap = function() {
+    // Small delay to ensure everything is ready
+    setTimeout(initializeMap, 100);
 };
 
-// ---------------- Show Map Error ----------------
+// Also try to initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    console.log("DOM ready, checking for map...");
+    // If Google Maps is already loaded, initialize immediately
+    if (!isGoogleMapsBlocked() && document.getElementById('map')) {
+        setTimeout(initializeMap, 100);
+    }
+});
+
 function showMapError(message) {
-  const mapContainer = document.getElementById("map");
-  if (mapContainer) {
-    mapContainer.innerHTML = `
-      <div style="display: flex; justify-content: center; align-items: center; height: 100%; background: #f8f9fa; border-radius: 8px; padding: 20px; text-align: center;">
-        <div>
-          <p style="color: #dc3545; margin-bottom: 10px;">⚠️ ${message}</p>
-          <button onclick="location.reload()" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
-            Refresh Page
-          </button>
-        </div>
-      </div>
-    `;
-  }
+    const mapContainer = document.getElementById("map");
+    if (mapContainer) {
+        mapContainer.innerHTML = `
+            <div style="display: flex; justify-content: center; align-items: center; height: 100%; background: #f8f9fa; border-radius: 8px; padding: 20px; text-align: center; flex-direction: column;">
+                <i class="fas fa-exclamation-triangle" style="font-size: 48px; color: #dc3545; margin-bottom: 15px;"></i>
+                <p style="color: #dc3545; margin-bottom: 10px;">⚠️ ${message}</p>
+                <button onclick="location.reload()" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    <i class="fas fa-sync-alt"></i> Refresh Page
+                </button>
+            </div>
+        `;
+    }
 }
 
-// ---------------- Close Active Info Window Helper ----------------
 function closeActiveInfoWindow() {
-  if (window.activeInfoWindow) {
-    window.activeInfoWindow.close();
-    window.activeInfoWindow = null;
-  }
+    if (window.activeInfoWindow) {
+        window.activeInfoWindow.close();
+        window.activeInfoWindow = null;
+    }
 }
 
-// ---------------- START POLLING ----------------
 function startPollingDrivers() {
-  if (typeof firebase === 'undefined' || !firebase.database) {
-    console.error("Firebase not initialized, retrying...");
-    setTimeout(startPollingDrivers, 1000);
-    return;
-  }
+    if (typeof firebase === 'undefined' || !firebase.database) {
+        console.error("Firebase not initialized, retrying...");
+        setTimeout(startPollingDrivers, 1000);
+        return;
+    }
 
-  if (window.pollingInterval) {
-    clearInterval(window.pollingInterval);
-  }
+    if (window.pollingInterval) {
+        clearInterval(window.pollingInterval);
+    }
 
-  fetchDriversData();
-
-  window.pollingInterval = setInterval(() => {
     fetchDriversData();
-  }, window.pollingDelay);
 
-  console.log(`Polling started - fetching driver data every ${window.pollingDelay} ms`);
+    window.pollingInterval = setInterval(() => {
+        fetchDriversData();
+    }, window.pollingDelay);
+
+    console.log(`Polling started - fetching driver data every ${window.pollingDelay} ms`);
 }
 
-// ---------------- Fetch ALL drivers ----------------
 async function fetchDriversData() {
-  if (window.isUpdating) {
-    return;
-  }
+    if (window.isUpdating) return;
 
-  window.isUpdating = true;
+    window.isUpdating = true;
 
-  try {
-    const usersRef = firebase.database().ref("users");
-    const snapshot = await usersRef.once("value");
-    const users = snapshot.val();
-    
-    if (!users) {
-      const allUids = Object.keys(window.driverMarkers);
-      if (allUids.length > 0) {
-        allUids.forEach(uid => {
-          if (window.activeInfoWindow && window.driverMarkers[uid]?.infoWindow === window.activeInfoWindow) {
-            closeActiveInfoWindow();
-          }
-          if (window.driverMarkers[uid]) {
-            window.driverMarkers[uid].setMap(null);
-            delete window.driverMarkers[uid];
-          }
-          delete window.previousLocations[uid];
-          delete window.lastValidSpeed[uid];
-          delete window.lastUpdateTime[uid];
-          delete window.lastDataHash[uid];
+    try {
+        const usersRef = firebase.database().ref("users");
+        const snapshot = await usersRef.once("value");
+        const users = snapshot.val();
+        
+        if (!users) {
+            const allUids = Object.keys(window.driverMarkers);
+            if (allUids.length > 0) {
+                allUids.forEach(uid => {
+                    if (window.activeInfoWindow && window.driverMarkers[uid]?.infoWindow === window.activeInfoWindow) {
+                        closeActiveInfoWindow();
+                    }
+                    if (window.driverMarkers[uid]) {
+                        window.driverMarkers[uid].setMap(null);
+                        delete window.driverMarkers[uid];
+                    }
+                    delete window.previousLocations[uid];
+                    delete window.lastValidSpeed[uid];
+                    delete window.lastUpdateTime[uid];
+                    delete window.lastDataHash[uid];
+                });
+                if (window.updateDriverPanelList) setTimeout(window.updateDriverPanelList, 50);
+            }
+            window.isUpdating = false;
+            return;
+        }
+
+        const now = Date.now();
+
+        for (const [uid, user] of Object.entries(users)) {
+            const loc = user.currentLocation;
+            
+            if (!loc || loc.latitude == null || loc.longitude == null) {
+                if (window.driverMarkers[uid]) {
+                    if (window.activeInfoWindow && window.driverMarkers[uid]?.infoWindow === window.activeInfoWindow) {
+                        closeActiveInfoWindow();
+                    }
+                    window.driverMarkers[uid].setMap(null);
+                    delete window.driverMarkers[uid];
+                    delete window.previousLocations[uid];
+                    delete window.lastValidSpeed[uid];
+                    delete window.lastUpdateTime[uid];
+                    delete window.lastDataHash[uid];
+                }
+                continue;
+            }
+            
+            if (!loc.timestamp) {
+                loc.timestamp = now;
+            }
+            
+            const speedVal = user.currentSpeed || loc.speed || 0;
+            const locationHash = `${uid}_${loc.latitude.toFixed(6)}_${loc.longitude.toFixed(6)}_${loc.timestamp}_${speedVal}`;
+            
+            if (window.lastDataHash[uid] !== locationHash) {
+                window.lastDataHash[uid] = locationHash;
+                processDriverUpdate(uid, user, loc, now);
+            }
+        }
+        
+        Object.keys(window.driverMarkers).forEach(uid => {
+            if (!users[uid] || !users[uid].currentLocation) {
+                if (window.activeInfoWindow && window.driverMarkers[uid]?.infoWindow === window.activeInfoWindow) {
+                    closeActiveInfoWindow();
+                }
+                if (window.driverMarkers[uid]) {
+                    window.driverMarkers[uid].setMap(null);
+                    delete window.driverMarkers[uid];
+                }
+                delete window.previousLocations[uid];
+                delete window.lastValidSpeed[uid];
+                delete window.lastUpdateTime[uid];
+                delete window.lastDataHash[uid];
+            }
         });
-        if (window.updateDriverPanelList) setTimeout(window.updateDriverPanelList, 50);
-      }
-      window.isUpdating = false;
-      return;
-    }
-
-    const now = Date.now();
-
-    for (const [uid, user] of Object.entries(users)) {
-      const loc = user.currentLocation;
-      
-      if (!loc || loc.latitude == null || loc.longitude == null) {
-        if (window.driverMarkers[uid]) {
-          if (window.activeInfoWindow && window.driverMarkers[uid]?.infoWindow === window.activeInfoWindow) {
-            closeActiveInfoWindow();
-          }
-          window.driverMarkers[uid].setMap(null);
-          delete window.driverMarkers[uid];
-          delete window.previousLocations[uid];
-          delete window.lastValidSpeed[uid];
-          delete window.lastUpdateTime[uid];
-          delete window.lastDataHash[uid];
+        
+        if (window.updateDriverPanelList) {
+            setTimeout(window.updateDriverPanelList, 50);
         }
-        continue;
-      }
-      
-      if (!loc.timestamp) {
-        loc.timestamp = now;
-      }
-      
-      const speedVal = user.currentSpeed || loc.speed || 0;
-      const locationHash = `${uid}_${loc.latitude.toFixed(6)}_${loc.longitude.toFixed(6)}_${loc.timestamp}_${speedVal}`;
-      
-      if (window.lastDataHash[uid] !== locationHash) {
-        window.lastDataHash[uid] = locationHash;
-        processDriverUpdate(uid, user, loc, now);
-      }
-    }
-    
-    Object.keys(window.driverMarkers).forEach(uid => {
-      if (!users[uid] || !users[uid].currentLocation) {
-        if (window.activeInfoWindow && window.driverMarkers[uid]?.infoWindow === window.activeInfoWindow) {
-          closeActiveInfoWindow();
+        
+        if (window.openGroupPanelId) {
+            populateDriverCheckboxes(window.openGroupPanelId);
+            updateGroupCountsOnly();
+        } else {
+            renderGroupsList();
         }
-        if (window.driverMarkers[uid]) {
-          window.driverMarkers[uid].setMap(null);
-          delete window.driverMarkers[uid];
-        }
-        delete window.previousLocations[uid];
-        delete window.lastValidSpeed[uid];
-        delete window.lastUpdateTime[uid];
-        delete window.lastDataHash[uid];
-      }
-    });
-    
-    if (window.updateDriverPanelList) {
-      setTimeout(window.updateDriverPanelList, 50);
+        
+    } catch (error) {
+        console.error("Error fetching drivers:", error);
+    } finally {
+        window.isUpdating = false;
     }
-    
-    // Only update groups list if no panel is open, or update counts without closing panels
-    if (window.openGroupPanelId) {
-      // Just update the driver checkboxes content without re-rendering everything
-      populateDriverCheckboxes(window.openGroupPanelId);
-      // Update group counts without closing panels
-      updateGroupCountsOnly();
-    } else {
-      renderGroupsList();
-    }
-    
-  } catch (error) {
-    console.error("Error fetching drivers:", error);
-  } finally {
-    window.isUpdating = false;
-  }
 }
 
-// Update only group counts without re-rendering the entire list
 function updateGroupCountsOnly() {
     for (const [groupId, group] of Object.entries(window.groups)) {
         const countElement = document.querySelector(`.group-item[data-group-id="${groupId}"] .group-count`);
@@ -959,548 +929,543 @@ function updateGroupCountsOnly() {
     }
 }
 
-// ---------------- Process Individual Driver Update ----------------
 function processDriverUpdate(uid, user, loc, timestamp) {
-  let speedKmh = 0;
-  
-  if (user.currentSpeed !== undefined && user.currentSpeed !== null) {
-    speedKmh = user.currentSpeed;
-  } else if (loc.speed !== undefined && loc.speed !== null) {
-    speedKmh = loc.speed;
-  } else {
-    if (window.previousLocations[uid]) {
-      speedKmh = calculateSpeed(uid, loc, window.previousLocations[uid]);
+    let speedKmh = 0;
+    
+    if (user.currentSpeed !== undefined && user.currentSpeed !== null) {
+        speedKmh = user.currentSpeed;
+    } else if (loc.speed !== undefined && loc.speed !== null) {
+        speedKmh = loc.speed;
     } else {
-      window.lastValidSpeed[uid] = 0;
-      speedKmh = 0;
-    }
-  }
-  
-  speedKmh = typeof speedKmh === 'number' ? speedKmh : 0;
-  
-  window.previousLocations[uid] = {
-    latitude: loc.latitude,
-    longitude: loc.longitude,
-    timestamp: loc.timestamp || timestamp
-  };
-  
-  if (window.driverMarkers[uid]) {
-    const marker = window.driverMarkers[uid];
-    const newPosition = { lat: loc.latitude, lng: loc.longitude };
-    marker.setPosition(newPosition);
-    marker.setTitle(`${user.firstName || ""} ${user.lastName || ""}`.trim() || "Driver");
-    marker.userData = { user, loc, speedKmh, lastUpdate: loc.timestamp || timestamp };
-    
-    if (window.activeInfoWindow && marker.infoWindow === window.activeInfoWindow) {
-      updateInfoWindowContent(marker, user, loc, speedKmh);
-    }
-    
-    if (window.activeGroupId) {
-      const group = window.groups[window.activeGroupId];
-      if (group) {
-        const isInGroup = group.driverIds.has(uid);
-        marker.setVisible(group.visible && isInGroup);
-      }
-    } else {
-      marker.setVisible(true);
-    }
-  } else {
-    createDriverMarker(uid, user, loc, speedKmh, timestamp);
-  }
-}
-
-// ---------------- Create New Driver Marker ----------------
-function createDriverMarker(uid, user, loc, speedKmh, timestamp) {
-  let initialVisibility = true;
-  if (window.activeGroupId) {
-    const group = window.groups[window.activeGroupId];
-    if (group) {
-      initialVisibility = group.visible && group.driverIds.has(uid);
-    }
-  }
-  
-  const marker = new google.maps.Marker({
-    position: { lat: loc.latitude, lng: loc.longitude },
-    map: window.map,
-    title: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Driver",
-    animation: google.maps.Animation.DROP,
-    visible: initialVisibility
-  });
-  
-  const infoWindow = new google.maps.InfoWindow({
-    content: createInfoWindowContent(user, loc, speedKmh, "Loading address...")
-  });
-  
-  infoWindow.addListener("closeclick", () => {
-    if (window.activeInfoWindow === infoWindow) {
-      window.activeInfoWindow = null;
-    }
-  });
-  
-  marker.userData = { user, loc, speedKmh, lastUpdate: loc.timestamp || timestamp };
-  marker.infoWindow = infoWindow;
-  
-  marker.addListener("click", (event) => {
-    event.stop();
-    closeActiveInfoWindow();
-    
-    const currentData = marker.userData;
-    reverseGeocode(currentData.loc.latitude, currentData.loc.longitude).then(address => {
-      infoWindow.setContent(createInfoWindowContent(
-        currentData.user, 
-        currentData.loc, 
-        currentData.speedKmh, 
-        address
-      ));
-      infoWindow.open(window.map, marker);
-      window.activeInfoWindow = infoWindow;
-    });
-  });
-  
-  window.driverMarkers[uid] = marker;
-  
-  reverseGeocode(loc.latitude, loc.longitude).then(address => {
-    if (marker.infoWindow && marker.infoWindow.getContent().includes("Loading address...")) {
-      marker.infoWindow.setContent(createInfoWindowContent(user, loc, speedKmh, address));
-    }
-  });
-}
-
-// ---------------- Calculate Speed ----------------
-function calculateSpeed(uid, currentLoc, prevLoc) {
-  if (!prevLoc) {
-    window.lastValidSpeed[uid] = 0;
-    return 0;
-  }
-
-  const currentTime = currentLoc.timestamp || Date.now();
-  const prevTime = prevLoc.timestamp;
-  
-  const distanceMeters = google.maps.geometry.spherical.computeDistanceBetween(
-    new google.maps.LatLng(prevLoc.latitude, prevLoc.longitude),
-    new google.maps.LatLng(currentLoc.latitude, currentLoc.longitude)
-  );
-  
-  const timeDiffSec = (currentTime - prevTime) / 1000;
-  const MIN_TIME_DIFF = 0.5;
-  const MAX_TIME_DIFF = 30;
-  const MIN_DISTANCE = 1;
-  
-  let speedKmh = 0;
-  
-  if (timeDiffSec >= MIN_TIME_DIFF && timeDiffSec <= MAX_TIME_DIFF) {
-    if (distanceMeters >= MIN_DISTANCE) {
-      speedKmh = (distanceMeters / timeDiffSec) * 3.6;
-      
-      if (window.lastValidSpeed[uid] > 0) {
-        const maxChange = window.lastValidSpeed[uid] * 0.8;
-        if (Math.abs(speedKmh - window.lastValidSpeed[uid]) > maxChange) {
-          speedKmh = window.lastValidSpeed[uid] + (Math.sign(speedKmh - window.lastValidSpeed[uid]) * maxChange);
+        if (window.previousLocations[uid]) {
+            speedKmh = calculateSpeed(uid, loc, window.previousLocations[uid]);
+        } else {
+            window.lastValidSpeed[uid] = 0;
+            speedKmh = 0;
         }
-      }
-      
-      speedKmh = Math.min(speedKmh, 180);
-      window.lastValidSpeed[uid] = speedKmh;
-    } else {
-      if (window.lastValidSpeed[uid] > 0) {
-        speedKmh = Math.max(0, window.lastValidSpeed[uid] * 0.9);
-        if (speedKmh < 0.3) speedKmh = 0;
-        window.lastValidSpeed[uid] = speedKmh;
-      }
     }
-  } else {
-    if (window.lastUpdateTime[uid] && (currentTime - window.lastUpdateTime[uid]) > MAX_TIME_DIFF * 1000) {
-      speedKmh = 0;
-      window.lastValidSpeed[uid] = 0;
+    
+    speedKmh = typeof speedKmh === 'number' ? speedKmh : 0;
+    
+    window.previousLocations[uid] = {
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        timestamp: loc.timestamp || timestamp
+    };
+    
+    if (window.driverMarkers[uid]) {
+        const marker = window.driverMarkers[uid];
+        const newPosition = { lat: loc.latitude, lng: loc.longitude };
+        marker.setPosition(newPosition);
+        marker.setTitle(`${user.firstName || ""} ${user.lastName || ""}`.trim() || "Driver");
+        marker.userData = { user, loc, speedKmh, lastUpdate: loc.timestamp || timestamp };
+        
+        if (window.activeInfoWindow && marker.infoWindow === window.activeInfoWindow) {
+            updateInfoWindowContent(marker, user, loc, speedKmh);
+        }
+        
+        if (window.activeGroupId) {
+            const group = window.groups[window.activeGroupId];
+            if (group) {
+                const isInGroup = group.driverIds.has(uid);
+                marker.setVisible(group.visible && isInGroup);
+            }
+        } else {
+            marker.setVisible(true);
+        }
     } else {
-      speedKmh = window.lastValidSpeed[uid] || 0;
+        createDriverMarker(uid, user, loc, speedKmh, timestamp);
     }
-  }
-  
-  window.lastUpdateTime[uid] = currentTime;
-  return Math.max(0, speedKmh);
 }
 
-// ---------------- Geocoding Functions ----------------
+function createDriverMarker(uid, user, loc, speedKmh, timestamp) {
+    let initialVisibility = true;
+    if (window.activeGroupId) {
+        const group = window.groups[window.activeGroupId];
+        if (group) {
+            initialVisibility = group.visible && group.driverIds.has(uid);
+        }
+    }
+    
+    const marker = new google.maps.Marker({
+        position: { lat: loc.latitude, lng: loc.longitude },
+        map: window.map,
+        title: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Driver",
+        animation: google.maps.Animation.DROP,
+        visible: initialVisibility
+    });
+    
+    const infoWindow = new google.maps.InfoWindow({
+        content: createInfoWindowContent(user, loc, speedKmh, "Loading address...")
+    });
+    
+    infoWindow.addListener("closeclick", () => {
+        if (window.activeInfoWindow === infoWindow) {
+            window.activeInfoWindow = null;
+        }
+    });
+    
+    marker.userData = { user, loc, speedKmh, lastUpdate: loc.timestamp || timestamp };
+    marker.infoWindow = infoWindow;
+    
+    marker.addListener("click", (event) => {
+        event.stop();
+        closeActiveInfoWindow();
+        
+        const currentData = marker.userData;
+        const driverName = `${currentData.user.firstName || ''} ${currentData.user.lastName || ''}`.trim() || 'Driver';
+        
+        reverseGeocode(currentData.loc.latitude, currentData.loc.longitude).then(address => {
+            infoWindow.setContent(createInfoWindowContent(
+                currentData.user, 
+                currentData.loc, 
+                currentData.speedKmh, 
+                address
+            ));
+            infoWindow.open(window.map, marker);
+            window.activeInfoWindow = infoWindow;
+            
+            Toast.fire({
+                icon: 'info',
+                title: driverName,
+                html: `<span style="font-size: 0.85rem;">Speed: ${currentData.speedKmh.toFixed(1)} km/h</span>`,
+                timer: 1500,
+                background: '#fff',
+                color: '#333'
+            });
+        });
+    });
+    
+    window.driverMarkers[uid] = marker;
+    
+    reverseGeocode(loc.latitude, loc.longitude).then(address => {
+        if (marker.infoWindow && marker.infoWindow.getContent().includes("Loading address...")) {
+            marker.infoWindow.setContent(createInfoWindowContent(user, loc, speedKmh, address));
+        }
+    });
+}
+
+function calculateSpeed(uid, currentLoc, prevLoc) {
+    if (!prevLoc) {
+        window.lastValidSpeed[uid] = 0;
+        return 0;
+    }
+
+    const currentTime = currentLoc.timestamp || Date.now();
+    const prevTime = prevLoc.timestamp;
+    
+    const distanceMeters = google.maps.geometry.spherical.computeDistanceBetween(
+        new google.maps.LatLng(prevLoc.latitude, prevLoc.longitude),
+        new google.maps.LatLng(currentLoc.latitude, currentLoc.longitude)
+    );
+    
+    const timeDiffSec = (currentTime - prevTime) / 1000;
+    const MIN_TIME_DIFF = 0.5;
+    const MAX_TIME_DIFF = 30;
+    const MIN_DISTANCE = 1;
+    
+    let speedKmh = 0;
+    
+    if (timeDiffSec >= MIN_TIME_DIFF && timeDiffSec <= MAX_TIME_DIFF) {
+        if (distanceMeters >= MIN_DISTANCE) {
+            speedKmh = (distanceMeters / timeDiffSec) * 3.6;
+            
+            if (window.lastValidSpeed[uid] > 0) {
+                const maxChange = window.lastValidSpeed[uid] * 0.8;
+                if (Math.abs(speedKmh - window.lastValidSpeed[uid]) > maxChange) {
+                    speedKmh = window.lastValidSpeed[uid] + (Math.sign(speedKmh - window.lastValidSpeed[uid]) * maxChange);
+                }
+            }
+            
+            speedKmh = Math.min(speedKmh, 180);
+            window.lastValidSpeed[uid] = speedKmh;
+        } else {
+            if (window.lastValidSpeed[uid] > 0) {
+                speedKmh = Math.max(0, window.lastValidSpeed[uid] * 0.9);
+                if (speedKmh < 0.3) speedKmh = 0;
+                window.lastValidSpeed[uid] = speedKmh;
+            }
+        }
+    } else {
+        if (window.lastUpdateTime[uid] && (currentTime - window.lastUpdateTime[uid]) > MAX_TIME_DIFF * 1000) {
+            speedKmh = 0;
+            window.lastValidSpeed[uid] = 0;
+        } else {
+            speedKmh = window.lastValidSpeed[uid] || 0;
+        }
+    }
+    
+    window.lastUpdateTime[uid] = currentTime;
+    return Math.max(0, speedKmh);
+}
+
 async function reverseGeocode(lat, lng) {
-  const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
-  
-  if (window.addressCache.has(cacheKey)) {
-    const cached = window.addressCache.get(cacheKey);
-    if (Date.now() - cached.timestamp < 3600000) {
-      return cached.address;
+    const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+    
+    if (window.addressCache.has(cacheKey)) {
+        const cached = window.addressCache.get(cacheKey);
+        if (Date.now() - cached.timestamp < 3600000) {
+            return cached.address;
+        }
     }
-  }
 
-  try {
-    const googleAddress = await tryGoogleGeocode(lat, lng);
-    if (googleAddress) {
-      window.addressCache.set(cacheKey, {
-        address: googleAddress,
+    try {
+        const googleAddress = await tryGoogleGeocode(lat, lng);
+        if (googleAddress) {
+            window.addressCache.set(cacheKey, {
+                address: googleAddress,
+                timestamp: Date.now()
+            });
+            return googleAddress;
+        }
+    } catch (error) {
+        console.warn("Google Geocoding failed:", error);
+    }
+
+    try {
+        const osmAddress = await tryOpenStreetMapGeocode(lat, lng);
+        if (osmAddress) {
+            window.addressCache.set(cacheKey, {
+                address: osmAddress,
+                timestamp: Date.now()
+            });
+            return osmAddress;
+        }
+    } catch (error) {
+        console.warn("OpenStreetMap Geocoding failed:", error);
+    }
+
+    const approximateLocation = getApproximateLocation(lat, lng);
+    window.addressCache.set(cacheKey, {
+        address: approximateLocation,
         timestamp: Date.now()
-      });
-      return googleAddress;
-    }
-  } catch (error) {
-    console.warn("Google Geocoding failed:", error);
-  }
-
-  try {
-    const osmAddress = await tryOpenStreetMapGeocode(lat, lng);
-    if (osmAddress) {
-      window.addressCache.set(cacheKey, {
-        address: osmAddress,
-        timestamp: Date.now()
-      });
-      return osmAddress;
-    }
-  } catch (error) {
-    console.warn("OpenStreetMap Geocoding failed:", error);
-  }
-
-  const approximateLocation = getApproximateLocation(lat, lng);
-  window.addressCache.set(cacheKey, {
-    address: approximateLocation,
-    timestamp: Date.now()
-  });
-  return approximateLocation;
+    });
+    return approximateLocation;
 }
 
 async function tryGoogleGeocode(lat, lng) {
-  try {
-    const response = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyBZwE8kSgkloKvNgOEKhJUVyNS2He2NqT0`
-    );
-    const data = await response.json();
-    
-    if (data.status === "OK" && data.results.length > 0) {
-      return data.results[0].formatted_address;
+    try {
+        const response = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyBZwE8kSgkloKvNgOEKhJUVyNS2He2NqT0`
+        );
+        const data = await response.json();
+        
+        if (data.status === "OK" && data.results.length > 0) {
+            return data.results[0].formatted_address;
+        }
+        return null;
+    } catch (error) {
+        return null;
     }
-    return null;
-  } catch (error) {
-    return null;
-  }
 }
 
 async function tryOpenStreetMapGeocode(lat, lng) {
-  try {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-      {
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'FleetTrackingApp/1.0'
-        }
-      }
-    );
-    const data = await response.json();
-    return data.display_name || null;
-  } catch (error) {
-    return null;
-  }
+    try {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+            {
+                headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': 'FleetTrackingApp/1.0'
+                }
+            }
+        );
+        const data = await response.json();
+        return data.display_name || null;
+    } catch (error) {
+        return null;
+    }
 }
 
 function getApproximateLocation(lat, lng) {
-  const manilaAreas = {
-    '14.60,121.00': 'Quebec City',
-    '14.58,120.98': 'Manila',
-    '14.55,121.02': 'Makati',
-    '14.53,121.00': 'Pasay',
-    '14.56,121.05': 'Pasig',
-    '14.54,121.04': 'Taguig',
-    '14.62,121.03': 'Marikina',
-    '14.47,120.98': 'Parañaque',
-    '14.52,121.05': 'Mandaluyong'
-  };
-  
-  let nearestArea = "Metro Manila";
-  let minDistance = Infinity;
-  const radius = 0.05;
-  
-  Object.entries(manilaAreas).forEach(([coords, area]) => {
-    const [areaLat, areaLng] = coords.split(',').map(Number);
-    const distance = Math.sqrt(
-      Math.pow(lat - areaLat, 2) + 
-      Math.pow(lng - areaLng, 2)
-    );
+    const manilaAreas = {
+        '14.60,121.00': 'Quezon City',
+        '14.58,120.98': 'Manila',
+        '14.55,121.02': 'Makati',
+        '14.53,121.00': 'Pasay',
+        '14.56,121.05': 'Pasig',
+        '14.54,121.04': 'Taguig',
+        '14.62,121.03': 'Marikina',
+        '14.47,120.98': 'Parañaque',
+        '14.52,121.05': 'Mandaluyong'
+    };
     
-    if (distance < minDistance && distance < radius) {
-      minDistance = distance;
-      nearestArea = area;
+    let nearestArea = "Metro Manila";
+    let minDistance = Infinity;
+    const radius = 0.05;
+    
+    Object.entries(manilaAreas).forEach(([coords, area]) => {
+        const [areaLat, areaLng] = coords.split(',').map(Number);
+        const distance = Math.sqrt(
+            Math.pow(lat - areaLat, 2) + 
+            Math.pow(lng - areaLng, 2)
+        );
+        
+        if (distance < minDistance && distance < radius) {
+            minDistance = distance;
+            nearestArea = area;
+        }
+    });
+    
+    if (minDistance < radius) {
+        return `Near ${nearestArea}, Metro Manila`;
     }
-  });
-  
-  if (minDistance < radius) {
-    return `Near ${nearestArea}, Metro Manila`;
-  }
-  
-  return `Location at ${lat.toFixed(4)}°${lat >= 0 ? 'N' : 'S'}, ${lng.toFixed(4)}°${lng >= 0 ? 'E' : 'W'}`;
+    
+    return `Location at ${lat.toFixed(4)}°${lat >= 0 ? 'N' : 'S'}, ${lng.toFixed(4)}°${lng >= 0 ? 'E' : 'W'}`;
 }
 
 function createInfoWindowContent(user, loc, speedKmh, address) {
-  let speedColor = "#4CAF50";
-  let speedIcon = "🚗";
-  
-  if (speedKmh > 80) {
-    speedColor = "#F44336";
-    speedIcon = "🚀";
-  } else if (speedKmh > 40) {
-    speedColor = "#FF9800";
-    speedIcon = "⚡";
-  } else if (speedKmh > 0) {
-    speedIcon = "🚙";
-  } else {
-    speedIcon = "🅿️";
-  }
-  
-  const timestamp = loc.timestamp ? new Date(loc.timestamp).toLocaleString() : 'Just now';
-  
-  return `
-    <div style="min-width: 280px; max-width: 320px; padding: 15px; font-family: 'Segoe UI', Arial, sans-serif; background: white; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);">
-      <div style="font-size: 18px; font-weight: bold; margin-bottom: 12px; border-bottom: 2px solid #4285f4; padding-bottom: 8px; color: #1a73e8; display: flex; align-items: center; gap: 8px;">
-        <span style="font-size: 24px;">👤</span>
-        <span>${user.firstName || ""} ${user.lastName || ""}</span>
-      </div>
-      
-      <div style="display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-bottom: 12px;">
-        <div style="font-weight: 600; color: #5f6368;">Role:</div>
-        <div style="color: #202124;">${user.role || "driver"}</div>
-        
-        <div style="font-weight: 600; color: #5f6368;">Speed:</div>
-        <div style="color: ${speedColor}; font-weight: 600; display: flex; align-items: center; gap: 4px;">
-          <span>${speedIcon}</span>
-          <span>${speedKmh.toFixed(1)} km/h</span>
+    let speedColor = "#4CAF50";
+    let speedIcon = "🚗";
+    
+    if (speedKmh > 80) {
+        speedColor = "#F44336";
+        speedIcon = "🚀";
+    } else if (speedKmh > 40) {
+        speedColor = "#FF9800";
+        speedIcon = "⚡";
+    } else if (speedKmh > 0) {
+        speedIcon = "🚙";
+    } else {
+        speedIcon = "🅿️";
+    }
+    
+    const timestamp = loc.timestamp ? new Date(loc.timestamp).toLocaleString() : 'Just now';
+    
+    return `
+        <div style="min-width: 280px; max-width: 320px; padding: 15px; font-family: 'Segoe UI', Arial, sans-serif; background: white; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);">
+            <div style="font-size: 18px; font-weight: bold; margin-bottom: 12px; border-bottom: 2px solid #4285f4; padding-bottom: 8px; color: #1a73e8; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 24px;">👤</span>
+                <span>${escapeHtml(user.firstName || "")} ${escapeHtml(user.lastName || "")}</span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-bottom: 12px;">
+                <div style="font-weight: 600; color: #5f6368;">Role:</div>
+                <div style="color: #202124;">${escapeHtml(user.role || "driver")}</div>
+                
+                <div style="font-weight: 600; color: #5f6368;">Speed:</div>
+                <div style="color: ${speedColor}; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                    <span>${speedIcon}</span>
+                    <span>${speedKmh.toFixed(1)} km/h</span>
+                </div>
+                
+                <div style="font-weight: 600; color: #5f6368;">Status:</div>
+                <div style="color: #202124;">
+                    ${speedKmh > 0 ? '<span style="color: #4CAF50;">● Moving</span>' : '<span style="color: #9e9e9e;">● Stationary</span>'}
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 12px; background: #f8f9fa; padding: 10px; border-radius: 6px;">
+                <div style="font-weight: 600; color: #5f6368; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
+                    <span>📍</span> Location
+                </div>
+                <div style="color: #202124; word-wrap: break-word; font-size: 14px; line-height: 1.4;">
+                    ${escapeHtml(address)}
+                </div>
+                <div style="color: #5f6368; font-size: 12px; margin-top: 6px; font-family: monospace;">
+                    ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}
+                </div>
+            </div>
+            
+            <div style="color: #9aa0a6; font-size: 11px; border-top: 1px solid #e8eaed; padding-top: 8px; display: flex; align-items: center; gap: 4px;">
+                <span>🕒</span>
+                Last updated: ${timestamp}
+            </div>
         </div>
-        
-        <div style="font-weight: 600; color: #5f6368;">Status:</div>
-        <div style="color: #202124;">
-          ${speedKmh > 0 ? '<span style="color: #4CAF50;">● Moving</span>' : '<span style="color: #9e9e9e;">● Stationary</span>'}
-        </div>
-      </div>
-      
-      <div style="margin-bottom: 12px; background: #f8f9fa; padding: 10px; border-radius: 6px;">
-        <div style="font-weight: 600; color: #5f6368; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
-          <span>📍</span> Location
-        </div>
-        <div style="color: #202124; word-wrap: break-word; font-size: 14px; line-height: 1.4;">
-          ${address}
-        </div>
-        <div style="color: #5f6368; font-size: 12px; margin-top: 6px; font-family: monospace;">
-          ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}
-        </div>
-      </div>
-      
-      <div style="color: #9aa0a6; font-size: 11px; border-top: 1px solid #e8eaed; padding-top: 8px; display: flex; align-items: center; gap: 4px;">
-        <span>🕒</span>
-        Last updated: ${timestamp}
-      </div>
-    </div>
-  `;
+    `;
 }
 
 function updateInfoWindowContent(marker, user, loc, speedKmh) {
-  if (!marker.infoWindow || marker.infoWindow !== window.activeInfoWindow) return;
-  
-  reverseGeocode(loc.latitude, loc.longitude).then(address => {
-    if (window.activeInfoWindow === marker.infoWindow) {
-      marker.infoWindow.setContent(createInfoWindowContent(user, loc, speedKmh, address));
-    }
-  });
+    if (!marker.infoWindow || marker.infoWindow !== window.activeInfoWindow) return;
+    
+    reverseGeocode(loc.latitude, loc.longitude).then(address => {
+        if (window.activeInfoWindow === marker.infoWindow) {
+            marker.infoWindow.setContent(createInfoWindowContent(user, loc, speedKmh, address));
+        }
+    });
 }
 
-// Clean up polling on page unload
 window.addEventListener('beforeunload', () => {
-  if (window.pollingInterval) {
-    clearInterval(window.pollingInterval);
-  }
+    if (window.pollingInterval) {
+        clearInterval(window.pollingInterval);
+    }
 });
 
-// Toast message helper
 window.showToastMessage = function(message) {
-  const toast = document.getElementById('toast');
-  const toastMessage = document.getElementById('toastMessage');
-  if (toast && toastMessage) {
-    toastMessage.textContent = message;
-    toast.classList.add('show');
-    setTimeout(() => {
-      toast.classList.remove('show');
-    }, 2000);
-  }
+    Toast.fire({
+        icon: 'info',
+        title: message,
+        timer: 2000,
+        background: '#fff',
+        color: '#333'
+    });
 };
 
-// Focus on driver from panel
 window.focusOnDriver = function(uid, driverName) {
-  console.log("Focusing on driver:", uid, driverName);
-  const marker = window.driverMarkers[uid];
-  
-  if (!marker) {
-    console.error("Marker not found for uid:", uid);
-    window.showToastMessage(`⚠️ Driver ${driverName} location not available`);
-    return;
-  }
-  
-  if (!window.map) {
-    console.error("Map not found");
-    return;
-  }
-  
-  try {
-    const position = marker.getPosition();
-    if (!position) {
-      console.error("Marker has no position");
-      return;
+    const marker = window.driverMarkers[uid];
+    
+    if (!marker) {
+        Toast.fire({
+            icon: 'error',
+            title: 'Driver not found',
+            text: `${driverName} location not available`,
+            background: '#fff',
+            color: '#333'
+        });
+        return;
     }
     
-    window.map.setCenter(position);
-    window.map.setZoom(17);
-    
-    if (window.activeInfoWindow) {
-      window.activeInfoWindow.close();
-      window.activeInfoWindow = null;
+    if (!window.map) {
+        Toast.fire({
+            icon: 'warning',
+            title: 'Map not ready',
+            text: 'Please wait for the map to load',
+            background: '#fff',
+            color: '#333'
+        });
+        return;
     }
     
-    const currentData = marker.userData;
-    if (!currentData || !currentData.loc) {
-      console.error("No location data for marker");
-      return;
+    try {
+        const position = marker.getPosition();
+        if (!position) return;
+        
+        window.map.setCenter(position);
+        window.map.setZoom(17);
+        
+        if (window.activeInfoWindow) {
+            window.activeInfoWindow.close();
+            window.activeInfoWindow = null;
+        }
+        
+        const currentData = marker.userData;
+        if (!currentData || !currentData.loc) return;
+        
+        reverseGeocode(currentData.loc.latitude, currentData.loc.longitude).then(address => {
+            const infoContent = createInfoWindowContent(
+                currentData.user, 
+                currentData.loc, 
+                currentData.speedKmh, 
+                address
+            );
+            
+            marker.infoWindow.setContent(infoContent);
+            marker.infoWindow.open(window.map, marker);
+            window.activeInfoWindow = marker.infoWindow;
+            
+            Toast.fire({
+                icon: 'success',
+                title: `📍 Focused on ${driverName}`,
+                timer: 1500,
+                background: '#fff',
+                color: '#333'
+            });
+        });
+        
+    } catch (error) {
+        console.error("Error focusing on driver:", error);
     }
-    
-    reverseGeocode(currentData.loc.latitude, currentData.loc.longitude).then(address => {
-      const infoContent = createInfoWindowContent(
-        currentData.user, 
-        currentData.loc, 
-        currentData.speedKmh, 
-        address
-      );
-      
-      marker.infoWindow.setContent(infoContent);
-      marker.infoWindow.open(window.map, marker);
-      window.activeInfoWindow = marker.infoWindow;
-      window.showToastMessage(`📍 Focused on ${driverName}`);
-    }).catch(error => {
-      console.error("Geocoding error:", error);
-      marker.infoWindow.open(window.map, marker);
-      window.activeInfoWindow = marker.infoWindow;
-      window.showToastMessage(`📍 Focused on ${driverName}`);
-    });
-    
-  } catch (error) {
-    console.error("Error focusing on driver:", error);
-    window.showToastMessage(`⚠️ Error focusing on ${driverName}`);
-  }
 };
 
-// Update driver panel UI
 window.updateDriverPanelList = function() {
-  const driverListEl = document.getElementById('driverList');
-  const driverCountEl = document.getElementById('driverCount');
-  
-  if (!driverListEl) return;
-  
-  const drivers = [];
-  const now = Date.now();
-  const FIVE_MINUTES = 5 * 60 * 1000;
-  
-  for (const [uid, marker] of Object.entries(window.driverMarkers)) {
-    if (marker && marker.userData) {
-      const { user, speedKmh, lastUpdate } = marker.userData;
-      const isStale = lastUpdate && (now - lastUpdate) > FIVE_MINUTES;
-      drivers.push({
-        uid,
-        name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver',
-        speed: speedKmh || 0,
-        isStale: isStale
-      });
-    }
-  }
-  
-  driverCountEl.textContent = drivers.length;
-  
-  if (drivers.length === 0) {
-    driverListEl.innerHTML = '<div style="padding: 1rem; text-align: center; color: #6c757d;">No drivers found</div>';
-    return;
-  }
-  
-  driverListEl.innerHTML = drivers.map(driver => {
-    let speedClass = 'speed-normal';
-    let speedText = 'Normal';
-    if (driver.speed > 60) {
-      speedClass = 'speed-speeding';
-      speedText = 'Speeding!';
-    } else if (driver.speed > 30) {
-      speedClass = 'speed-moderate';
-      speedText = 'Moderate';
+    const driverListEl = document.getElementById('driverList');
+    const driverCountEl = document.getElementById('driverCount');
+    
+    if (!driverListEl) return;
+    
+    const drivers = [];
+    const now = Date.now();
+    const FIVE_MINUTES = 5 * 60 * 1000;
+    
+    for (const [uid, marker] of Object.entries(window.driverMarkers)) {
+        if (marker && marker.userData) {
+            const { user, speedKmh, lastUpdate } = marker.userData;
+            const isStale = lastUpdate && (now - lastUpdate) > FIVE_MINUTES;
+            drivers.push({
+                uid,
+                name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver',
+                speed: speedKmh || 0,
+                isStale: isStale
+            });
+        }
     }
     
-    const initials = driver.name.split(' ').map(n => n[0]).join('').toUpperCase();
-    const staleClass = driver.isStale ? 'stale-driver' : '';
-    const staleBadge = driver.isStale ? '<span style="margin-left: 6px; font-size: 0.6rem; color: #ff9800;">⏳ stale</span>' : '';
+    driverCountEl.textContent = drivers.length;
     
-    return `
-      <div class="driver-item ${staleClass}" data-uid="${driver.uid}" data-driver-name="${driver.name}" style="cursor: pointer;">
-        <div class="driver-avatar">${initials || 'D'}</div>
-        <div class="driver-info">
-          <div class="driver-name">${driver.name} ${staleBadge}</div>
-          <div class="driver-speed">
-            <span class="speed-badge ${speedClass}">
-              ${driver.speed > 0 ? '🚗' : '🅿️'} ${driver.speed.toFixed(1)} km/h
-            </span>
-            <span style="margin-left: 6px; font-size: 0.65rem;">${speedText}</span>
-          </div>
-        </div>
-        <i class="fas fa-location-dot" style="color: #ffb347;"></i>
-      </div>
-    `;
-  }).join('');
-  
-  const driverItems = document.querySelectorAll('.driver-item');
-  driverItems.forEach(item => {
-    const newItem = item.cloneNode(true);
-    item.parentNode.replaceChild(newItem, item);
+    if (drivers.length === 0) {
+        driverListEl.innerHTML = '<div style="padding: 2rem; text-align: center; color: #6c757d;"><i class="fas fa-truck" style="font-size: 2rem; margin-bottom: 10px; display: block;"></i>No drivers found</div>';
+        return;
+    }
     
-    newItem.addEventListener('click', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      const uid = this.getAttribute('data-uid');
-      const driverName = this.getAttribute('data-driver-name');
-      window.focusOnDriver(uid, driverName);
+    driverListEl.innerHTML = drivers.map(driver => {
+        let speedClass = 'speed-normal';
+        let speedText = 'Normal';
+        let speedIcon = '🚗';
+        
+        if (driver.speed > 60) {
+            speedClass = 'speed-speeding';
+            speedText = 'Speeding!';
+            speedIcon = '🚨';
+        } else if (driver.speed > 30) {
+            speedClass = 'speed-moderate';
+            speedText = 'Moderate';
+            speedIcon = '⚡';
+        } else if (driver.speed === 0) {
+            speedIcon = '🅿️';
+        }
+        
+        const initials = driver.name.split(' ').map(n => n[0]).join('').toUpperCase();
+        const staleClass = driver.isStale ? 'stale-driver' : '';
+        const staleBadge = driver.isStale ? '<span style="margin-left: 6px; font-size: 0.6rem; color: #ff9800;">⏳ stale</span>' : '';
+        
+        return `
+            <div class="driver-item ${staleClass}" data-uid="${driver.uid}" data-driver-name="${driver.name}" style="cursor: pointer;">
+                <div class="driver-avatar">${initials || 'D'}</div>
+                <div class="driver-info">
+                    <div class="driver-name">${escapeHtml(driver.name)} ${staleBadge}</div>
+                    <div class="driver-speed">
+                        <span class="speed-badge ${speedClass}">
+                            ${speedIcon} ${driver.speed.toFixed(1)} km/h
+                        </span>
+                        <span style="margin-left: 6px; font-size: 0.65rem;">${speedText}</span>
+                    </div>
+                </div>
+                <i class="fas fa-location-dot" style="color: #ffb347;"></i>
+            </div>
+        `;
+    }).join('');
+    
+    const driverItems = document.querySelectorAll('.driver-item');
+    driverItems.forEach(item => {
+        const newItem = item.cloneNode(true);
+        item.parentNode.replaceChild(newItem, item);
+        
+        newItem.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const uid = this.getAttribute('data-uid');
+            const driverName = this.getAttribute('data-driver-name');
+            window.focusOnDriver(uid, driverName);
+        });
     });
-  });
 };
 
-// Panel collapsible
 const driverPanel = document.getElementById('driverPanel');
 const panelHeader = document.getElementById('panelHeader');
 if (panelHeader) {
-  panelHeader.addEventListener('click', () => {
-    driverPanel.classList.toggle('expanded');
-  });
+    panelHeader.addEventListener('click', () => {
+        driverPanel.classList.toggle('expanded');
+    });
 }
 
-// Periodic panel updates
 setInterval(() => {
-  if (window.updateDriverPanelList) window.updateDriverPanelList();
+    if (window.updateDriverPanelList) window.updateDriverPanelList();
 }, 2000);
 
-// Fallback initialization
-document.addEventListener('DOMContentLoaded', function() {
-  if (document.getElementById('map')) {
-    if (typeof google !== 'undefined' && google.maps && typeof window.initMap === 'function' && !window.map) {
-      window.initMap();
-    }
-  }
-});
-
-window.addEventListener('visibilitychange', function() {
-  if (!document.hidden && window.map) {
-    google.maps.event.trigger(window.map, 'resize');
-  }
-});
-
 window.gm_authFailure = function() {
-  console.error('Google Maps authentication failed');
-  showMapError("Google Maps authentication failed. Please check your API key.");
+    console.error('Google Maps authentication failed');
+    showGoogleMapsBlockedError();
 };
 
-console.log("TRACK DRIVERS SCRIPT LOADED - With fixed Group Management (panel stays open)");
+console.log("TRACK DRIVERS SCRIPT LOADED - With SweetAlert2 & Firebase Cloud Storage");
