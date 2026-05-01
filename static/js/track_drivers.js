@@ -852,8 +852,8 @@ function createFixedLocationMarkers() {
             animation: google.maps.Animation.DROP,
             icon: {
                 url: location.icon,
-                scaledSize: new google.maps.Size(32, 32),
-                labelOrigin: new google.maps.Point(16, 32)
+                scaledSize: new google.maps.Size(48, 48), // Increased to 48px
+                labelOrigin: new google.maps.Point(24, 48) // Adjust label position
             },
             optimized: false
         });
@@ -930,7 +930,7 @@ function initializeMap() {
             title: "My Garage",
             icon: {
                 url: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
-                scaledSize: new google.maps.Size(32, 32)
+                scaledSize: new google.maps.Size(48, 48) // Increased to 48px
             }
         });
 
@@ -1291,7 +1291,12 @@ function createDriverMarker(uid, user, loc, speedKmh, timestamp) {
         map: window.map,
         title: `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Driver",
         animation: google.maps.Animation.DROP,
-        visible: initialVisibility
+        visible: initialVisibility,
+        icon: {
+            url: "https://maps.google.com/mapfiles/ms/icons/red-dot.png", // or use custom icon
+            scaledSize: new google.maps.Size(48, 48), // Increased from default ~32px to 48px
+            labelOrigin: new google.maps.Point(24, 48) // Adjust label position for larger icon
+        }
     });
     
     const infoWindow = new google.maps.InfoWindow({
