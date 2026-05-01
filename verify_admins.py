@@ -109,7 +109,10 @@ def verify_admins_from_database():
 def verify_specific_admins():
     """Verify a hardcoded list of admin emails (quick option)"""
     admin_emails = [
-        "demo.account@gmail.com",
+        "olstaradmin@gmail.com",
+        "bk2.pharma@gmail.com",
+        "bk3.pharma@gmail.com",
+        "bk4.pharma@gmail.com",
     ]
     
     return verify_emails_bulk(admin_emails)

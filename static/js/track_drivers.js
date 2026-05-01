@@ -7,6 +7,10 @@ window.addressCache = new Map();
 window.activeInfoWindow = null;
 window.map = null;
 
+// Store all drivers (including those without location)
+window.allDrivers = {};  // NEW: Store all drivers by UID
+window.activeDriverUids = new Set();  // NEW: Track which drivers have active locations
+
 // Group Management System
 window.groups = {};
 window.activeGroupId = null;
@@ -16,6 +20,7 @@ window.groupsModified = false;
 window.cachedDriverList = [];
 window.uiUpdateTimer = null;
 window.isRendering = false;
+window.pendingGroupRebuild = false;  // NEW: Prevent excessive rebuilds
 
 // SweetAlert Toast configuration
 const Toast = Swal.mixin({
@@ -205,7 +210,7 @@ window.createGroup = async function(groupName, selectedDriverIds = []) {
     };
     
     await saveGroupsToFirebase();
-    renderGroupsList();
+    renderGroupsList(); // Force rebuild only on explicit user action
     
     Toast.fire({
         icon: 'success',
@@ -391,7 +396,7 @@ window.toggleDriverPanel = function(groupId, event) {
     }
 };
 
-// Optimized populate driver checkboxes - NO FLICKER
+// populate driver checkboxes from ALL drivers (not just those with markers)
 window.populateDriverCheckboxes = function(groupId, preserveScroll = true) {
     const groupElement = document.querySelector(`.group-item[data-group-id="${groupId}"]`);
     if (!groupElement) return;
@@ -408,13 +413,11 @@ window.populateDriverCheckboxes = function(groupId, preserveScroll = true) {
         savedScrollTop = checkboxesContainer.scrollTop;
     }
     
-    // Build driver list
+    // Build driver list from allDrivers
     const drivers = [];
-    for (const [uid, marker] of Object.entries(window.driverMarkers)) {
-        if (marker && marker.userData) {
-            const name = `${marker.userData.user.firstName || ''} ${marker.userData.user.lastName || ''}`.trim() || 'Driver';
-            drivers.push({ uid, name });
-        }
+    for (const [uid, driverInfo] of Object.entries(window.allDrivers)) {
+        const name = driverInfo.name;
+        drivers.push({ uid, name });
     }
     
     drivers.sort((a, b) => a.name.localeCompare(b.name));
@@ -426,16 +429,10 @@ window.populateDriverCheckboxes = function(groupId, preserveScroll = true) {
     
     // Use requestAnimationFrame to batch DOM updates
     requestAnimationFrame(() => {
-        // Disable transitions temporarily
-        const style = document.createElement('style');
-        style.id = 'temp-no-transition';
-        style.textContent = `.driver-checkbox-label { transition: none !important; animation: none !important; }`;
-        document.head.appendChild(style);
-        
         const existingLabels = checkboxesContainer.querySelectorAll('.driver-checkbox-label');
         
         if (existingLabels.length === drivers.length) {
-            // Update in place
+            // Update in place - preserves checkbox states
             existingLabels.forEach((label, index) => {
                 const checkbox = label.querySelector('.driver-checkbox');
                 const span = label.querySelector('span');
@@ -445,14 +442,15 @@ window.populateDriverCheckboxes = function(groupId, preserveScroll = true) {
                     if (span.textContent !== driver.name) {
                         span.textContent = driver.name;
                     }
-                    const shouldBeChecked = group.driverIds.has(driver.uid);
-                    if (checkbox.checked !== shouldBeChecked) {
-                        checkbox.checked = shouldBeChecked;
-                    }
+                    // Don't change checkbox checked state - preserve user's selection
+                    // const shouldBeChecked = group.driverIds.has(driver.uid);
+                    // if (checkbox.checked !== shouldBeChecked) {
+                    //     checkbox.checked = shouldBeChecked;
+                    // }
                 }
             });
         } else {
-            // Rebuild if necessary
+            // Only rebuild if driver count changed significantly
             const fragment = document.createDocumentFragment();
             drivers.forEach(driver => {
                 const label = document.createElement('label');
@@ -480,12 +478,6 @@ window.populateDriverCheckboxes = function(groupId, preserveScroll = true) {
         if (preserveScroll && savedScrollTop) {
             checkboxesContainer.scrollTop = savedScrollTop;
         }
-        
-        // Remove temp style after next frame
-        requestAnimationFrame(() => {
-            const tempStyle = document.getElementById('temp-no-transition');
-            if (tempStyle) tempStyle.remove();
-        });
     });
 };
 
@@ -548,7 +540,7 @@ window.cancelDriverAssignments = function(groupId, event) {
     }
 };
 
-// Optimized render groups list - NO FLICKER
+// Optimized render groups list - ONLY rebuilds when groups actually change
 function renderGroupsList() {
     if (window.isRendering) return;
     window.isRendering = true;
@@ -604,7 +596,7 @@ function renderGroupsList() {
         return;
     }
     
-    // Full rebuild only when necessary
+    // Full rebuild only when necessary (group added/deleted/renamed)
     requestAnimationFrame(() => {
         const html = groupsArray.map(([groupId, group]) => {
             const isActive = window.activeGroupId === groupId;
@@ -798,6 +790,110 @@ window.lastDataHash = {};
 window.isUpdating = false;
 
 const origin = { lat: 14.5222733, lng: 120.999655 };
+
+const fixedLocations = [
+    {
+        id: "grand_west",
+        name: "Grand West",
+        fullName: "Grand Westside Manila Bay",
+        lat: 14.5199,
+        lng: 120.9828,
+        icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+    },
+    {
+        id: "nobu",
+        name: "Nobu",
+        fullName: "Nobu Hotel, City of Dreams Manila",
+        lat: 14.523997,
+        lng: 120.9930,
+        icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+    },
+    {
+        id: "hyatt",
+        name: "Hyatt",
+        fullName: "Hyatt Regency Manila, City of Dreams",
+        lat: 14.52265,
+        lng: 120.9927,
+        icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+    },
+    {
+        id: "solaire",
+        name: "Solaire",
+        fullName: "Entertainment City, 1 Aseana Ave, Tambo, Parañaque",
+        lat: 14.5241,
+        lng: 120.9808,
+        icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+    },
+    {
+        id: "moa_arena",
+        name: "MOA Arena",
+        fullName: "SM Mall of Asia Arena",
+        lat: 14.531944,
+        lng: 120.983611,
+        icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
+    }
+];
+
+// Function to create fixed location markers
+function createFixedLocationMarkers() {
+    if (!window.map) {
+        console.log("Map not ready yet, waiting...");
+        setTimeout(createFixedLocationMarkers, 500);
+        return;
+    }
+    
+    console.log("Creating fixed location markers...");
+    
+    fixedLocations.forEach(location => {
+        const marker = new google.maps.Marker({
+            position: { lat: location.lat, lng: location.lng },
+            map: window.map,
+            title: location.fullName,
+            animation: google.maps.Animation.DROP,
+            icon: {
+                url: location.icon,
+                scaledSize: new google.maps.Size(32, 32),
+                labelOrigin: new google.maps.Point(16, 32)
+            },
+            optimized: false
+        });
+        
+        const infoWindow = new google.maps.InfoWindow({
+            content: `
+                <div style="min-width: 200px; padding: 12px; font-family: 'Segoe UI', Arial, sans-serif;">
+                    <div style="font-size: 16px; font-weight: bold; color: #1a73e8; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 20px;">📍</span>
+                        <span>${location.name}</span>
+                    </div>
+                    <div style="font-size: 12px; color: #5f6368; margin-bottom: 8px;">
+                        ${location.fullName}
+                    </div>
+                    <div style="font-size: 11px; color: #9aa0a6; border-top: 1px solid #e8eaed; padding-top: 6px;">
+                        ${location.lat.toFixed(4)}°, ${location.lng.toFixed(4)}°
+                    </div>
+                </div>
+            `
+        });
+        
+        marker.addListener("click", () => {
+            closeActiveInfoWindow();
+            infoWindow.open(window.map, marker);
+            window.activeInfoWindow = infoWindow;
+            
+            if (typeof Toast !== 'undefined') {
+                Toast.fire({
+                    icon: 'info',
+                    title: location.name,
+                    text: location.fullName,
+                    timer: 2000
+                });
+            }
+        });
+        
+        console.log(`✅ Added marker for: ${location.name}`);
+    });
+}
+
 let trafficLayer;
 let trafficVisible = false;
 
@@ -821,7 +917,7 @@ function initializeMap() {
     try {
         window.map = new google.maps.Map(mapContainer, {
             center: origin,
-            zoom: 18,
+            zoom: 14,
             mapTypeId: "roadmap",
             streetViewControl: false,
             fullscreenControl: true,
@@ -833,10 +929,12 @@ function initializeMap() {
             map: window.map,
             title: "My Garage",
             icon: {
-                url: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
+                url: "https://maps.google.com/mapfiles/ms/icons/green-dot.png",
                 scaledSize: new google.maps.Size(32, 32)
             }
         });
+
+        createFixedLocationMarkers();
 
         trafficLayer = new google.maps.TrafficLayer();
 
@@ -948,32 +1046,7 @@ function startPollingDrivers() {
     console.log(`Polling started - fetching driver data every ${window.pollingDelay} ms`);
 }
 
-function hasDriverListChanged() {
-    const currentDrivers = [];
-    for (const [uid, marker] of Object.entries(window.driverMarkers)) {
-        if (marker && marker.userData) {
-            const name = `${marker.userData.user.firstName || ''} ${marker.userData.user.lastName || ''}`.trim() || 'Driver';
-            currentDrivers.push({ uid, name });
-        }
-    }
-    currentDrivers.sort((a, b) => a.name.localeCompare(b.name));
-    
-    if (currentDrivers.length !== window.cachedDriverList.length) {
-        window.cachedDriverList = currentDrivers;
-        return true;
-    }
-    
-    for (let i = 0; i < currentDrivers.length; i++) {
-        if (currentDrivers[i].uid !== window.cachedDriverList[i].uid ||
-            currentDrivers[i].name !== window.cachedDriverList[i].name) {
-            window.cachedDriverList = currentDrivers;
-            return true;
-        }
-    }
-    
-    return false;
-}
-
+// FETCH ALL DRIVERS with role "driver"
 async function fetchDriversData() {
     if (window.isUpdating) return;
     window.isUpdating = true;
@@ -984,22 +1057,15 @@ async function fetchDriversData() {
         const users = snapshot.val();
         
         if (!users) {
-            const allUids = Object.keys(window.driverMarkers);
-            if (allUids.length > 0) {
-                allUids.forEach(uid => {
-                    if (window.activeInfoWindow && window.driverMarkers[uid]?.infoWindow === window.activeInfoWindow) {
-                        closeActiveInfoWindow();
-                    }
-                    if (window.driverMarkers[uid]) {
-                        window.driverMarkers[uid].setMap(null);
-                        delete window.driverMarkers[uid];
-                    }
-                    delete window.previousLocations[uid];
-                    delete window.lastValidSpeed[uid];
-                    delete window.lastUpdateTime[uid];
-                    delete window.lastDataHash[uid];
-                });
-                if (window.updateDriverPanelList) setTimeout(window.updateDriverPanelList, 50);
+            // Clear all drivers if no users
+            window.allDrivers = {};
+            window.activeDriverUids.clear();
+            clearAllMarkers();
+            // Update UI only, don't rebuild groups
+            if (window.updateDriverPanelList) setTimeout(window.updateDriverPanelList, 50);
+            // Only update checkboxes if panel is open - don't rebuild groups
+            if (window.openGroupPanelId && window.groups[window.openGroupPanelId]) {
+                updateDriverCheckboxesOnly(window.openGroupPanelId);
             }
             window.isUpdating = false;
             return;
@@ -1007,25 +1073,45 @@ async function fetchDriversData() {
 
         const now = Date.now();
         let markersChanged = false;
-
+        const currentDriverUids = new Set();
+        
+        // Process ALL users, filter by role "driver"
         for (const [uid, user] of Object.entries(users)) {
-            const loc = user.currentLocation;
-            
-            if (!loc || loc.latitude == null || loc.longitude == null) {
+            const role = user.role || "";
+            if (role.toLowerCase() !== "driver") {
                 if (window.driverMarkers[uid]) {
-                    if (window.activeInfoWindow && window.driverMarkers[uid]?.infoWindow === window.activeInfoWindow) {
-                        closeActiveInfoWindow();
-                    }
-                    window.driverMarkers[uid].setMap(null);
-                    delete window.driverMarkers[uid];
-                    delete window.previousLocations[uid];
-                    delete window.lastValidSpeed[uid];
-                    delete window.lastUpdateTime[uid];
-                    delete window.lastDataHash[uid];
+                    removeDriverMarker(uid);
                     markersChanged = true;
                 }
                 continue;
             }
+            
+            currentDriverUids.add(uid);
+            const firstName = user.firstName || "";
+            const lastName = user.lastName || "";
+            const fullName = `${firstName} ${lastName}`.trim() || "Driver";
+            
+            // Store in allDrivers regardless of location
+            window.allDrivers[uid] = {
+                name: fullName,
+                firstName: firstName,
+                lastName: lastName,
+                phone: user.phone || "",
+                email: user.email || ""
+            };
+            
+            const loc = user.currentLocation;
+            
+            if (!loc || loc.latitude == null || loc.longitude == null) {
+                if (window.driverMarkers[uid]) {
+                    removeDriverMarker(uid);
+                    markersChanged = true;
+                }
+                continue;
+            }
+            
+            currentDriverUids.add(uid);
+            window.activeDriverUids.add(uid);
             
             if (!loc.timestamp) {
                 loc.timestamp = now;
@@ -1041,93 +1127,65 @@ async function fetchDriversData() {
             }
         }
         
-        Object.keys(window.driverMarkers).forEach(uid => {
-            if (!users[uid] || !users[uid].currentLocation) {
-                if (window.activeInfoWindow && window.driverMarkers[uid]?.infoWindow === window.activeInfoWindow) {
-                    closeActiveInfoWindow();
-                }
-                if (window.driverMarkers[uid]) {
-                    window.driverMarkers[uid].setMap(null);
-                    delete window.driverMarkers[uid];
-                }
-                delete window.previousLocations[uid];
-                delete window.lastValidSpeed[uid];
-                delete window.lastUpdateTime[uid];
-                delete window.lastDataHash[uid];
+        // Remove drivers that are no longer drivers
+        for (const uid of Object.keys(window.driverMarkers)) {
+            if (!currentDriverUids.has(uid)) {
+                removeDriverMarker(uid);
                 markersChanged = true;
             }
-        });
+        }
         
+        // Only update UI elements, don't rebuild groups
         if (window.updateDriverPanelList) {
             setTimeout(window.updateDriverPanelList, 50);
         }
         
-        // Debounced UI updates to prevent flicker
-        if (window.uiUpdateTimer) {
-            clearTimeout(window.uiUpdateTimer);
+        // Update checkboxes if panel is open - WITHOUT rebuilding
+        if (window.openGroupPanelId && window.groups[window.openGroupPanelId]) {
+            updateDriverCheckboxesOnly(window.openGroupPanelId);
         }
         
-        window.uiUpdateTimer = setTimeout(() => {
-            if (markersChanged || window.groupsModified) {
-                if (window.openGroupPanelId && window.groups[window.openGroupPanelId]) {
-                    const currentSelections = {};
-                    let savedScrollTop = 0;
-                    const currentGroupElement = document.querySelector(`.group-item[data-group-id="${window.openGroupPanelId}"]`);
-                    if (currentGroupElement) {
-                        const currentCheckboxes = currentGroupElement.querySelectorAll('.driver-checkbox');
-                        currentCheckboxes.forEach(cb => {
-                            currentSelections[cb.value] = cb.checked;
-                        });
-                        const currentContainer = currentGroupElement.querySelector('.driver-checkboxes');
-                        if (currentContainer) {
-                            savedScrollTop = currentContainer.scrollTop;
-                        }
-                    }
-                    
-                    renderGroupsList();
-                    
-                    setTimeout(() => {
-                        const groupElement = document.querySelector(`.group-item[data-group-id="${window.openGroupPanelId}"]`);
-                        if (groupElement) {
-                            const driversPanel = groupElement.querySelector('.group-drivers');
-                            if (driversPanel) {
-                                driversPanel.style.display = 'flex';
-                                const checkboxesContainer = groupElement.querySelector('.driver-checkboxes');
-                                if (checkboxesContainer && savedScrollTop) {
-                                    checkboxesContainer.scrollTop = savedScrollTop;
-                                }
-                                const checkboxes = groupElement.querySelectorAll('.driver-checkbox');
-                                checkboxes.forEach(cb => {
-                                    if (currentSelections.hasOwnProperty(cb.value)) {
-                                        cb.checked = currentSelections[cb.value];
-                                    }
-                                });
-                                const group = window.groups[window.openGroupPanelId];
-                                if (group) {
-                                    const selectedValues = Array.from(checkboxes)
-                                        .filter(cb => cb.checked)
-                                        .map(cb => cb.value);
-                                    group.driverIds.clear();
-                                    selectedValues.forEach(id => group.driverIds.add(id));
-                                }
-                            }
-                        }
-                    }, 50);
-                } else {
-                    renderGroupsList();
-                }
-            } else if (window.openGroupPanelId && window.groups[window.openGroupPanelId]) {
-                if (hasDriverListChanged()) {
-                    populateDriverCheckboxes(window.openGroupPanelId, true);
-                }
-                updateGroupCountsOnly();
-            }
-        }, 100);
+        // Only update group counts, not full rebuild
+        updateGroupCountsOnly();
         
     } catch (error) {
         console.error("Error fetching drivers:", error);
     } finally {
         window.isUpdating = false;
+    }
+}
+
+// NEW: Update checkboxes without rebuilding the entire group list
+function updateDriverCheckboxesOnly(groupId) {
+    const groupElement = document.querySelector(`.group-item[data-group-id="${groupId}"]`);
+    if (!groupElement) return;
+    
+    const checkboxesContainer = groupElement.querySelector('.driver-checkboxes');
+    if (!checkboxesContainer) return;
+    
+    const group = window.groups[groupId];
+    if (!group) return;
+    
+    const drivers = [];
+    for (const [uid, driverInfo] of Object.entries(window.allDrivers)) {
+        drivers.push({ uid, name: driverInfo.name });
+    }
+    drivers.sort((a, b) => a.name.localeCompare(b.name));
+    
+    const existingLabels = checkboxesContainer.querySelectorAll('.driver-checkbox-label');
+    
+    if (existingLabels.length === drivers.length) {
+        // Just update names, preserve checked states
+        existingLabels.forEach((label, index) => {
+            const span = label.querySelector('span');
+            const driver = drivers[index];
+            if (span && span.textContent !== driver.name) {
+                span.textContent = driver.name;
+            }
+        });
+    } else {
+        // Only rebuild if count changed
+        populateDriverCheckboxes(groupId, true);
     }
 }
 
@@ -1138,6 +1196,36 @@ function updateGroupCountsOnly() {
             countElement.textContent = `(${group.driverIds.size})`;
         }
     }
+}
+
+// Helper function to remove a driver marker
+function removeDriverMarker(uid) {
+    if (window.activeInfoWindow && window.driverMarkers[uid]?.infoWindow === window.activeInfoWindow) {
+        closeActiveInfoWindow();
+    }
+    if (window.driverMarkers[uid]) {
+        window.driverMarkers[uid].setMap(null);
+        delete window.driverMarkers[uid];
+    }
+    delete window.previousLocations[uid];
+    delete window.lastValidSpeed[uid];
+    delete window.lastUpdateTime[uid];
+    delete window.lastDataHash[uid];
+}
+
+// Helper function to clear all markers
+function clearAllMarkers() {
+    for (const uid in window.driverMarkers) {
+        if (window.driverMarkers[uid]) {
+            window.driverMarkers[uid].setMap(null);
+        }
+    }
+    window.driverMarkers = {};
+    window.previousLocations = {};
+    window.lastValidSpeed = {};
+    window.lastUpdateTime = {};
+    window.lastDataHash = {};
+    window.activeDriverUids.clear();
 }
 
 function processDriverUpdate(uid, user, loc, timestamp) {
@@ -1582,7 +1670,7 @@ window.focusOnDriver = function(uid, driverName) {
     }
 };
 
-// Replace the updateDriverPanelList function with this optimized version
+// Driver panel list - shows ALL drivers (including those without location)
 window.updateDriverPanelList = function() {
     const driverListEl = document.getElementById('driverList');
     const driverCountEl = document.getElementById('driverCount');
@@ -1593,18 +1681,23 @@ window.updateDriverPanelList = function() {
     const now = Date.now();
     const FIVE_MINUTES = 5 * 60 * 1000;
     
-    for (const [uid, marker] of Object.entries(window.driverMarkers)) {
-        if (marker && marker.userData) {
-            const { user, speedKmh, lastUpdate } = marker.userData;
-            const isStale = lastUpdate && (now - lastUpdate) > FIVE_MINUTES;
-            drivers.push({
-                uid,
-                name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver',
-                speed: speedKmh || 0,
-                isStale: isStale
-            });
-        }
+    for (const [uid, driverInfo] of Object.entries(window.allDrivers)) {
+        const marker = window.driverMarkers[uid];
+        const isActive = marker && marker.userData;
+        const speedKmh = isActive ? marker.userData.speedKmh : 0;
+        const lastUpdate = isActive ? marker.userData.lastUpdate : 0;
+        const isStale = isActive && lastUpdate && (now - lastUpdate) > FIVE_MINUTES;
+        
+        drivers.push({
+            uid,
+            name: driverInfo.name,
+            speed: isActive ? speedKmh : 0,
+            isActive: isActive,
+            isStale: isStale
+        });
     }
+    
+    drivers.sort((a, b) => a.name.localeCompare(b.name));
     
     driverCountEl.textContent = drivers.length;
     
@@ -1613,16 +1706,13 @@ window.updateDriverPanelList = function() {
         return;
     }
     
-    // Get existing driver items
     const existingItems = driverListEl.querySelectorAll('.driver-item');
     
-    // If number of drivers changed, rebuild entirely
     if (existingItems.length !== drivers.length) {
         rebuildDriverList(drivers);
         return;
     }
     
-    // Otherwise, update existing items in place
     let needsRebuild = false;
     
     drivers.forEach((driver, index) => {
@@ -1638,13 +1728,11 @@ window.updateDriverPanelList = function() {
             return;
         }
         
-        // Update driver name
         const nameElement = existingItem.querySelector('.driver-name');
         if (nameElement) {
             const nameWithoutBadge = nameElement.childNodes[0]?.nodeValue || '';
             const newNameText = escapeHtml(driver.name);
             if (nameWithoutBadge.trim() !== newNameText) {
-                // Update the text node while preserving the stale badge
                 const staleBadgeSpan = nameElement.querySelector('span');
                 if (staleBadgeSpan) {
                     nameElement.innerHTML = `${escapeHtml(driver.name)} ${staleBadgeSpan.outerHTML}`;
@@ -1654,11 +1742,18 @@ window.updateDriverPanelList = function() {
             }
         }
         
-        // Update stale class and badge
         const staleBadgeSpan = existingItem.querySelector('.driver-name span');
-        if (driver.isStale) {
+        if (!driver.isActive) {
             existingItem.classList.add('stale-driver');
             if (!staleBadgeSpan) {
+                const nameElement2 = existingItem.querySelector('.driver-name');
+                if (nameElement2 && !nameElement2.innerHTML.includes('offline')) {
+                    nameElement2.innerHTML = `${escapeHtml(driver.name)} <span style="margin-left: 6px; font-size: 0.6rem; color: #ff9800;">📍 offline</span>`;
+                }
+            }
+        } else if (driver.isStale) {
+            existingItem.classList.add('stale-driver');
+            if (staleBadgeSpan && staleBadgeSpan.textContent !== '⏳ stale') {
                 const nameElement2 = existingItem.querySelector('.driver-name');
                 if (nameElement2) {
                     nameElement2.innerHTML = `${escapeHtml(driver.name)} <span style="margin-left: 6px; font-size: 0.6rem; color: #ff9800;">⏳ stale</span>`;
@@ -1674,45 +1769,45 @@ window.updateDriverPanelList = function() {
             }
         }
         
-        // Update speed badge
         const speedBadge = existingItem.querySelector('.speed-badge');
         if (speedBadge) {
-            let speedClass = 'speed-normal';
-            let speedText = 'Normal';
-            let speedIcon = '🚗';
-            
-            if (driver.speed > 60) {
-                speedClass = 'speed-speeding';
-                speedText = 'Speeding!';
-                speedIcon = '🚨';
-            } else if (driver.speed > 30) {
-                speedClass = 'speed-moderate';
-                speedText = 'Moderate';
-                speedIcon = '⚡';
-            } else if (driver.speed === 0) {
-                speedIcon = '🅿️';
-            }
-            
-            const currentSpeedText = speedBadge.textContent;
-            const newSpeedText = `${speedIcon} ${driver.speed.toFixed(1)} km/h`;
-            const currentClass = speedBadge.className;
-            const newClass = `speed-badge ${speedClass}`;
-            
-            if (currentSpeedText !== newSpeedText) {
-                speedBadge.innerHTML = `${speedIcon} ${driver.speed.toFixed(1)} km/h`;
-            }
-            if (currentClass !== newClass) {
-                speedBadge.className = newClass;
-            }
-            
-            // Update speed text span
-            const speedTextSpan = existingItem.querySelector('.driver-speed span:last-child');
-            if (speedTextSpan && speedTextSpan.textContent !== speedText) {
-                speedTextSpan.textContent = speedText;
+            if (!driver.isActive) {
+                speedBadge.innerHTML = `📱 Waiting for location...`;
+                speedBadge.className = 'speed-badge speed-offline';
+            } else {
+                let speedClass = 'speed-normal';
+                let speedText = 'Normal';
+                let speedIcon = '🚗';
+                
+                if (driver.speed > 60) {
+                    speedClass = 'speed-speeding';
+                    speedText = 'Speeding!';
+                    speedIcon = '🚨';
+                } else if (driver.speed > 30) {
+                    speedClass = 'speed-moderate';
+                    speedText = 'Moderate';
+                    speedIcon = '⚡';
+                } else if (driver.speed === 0) {
+                    speedIcon = '🅿️';
+                }
+                
+                const newSpeedText = `${speedIcon} ${driver.speed.toFixed(1)} km/h`;
+                const newClass = `speed-badge ${speedClass}`;
+                
+                if (speedBadge.textContent !== newSpeedText) {
+                    speedBadge.innerHTML = `${speedIcon} ${driver.speed.toFixed(1)} km/h`;
+                }
+                if (speedBadge.className !== newClass) {
+                    speedBadge.className = newClass;
+                }
+                
+                const speedTextSpan = existingItem.querySelector('.driver-speed span:last-child');
+                if (speedTextSpan && speedTextSpan.textContent !== speedText) {
+                    speedTextSpan.textContent = speedText;
+                }
             }
         }
         
-        // Update avatar initials
         const avatar = existingItem.querySelector('.driver-avatar');
         if (avatar) {
             const initials = driver.name.split(' ').map(n => n[0]).join('').toUpperCase();
@@ -1727,7 +1822,6 @@ window.updateDriverPanelList = function() {
     }
 };
 
-// New helper function to rebuild driver list
 function rebuildDriverList(drivers) {
     const driverListEl = document.getElementById('driverList');
     if (!driverListEl) return;
@@ -1736,22 +1830,38 @@ function rebuildDriverList(drivers) {
         let speedClass = 'speed-normal';
         let speedText = 'Normal';
         let speedIcon = '🚗';
+        let speedDisplay = '';
         
-        if (driver.speed > 60) {
+        if (!driver.isActive) {
+            speedDisplay = '📱 Waiting for location...';
+            speedClass = 'speed-offline';
+        } else if (driver.speed > 60) {
             speedClass = 'speed-speeding';
             speedText = 'Speeding!';
             speedIcon = '🚨';
+            speedDisplay = `${speedIcon} ${driver.speed.toFixed(1)} km/h`;
         } else if (driver.speed > 30) {
             speedClass = 'speed-moderate';
             speedText = 'Moderate';
             speedIcon = '⚡';
+            speedDisplay = `${speedIcon} ${driver.speed.toFixed(1)} km/h`;
         } else if (driver.speed === 0) {
-            speedIcon = '🅿️';
+            speedDisplay = `🅿️ ${driver.speed.toFixed(1)} km/h`;
+        } else {
+            speedDisplay = `${speedIcon} ${driver.speed.toFixed(1)} km/h`;
         }
         
         const initials = driver.name.split(' ').map(n => n[0]).join('').toUpperCase();
-        const staleClass = driver.isStale ? 'stale-driver' : '';
-        const staleBadge = driver.isStale ? '<span style="margin-left: 6px; font-size: 0.6rem; color: #ff9800;">⏳ stale</span>' : '';
+        let staleClass = '';
+        let staleBadge = '';
+        
+        if (!driver.isActive) {
+            staleClass = 'stale-driver';
+            staleBadge = '<span style="margin-left: 6px; font-size: 0.6rem; color: #ff9800;">📍 offline</span>';
+        } else if (driver.isStale) {
+            staleClass = 'stale-driver';
+            staleBadge = '<span style="margin-left: 6px; font-size: 0.6rem; color: #ff9800;">⏳ stale</span>';
+        }
         
         return `
             <div class="driver-item ${staleClass}" data-uid="${driver.uid}" data-driver-name="${driver.name}" style="cursor: pointer;">
@@ -1760,19 +1870,18 @@ function rebuildDriverList(drivers) {
                     <div class="driver-name">${escapeHtml(driver.name)} ${staleBadge}</div>
                     <div class="driver-speed">
                         <span class="speed-badge ${speedClass}">
-                            ${speedIcon} ${driver.speed.toFixed(1)} km/h
+                            ${!driver.isActive ? '📱 Waiting for location...' : speedDisplay}
                         </span>
-                        <span style="margin-left: 6px; font-size: 0.65rem;">${speedText}</span>
+                        ${driver.isActive ? `<span style="margin-left: 6px; font-size: 0.65rem;">${speedText}</span>` : ''}
                     </div>
                 </div>
-                <i class="fas fa-location-dot" style="color: #ffb347;"></i>
+                <i class="fas ${driver.isActive ? 'fa-location-dot' : 'fa-circle-info'}" style="color: ${driver.isActive ? '#ffb347' : '#9aa0a6'};"></i>
             </div>
         `;
     }).join('');
     
     driverListEl.innerHTML = html;
     
-    // Attach click events
     const driverItems = document.querySelectorAll('.driver-item');
     driverItems.forEach(item => {
         item.addEventListener('click', function(e) {
