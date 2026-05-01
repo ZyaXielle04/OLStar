@@ -89,12 +89,12 @@ def get_transport_units():
         return jsonify({"error": str(e)}), 500
 
 # =======================
-# OPTIMIZED GET USERS
+# OPTIMIZED GET USERS (FILTERED FOR DRIVERS)
 # =======================
 @admin_users_api.route("/api/admin/users", methods=["GET"])
 @admin_required
 def get_users():
-    """Get all users with optimized fetching and caching"""
+    """Get all users with role='driver' and valid driverType"""
     try:
         # Check cache (short TTL for user data)
         cache_key = "all_users"
@@ -106,17 +106,28 @@ def get_users():
         users_ref = db.reference("users")
         users_snapshot = users_ref.get() or {}
         
-        # Filter out admins and incomplete users efficiently
+        # Filter: ONLY role = "driver" AND driverType is valid
         valid_users = []
         user_ids = []
         
         for uid, info in users_snapshot.items():
-            # Skip admins
-            if info and info.get("role") == "admin":
+            # Skip if no info
+            if not info:
+                continue
+            
+            # Check role is "driver"
+            role = info.get("role", "").lower()
+            if role != "driver":
+                continue
+            
+            # Check driverType is valid
+            driver_type = info.get("driverType", "").lower()
+            valid_driver_types = ["main", "direct", "indirect"]
+            if driver_type not in valid_driver_types:
                 continue
             
             # Skip incomplete users
-            if not info or (not info.get("firstName") and not info.get("lastName")):
+            if not info.get("firstName") and not info.get("lastName"):
                 continue
             
             user_ids.append(uid)
@@ -163,7 +174,7 @@ def get_users():
                 "lastName": info.get("lastName", ""),
                 "email": info.get("email", ""),
                 "phone": info.get("phone", ""),
-                "role": info.get("role", "user"),
+                "role": info.get("role", "driver"),
                 "driverType": driver_type,
                 "driverTypeDisplay": driver_type_display,
                 "defaultTransportUnit": info.get("defaultTransportUnit", ""),
@@ -186,7 +197,7 @@ def get_users():
         return jsonify({"error": str(e)}), 500
 
 # =======================
-# OPTIMIZED CREATE USER
+# OPTIMIZED CREATE USER (Driver only)
 # =======================
 @admin_users_api.route("/api/admin/users", methods=["POST"])
 @admin_required
@@ -204,30 +215,31 @@ def create_user():
     
     # Validate driverType
     driver_type = data.get("driverType")
-    valid_driver_types = ["main", "indirect", "direct"]
+    valid_driver_types = ["main", "direct", "indirect"]
     if driver_type not in valid_driver_types:
-        return jsonify({"error": "Invalid driverType. Must be 'main', 'indirect', or 'direct'"}), 400
+        return jsonify({"error": "Invalid driverType. Must be 'main', 'direct', or 'indirect'"}), 400
     
     try:
-        # Create Firebase Auth user
+        # Create Firebase Auth user with fixed password
+        temp_password = "qwerty123"
         user = auth.create_user(
             email=data["email"],
-            password="TempPass@123",
-            email_verified=True
+            password=temp_password,
+            email_verified=True  # Auto-verified for development
         )
         uid = user.uid
         
-        # Save user data to Firebase DB
+        # Save user data to Firebase DB with role = "driver"
         user_data = {
             "email": data["email"],
             "phone": str(data["phone"]),
             "firstName": data["firstName"],
             "middleName": data.get("middleName", ""),
             "lastName": data["lastName"],
-            "role": data.get("role", "driver"),
+            "role": "driver",  # Always set role to "driver"
             "driverType": driver_type,
             "defaultTransportUnit": data.get("defaultTransportUnit", ""),
-            "active": False,
+            "active": True,
             "createdAt": {".sv": "timestamp"}
         }
         db.reference(f"users/{uid}").set(user_data)
@@ -235,7 +247,11 @@ def create_user():
         # Clear user cache
         user_cache.clear("all_users")
         
-        return jsonify({"message": "User created successfully", "uid": uid}), 201
+        return jsonify({
+            "message": "Driver created successfully", 
+            "uid": uid,
+            "temp_password": temp_password
+        }), 201
         
     except auth.EmailAlreadyExistsError:
         return jsonify({"error": "Email already exists"}), 409
@@ -257,9 +273,13 @@ def edit_user(uid):
     
     # Validate driverType if present
     if "driverType" in updates:
-        valid_driver_types = ["main", "indirect", "direct"]
+        valid_driver_types = ["main", "direct", "indirect"]
         if updates["driverType"] not in valid_driver_types:
-            return jsonify({"error": "Invalid driverType. Must be 'main', 'indirect', or 'direct'"}), 400
+            return jsonify({"error": "Invalid driverType. Must be 'main', 'direct', or 'indirect'"}), 400
+    
+    # Prevent changing role to non-driver for this page
+    if "role" in updates and updates["role"].lower() != "driver":
+        return jsonify({"error": "Role must remain 'driver' for driver management"}), 400
     
     if not updates:
         return jsonify({"error": "No valid fields to update"}), 400
@@ -287,7 +307,7 @@ def edit_user(uid):
         # Clear cache
         user_cache.clear("all_users")
         
-        return jsonify({"message": "User updated successfully"}), 200
+        return jsonify({"message": "Driver updated successfully"}), 200
         
     except Exception as e:
         logging.error(f"Error editing user: {e}")
@@ -309,7 +329,7 @@ def delete_user(uid):
         # Clear cache
         user_cache.clear("all_users")
         
-        return jsonify({"message": "User deleted successfully"}), 200
+        return jsonify({"message": "Driver deleted successfully"}), 200
         
     except Exception as e:
         logging.error(f"Error deleting user: {e}")
@@ -336,7 +356,7 @@ def toggle_user_status(uid):
         # Clear cache
         user_cache.clear("all_users")
         
-        return jsonify({"message": f"User account {'enabled' if enable else 'disabled'} successfully"}), 200
+        return jsonify({"message": f"Driver account {'enabled' if enable else 'disabled'} successfully"}), 200
         
     except Exception as e:
         logging.error(f"Error toggling user status: {e}")
@@ -366,7 +386,7 @@ def edit_password(uid):
         return jsonify({"error": str(e)}), 500
 
 # =======================
-# OPTIMIZED GET SINGLE USER (Optional)
+# OPTIMIZED GET SINGLE USER
 # =======================
 @admin_users_api.route("/api/admin/users/<uid>", methods=["GET"])
 @admin_required
@@ -384,6 +404,10 @@ def get_single_user(uid):
         
         if not user_data:
             return jsonify({"error": "User not found"}), 404
+        
+        # Verify it's a driver
+        if user_data.get("role", "").lower() != "driver":
+            return jsonify({"error": "User is not a driver"}), 403
         
         # Get auth status
         try:
@@ -408,7 +432,7 @@ def get_single_user(uid):
                 "lastName": user_data.get("lastName", ""),
                 "email": user_data.get("email", ""),
                 "phone": user_data.get("phone", ""),
-                "role": user_data.get("role", "user"),
+                "role": user_data.get("role", "driver"),
                 "driverType": driver_type,
                 "driverTypeDisplay": driver_type_map.get(driver_type, ""),
                 "defaultTransportUnit": user_data.get("defaultTransportUnit", ""),
@@ -433,4 +457,4 @@ def get_single_user(uid):
 def clear_user_cache():
     """Manually clear the user management cache"""
     user_cache.clear()
-    return jsonify({"message": "User cache cleared successfully"})
+    return jsonify({"message": "User cache cleared successfully"}), 200

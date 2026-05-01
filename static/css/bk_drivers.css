@@ -1,0 +1,462 @@
+/* ===============================
+   BK DRIVERS PAGE SPECIFIC STYLES
+================================= */
+
+/* Page Header - positioned relative to content */
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.page-header-text h1 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--primary-color, #2F4156);
+    margin: 0 0 0.25rem 0;
+}
+
+.page-header-text .subtitle {
+    color: #6c757d;
+    font-size: 0.875rem;
+    margin: 0;
+}
+
+/* Add Driver Button - matches admin UI */
+#btnOpenCreateModal {
+    background-color: var(--primary-color, #2F4156);
+    color: white;
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+    min-height: 44px;
+}
+
+#btnOpenCreateModal:hover {
+    background-color: var(--secondary-color, #567C8D);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+/* Drivers Grid - card layout */
+.users-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.5rem;
+}
+
+/* Driver Card */
+.card.user-card {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.card.user-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Card Header */
+.user-header {
+    padding: 1.25rem 1.25rem 0.75rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    border-bottom: 1px solid #eef2f6;
+}
+
+.user-header h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1a2c3e;
+    margin: 0;
+    word-break: break-word;
+}
+
+/* BK Badge */
+.bk-badge {
+    background-color: #e8f0fe;
+    color: var(--primary-color, #2F4156);
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+/* Card Body - User Details */
+.user-details {
+    padding: 1rem 1.25rem;
+    flex: 1;
+}
+
+.user-details p {
+    margin: 0.5rem 0;
+    font-size: 0.875rem;
+    color: #4a5568;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    word-break: break-word;
+}
+
+.user-details p strong {
+    color: #2d3748;
+    font-weight: 600;
+    min-width: 55px;
+}
+
+/* Van Info Section */
+.van-detail {
+    background-color: #f8fafc;
+    border-radius: 12px;
+    padding: 0.75rem;
+    margin-top: 0.75rem;
+    border-left: 3px solid var(--secondary-color, #567C8D);
+}
+
+.van-detail strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--primary-color, #2F4156);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.van-detail p {
+    margin: 0.25rem 0;
+    font-size: 0.8rem;
+    color: #4a5568;
+}
+
+/* Card Actions */
+.user-actions {
+    padding: 0.75rem 1.25rem 1.25rem 1.25rem;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    border-top: 1px solid #eef2f6;
+    background-color: #fafcfd;
+}
+
+.user-actions .btn {
+    padding: 0.4rem 0.9rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    min-height: 36px;
+}
+
+.user-actions .edit-btn {
+    background-color: #eef2ff;
+    color: #4f46e5;
+}
+
+.user-actions .edit-btn:hover {
+    background-color: #e0e7ff;
+    transform: translateY(-1px);
+}
+
+.user-actions .password-btn {
+    background-color: #fef3c7;
+    color: #b45309;
+}
+
+.user-actions .password-btn:hover {
+    background-color: #fde68a;
+    transform: translateY(-1px);
+}
+
+.user-actions .delete-btn {
+    background-color: #fee2e2;
+    color: #dc2626;
+}
+
+.user-actions .delete-btn:hover {
+    background-color: #fecaca;
+    transform: translateY(-1px);
+}
+
+/* Empty State Message */
+#driversGrid > p {
+    text-align: center;
+    padding: 3rem;
+    background: white;
+    border-radius: 16px;
+    color: #6c757d;
+    font-size: 0.95rem;
+    grid-column: 1 / -1;
+}
+
+/* ===============================
+   MODAL STYLES (Create/Edit Form)
+================================= */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 2000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(3px);
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal-content {
+    background-color: white;
+    margin: 5% auto;
+    padding: 0;
+    width: 90%;
+    max-width: 550px;
+    border-radius: 20px;
+    box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.25);
+    animation: slideUp 0.25s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal-content .close {
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    color: #aaa;
+    cursor: pointer;
+    transition: color 0.2s;
+    padding: 0.5rem 1rem 0 0;
+    display: inline-block;
+}
+
+.modal-content .close:hover {
+    color: #333;
+}
+
+.modal-title {
+    padding: 1.25rem 1.5rem 0 1.5rem;
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--primary-color, #2F4156);
+    border-bottom: 2px solid #eef2f6;
+}
+
+/* Modal Form */
+#driverForm {
+    padding: 1.5rem;
+}
+
+#driverForm input:not([type="submit"]) {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    background-color: #fff;
+}
+
+#driverForm input:not([type="submit"]):focus {
+    outline: none;
+    border-color: var(--secondary-color, #567C8D);
+    box-shadow: 0 0 0 3px rgba(86, 124, 141, 0.2);
+}
+
+#driverForm input[disabled] {
+    background-color: #f1f5f9;
+    color: #64748b;
+    cursor: not-allowed;
+}
+
+/* Form Row for Van Details */
+#driverForm .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.75rem;
+    margin-bottom: 0;
+}
+
+#driverForm .form-row input {
+    margin-bottom: 0;
+}
+
+#driverForm button[type="submit"] {
+    width: 100%;
+    background-color: var(--primary-color, #2F4156);
+    color: white;
+    border: none;
+    padding: 0.85rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 1rem;
+    min-height: 48px;
+}
+
+#driverForm button[type="submit"]:hover {
+    background-color: var(--secondary-color, #567C8D);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive Modal */
+@media (max-width: 640px) {
+    .modal-content {
+        width: 95%;
+        margin: 10% auto;
+    }
+    
+    #driverForm .form-row {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+    
+    .modal-title {
+        font-size: 1.25rem;
+        padding: 1rem 1.25rem 0 1.25rem;
+    }
+    
+    #driverForm {
+        padding: 1.25rem;
+    }
+}
+
+/* ===============================
+   SWEETALERT2 CUSTOM OVERRIDES
+================================= */
+.swal2-popup {
+    border-radius: 20px !important;
+    font-family: var(--font-family, "Segoe UI", sans-serif) !important;
+}
+
+.swal2-title {
+    color: var(--primary-color, #2F4156) !important;
+    font-weight: 600 !important;
+}
+
+.swal2-confirm {
+    background-color: var(--primary-color, #2F4156) !important;
+    border-radius: 10px !important;
+    padding: 0.6rem 1.5rem !important;
+}
+
+.swal2-cancel {
+    border-radius: 10px !important;
+}
+
+/* Toast styling */
+.swal2-toast {
+    border-radius: 12px !important;
+    font-size: 0.875rem !important;
+}
+
+/* ===============================
+   RESPONSIVE ADJUSTMENTS
+================================= */
+@media (max-width: 768px) {
+    .users-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .page-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    #btnOpenCreateModal {
+        width: 100%;
+        text-align: center;
+    }
+    
+    .user-header h3 {
+        font-size: 1rem;
+    }
+    
+    .user-actions {
+        justify-content: flex-end;
+    }
+}
+
+/* Loading state placeholder */
+#driversGrid:empty::before {
+    content: "Loading drivers...";
+    display: block;
+    text-align: center;
+    padding: 3rem;
+    color: #6c757d;
+    font-style: italic;
+}
+
+/* Fix for SweetAlert input field on password reset */
+.swal2-input {
+    border-radius: 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    padding: 0.75rem !important;
+    font-size: 0.9rem !important;
+}
+
+.swal2-input:focus {
+    border-color: var(--secondary-color, #567C8D) !important;
+    box-shadow: 0 0 0 3px rgba(86, 124, 141, 0.2) !important;
+}
+
+/* Print styles - hide modal when printing */
+@media print {
+    .modal {
+        display: none !important;
+    }
+    
+    .user-actions {
+        display: none;
+    }
+    
+    .sidebar,
+    .page-header button {
+        display: none;
+    }
+    
+    .content {
+        margin-left: 0;
+        padding: 0;
+    }
+}

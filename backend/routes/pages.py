@@ -26,6 +26,12 @@ def admin_dashboard():
 def admin_users():
     return render_template("users.html")
 
+@pages_bp.route("/admin/bk-drivers")
+@login_required
+@admin_required
+def bk_drivers():
+    return render_template("bk_drivers.html")
+
 @pages_bp.route("/admin/transport_units")
 @login_required
 @admin_required
