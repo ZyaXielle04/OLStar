@@ -62,7 +62,18 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
     
-    const { ok, data } = await safeFetch("/api/admin/transport-units");
+    // Add cache-busting for force refresh
+    const url = forceRefresh 
+      ? `/api/admin/transport-units?refresh=true&_=${Date.now()}`
+      : "/api/admin/transport-units";
+    
+    const { ok, data } = await safeFetch(url, {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      }
+    });
+    
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
     transportUnits = data.units || [];
@@ -77,6 +88,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function populateTransportUnits(selected = "") {
+    if (!defaultUnitSelect) return;
+    
     defaultUnitSelect.innerHTML = `<option value="">— No Default Transport Unit —</option>`;
 
     const sortedUnits = [...transportUnits].sort((a, b) => {
@@ -94,11 +107,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ---------------- Users (with caching) ----------------
+  // ---------------- Users (with auto cache invalidation) ----------------
   async function fetchUsers(forceRefresh = false) {
     if (isLoading) return;
     
-    // Check cache
+    // Bypass cache when forceRefresh is true
     if (!forceRefresh && usersCache && (Date.now() - lastUsersFetch) < USERS_CACHE_TTL) {
       renderUsers(usersCache);
       return;
@@ -107,7 +120,18 @@ document.addEventListener("DOMContentLoaded", () => {
     isLoading = true;
     usersGrid.innerHTML = "<p>Loading users...</p>";
     
-    const { ok, data } = await safeFetch("/api/admin/users");
+    // Add cache-busting parameter when force refreshing
+    const url = forceRefresh 
+      ? `/api/admin/users?refresh=true&_=${Date.now()}`
+      : "/api/admin/users";
+    
+    const { ok, data } = await safeFetch(url, {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      }
+    });
+    
     isLoading = false;
     
     if (!ok) {
@@ -135,64 +159,89 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderUsers(users) {
-    if (!usersGrid) return;
-    usersGrid.innerHTML = "";
-    
-    if (users.length === 0) {
-      usersGrid.innerHTML = "<p>No users found.</p>";
-      return;
-    }
-    
-    // Use DocumentFragment for better performance
-    const fragment = document.createDocumentFragment();
-    
-    users.forEach(user => {
-      const card = document.createElement("article");
-      card.className = "card user-card";
-      card.dataset.uid = user.uid;
-      card.dataset.firstName = user.firstName || "";
-      card.dataset.middleName = user.middleName || "";
-      card.dataset.lastName = user.lastName || "";
-      card.dataset.phone = user.phone || "";
-      card.dataset.driverType = user.driverType || "";
-      card.dataset.defaultUnit = user.defaultTransportUnit || "";
-
-      let unitDetails = "-";
-      if (user.defaultTransportUnit) {
-        const unit = transportUnits.find(u => u.id === user.defaultTransportUnit);
-        if (unit) {
-          unitDetails = `${unit.name}<br><small>Plate: ${unit.plateNo}<br>Color: ${unit.color}<br>Type: ${unit.unitType}</small>`;
-        }
-      }
-
-      const driverTypeDisplay = user.driverTypeDisplay || user.driverType || "Not set";
-
-      card.innerHTML = `
-        <div class="user-header">
-          <h3>${escapeHtml(user.firstName)} ${escapeHtml(user.middleName)} ${escapeHtml(user.lastName)}</h3>
-          <span class="user-role ${user.role}">${user.role}</span>
-        </div>
-        <div class="user-details">
-          <p><strong>Phone:</strong> ${escapeHtml(user.phone || "-")}</p>
-          <p><strong>Driver Type:</strong> ${escapeHtml(driverTypeDisplay)}</p>
-          <p><strong>Default Unit:</strong> ${unitDetails}</p>
-        </div>
-        <div class="user-actions">
-          <button class="btn btn-sm edit-btn">Edit</button>
-          <button class="btn btn-sm btn-warning password-btn">Password</button>
-          <button class="btn btn-sm btn-danger delete-btn">Delete</button>
-        </div>
-      `;
+      if (!usersGrid) return;
+      usersGrid.innerHTML = "";
       
-      fragment.appendChild(card);
-    });
-    
-    usersGrid.appendChild(fragment);
-    
-    // Attach event listeners
-    document.querySelectorAll(".edit-btn").forEach(b => b.addEventListener("click", openEditUserModal));
-    document.querySelectorAll(".delete-btn").forEach(b => b.addEventListener("click", deleteUser));
-    document.querySelectorAll(".password-btn").forEach(b => b.addEventListener("click", openPasswordModal));
+      if (users.length === 0) {
+        usersGrid.innerHTML = "<p>No users found.</p>";
+        return;
+      }
+      
+      // Use DocumentFragment for better performance
+      const fragment = document.createDocumentFragment();
+      
+      users.forEach(user => {
+        const card = document.createElement("article");
+        card.className = "card user-card";
+        card.dataset.uid = user.uid;
+        card.dataset.firstName = user.firstName || "";
+        card.dataset.middleName = user.middleName || "";
+        card.dataset.lastName = user.lastName || "";
+        card.dataset.phone = user.phone || "";
+        card.dataset.driverType = user.driverType || "";
+        card.dataset.defaultUnit = user.defaultTransportUnit || "";
+
+        let unitDetails = "-";
+        if (user.defaultTransportUnit) {
+          const unit = transportUnits.find(u => u.id === user.defaultTransportUnit);
+          if (unit) {
+            unitDetails = `${unit.name}<br><small>Plate: ${unit.plateNo}<br>Color: ${unit.color}<br>Type: ${unit.unitType}</small>`;
+          }
+        }
+
+        const driverTypeDisplay = user.driverTypeDisplay || user.driverType || "Not set";
+        
+        // Determine badge class and style based on driver type
+        let badgeClass = "";
+        let badgeIcon = "";
+        switch(user.driverType) {
+          case "main":
+            badgeClass = "badge-main";
+            badgeIcon = "⭐";
+            break;
+          case "direct":
+            badgeClass = "badge-direct";
+            badgeIcon = "🚛";
+            break;
+          case "indirect":
+            badgeClass = "badge-indirect";
+            badgeIcon = "📦";
+            break;
+          case "project":
+            badgeClass = "badge-project";
+            badgeIcon = "📋";
+            break;
+          default:
+            badgeClass = "badge-default";
+            badgeIcon = "👤";
+        }
+
+        card.innerHTML = `
+          <div class="user-header">
+            <h3>${escapeHtml(user.firstName)} ${escapeHtml(user.middleName)} ${escapeHtml(user.lastName)}</h3>
+            <span class="driver-badge ${badgeClass}">${badgeIcon}</span>
+          </div>
+          <div class="user-details">
+            <p><strong>Phone:</strong> ${escapeHtml(user.phone || "-")}</p>
+            <p><strong>Driver Type:</strong> ${escapeHtml(driverTypeDisplay)}</p>
+            <p><strong>Default Unit:</strong> ${unitDetails}</p>
+          </div>
+          <div class="user-actions">
+            <button class="btn btn-sm edit-btn">Edit</button>
+            <button class="btn btn-sm btn-warning password-btn">Password</button>
+            <button class="btn btn-sm btn-danger delete-btn">Delete</button>
+          </div>
+        `;
+        
+        fragment.appendChild(card);
+      });
+      
+      usersGrid.appendChild(fragment);
+      
+      // Attach event listeners
+      document.querySelectorAll(".edit-btn").forEach(b => b.addEventListener("click", openEditUserModal));
+      document.querySelectorAll(".delete-btn").forEach(b => b.addEventListener("click", deleteUser));
+      document.querySelectorAll(".password-btn").forEach(b => b.addEventListener("click", openPasswordModal));
   }
 
   function escapeHtml(text) {
@@ -255,7 +304,8 @@ document.addEventListener("DOMContentLoaded", () => {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            "X-CSRFToken": getCookie("XSRF-TOKEN")
+            "X-CSRFToken": getCookie("XSRF-TOKEN"),
+            'Cache-Control': 'no-cache'
           },
           body: JSON.stringify({ password })
         });
@@ -264,11 +314,16 @@ document.addEventListener("DOMContentLoaded", () => {
         return ok;
       }
     }).then(result => {
-      if (result.isConfirmed) toast.fire({ icon: "success", title: "Password updated" });
+      if (result.isConfirmed) {
+        toast.fire({ icon: "success", title: "Password updated" });
+        // Auto-refresh: Clear cache and fetch fresh data
+        usersCache = null;
+        fetchUsers(true);
+      }
     });
   }
 
-  // ---------------- Delete User ----------------
+  // ---------------- Delete User - Auto refresh after delete ----------------
   async function deleteUser(e) {
     const card = e.target.closest(".user-card");
     if (!card) return;
@@ -288,17 +343,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!confirm.isConfirmed) return;
 
-    const { ok, data } = await safeFetch(`/api/admin/users/${uid}`, { method: "DELETE" });
+    const { ok, data } = await safeFetch(`/api/admin/users/${uid}`, { 
+      method: "DELETE",
+      headers: {
+        'Cache-Control': 'no-cache'
+      }
+    });
+    
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
     toast.fire({ icon: "success", title: "User deleted" });
     
-    // Clear cache and refresh
+    // Auto-refresh: Clear cache and fetch fresh data
     usersCache = null;
-    fetchUsers(true);
+    await fetchUsers(true);
   }
 
-  // ---------------- Save User ----------------
+  // ---------------- Save User - Auto refresh after save ----------------
   userForm.addEventListener("submit", async e => {
     e.preventDefault();
 
@@ -330,7 +391,8 @@ document.addEventListener("DOMContentLoaded", () => {
       method,
       headers: {
         "Content-Type": "application/json",
-        "X-CSRFToken": getCookie("XSRF-TOKEN")
+        "X-CSRFToken": getCookie("XSRF-TOKEN"),
+        'Cache-Control': 'no-cache'
       },
       body: JSON.stringify(payload)
     });
@@ -342,9 +404,12 @@ document.addEventListener("DOMContentLoaded", () => {
     userForm.reset();
     closeModal();
     
-    // Clear cache and refresh
+    // Auto-refresh: Clear cache and fetch fresh data
     usersCache = null;
-    fetchUsers(true);
+    await fetchUsers(true);
+    
+    // Also refresh transport units in case assignments changed
+    await fetchTransportUnits(true);
   });
 
   // ---------------- Modal helpers ----------------
@@ -356,7 +421,10 @@ document.addEventListener("DOMContentLoaded", () => {
     userModal.style.display = "none"; 
   }
 
-  btnCloseModal.addEventListener("click", closeModal);
+  if (btnCloseModal) {
+    btnCloseModal.addEventListener("click", closeModal);
+  }
+  
   window.addEventListener("click", e => e.target === userModal && closeModal());
 
   const btnOpenCreateModal = document.getElementById("btnOpenCreateModal");
@@ -372,15 +440,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ---------------- Auto-refresh (optional) ----------------
+  // ---------------- Auto-refresh when tab becomes visible ----------------
   let refreshInterval;
   
   function startAutoRefresh() {
     if (refreshInterval) clearInterval(refreshInterval);
-    // Refresh every 30 seconds only if tab is visible
+    // Refresh every 30 seconds only if tab is visible (background refresh)
     refreshInterval = setInterval(() => {
       if (!document.hidden) {
-        fetchUsers(false); // Use cache if still valid
+        // Only refresh if cache is expired (don't force refresh)
+        if (!usersCache || (Date.now() - lastUsersFetch) >= USERS_CACHE_TTL) {
+          fetchUsers(false);
+        }
       }
     }, 30000);
   }
@@ -392,20 +463,27 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
   
-  // Visibility API - pause refresh when tab is inactive
+  // Visibility API - refresh when tab becomes visible
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       stopAutoRefresh();
     } else {
       startAutoRefresh();
-      fetchUsers(false); // Refresh when tab becomes visible
+      // Force refresh when user comes back to the tab
+      usersCache = null;
+      fetchUsers(true);
+      fetchTransportUnits(true);
     }
   });
 
   // ---------------- Init ----------------
-  fetchTransportUnits();
-  fetchUsers(false);
-  startAutoRefresh();
+  async function init() {
+    await fetchTransportUnits(false);
+    await fetchUsers(false);
+    startAutoRefresh();
+  }
+  
+  init();
   
   // Cleanup on page unload
   window.addEventListener('beforeunload', () => {

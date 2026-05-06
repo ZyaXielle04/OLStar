@@ -267,3 +267,45 @@
     width: 100%;
   }
 }
+
+/* Unit Category Styles */
+.transport-category {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    min-width: 115px;
+    text-align: center;
+}
+
+.transport-category.company-owned {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.transport-category.outsource {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.transport-category.project-based {
+    background: #dcfce7;
+    color: #166534;
+}
+
+/* Modal select styling */
+#transportForm select {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 14px;
+    background-color: white;
+}
+
+#transportForm select:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}

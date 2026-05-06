@@ -740,9 +740,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 recordId.value = record.id;
                 document.getElementById("maintenanceDate").value = record.date || "";
                 
+                // FIX: Set the transport unit dropdown value correctly
                 const unitSelect = document.getElementById("transportUnit");
-                if (record.transportUnit?.name) {
-                    unitSelect.value = record.transportUnit.name;
+                if (record.transportUnit?.name && record.transportUnit?.plateNumber) {
+                    const unitValue = `${record.transportUnit.name}|${record.transportUnit.plateNumber}`;
+                    unitSelect.value = unitValue;
+                    console.log(`Setting unit dropdown to: ${unitValue}`);
                 } else {
                     unitSelect.value = "";
                 }
@@ -755,10 +758,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 
                 // Set driver if exists
                 if (record.driver && driverSelect) {
-                    for (let i = 0; i < driverSelect.options.length; i++) {
-                        if (driverSelect.options[i].value === record.driver.uid) {
-                            driverSelect.selectedIndex = i;
-                            break;
+                    if (record.driver.uid) {
+                        driverSelect.value = record.driver.uid;
+                    } else {
+                        // Fallback to finding by name
+                        for (let i = 0; i < driverSelect.options.length; i++) {
+                            if (driverSelect.options[i].text === record.driver.name) {
+                                driverSelect.selectedIndex = i;
+                                break;
+                            }
                         }
                     }
                 }
@@ -912,28 +920,65 @@ document.addEventListener("DOMContentLoaded", () => {
         const formData = new FormData(maintenanceForm);
         const id = recordId.value;
         
-        const selectedUnitName = formData.get("unitId");
-        const selectedUnit = transportUnits.find(u => u.transportUnit === selectedUnitName);
+        // FIX: Get the selected unit value (which is formatted as "name|plateNumber")
+        const selectedUnitValue = formData.get("unitId");
         
-        const transportUnitData = selectedUnit ? {
-            id: selectedUnit.id,
-            name: selectedUnit.transportUnit,
-            plateNumber: selectedUnit.plateNumber,
-            color: selectedUnit.color,
-            unitType: selectedUnit.unitType
-        } : null;
+        let transportUnitData = null;
         
-        // Get driver data
-        const selectedDriverId = formData.get("driverId");
+        if (selectedUnitValue) {
+            // Parse the value to get name and plate number
+            const [unitName, unitPlateNumber] = selectedUnitValue.split('|');
+            
+            // Find the full unit data from transportUnits array
+            const selectedUnit = transportUnits.find(u => 
+                u.transportUnit === unitName && u.plateNumber === unitPlateNumber
+            );
+            
+            if (selectedUnit) {
+                transportUnitData = {
+                    id: selectedUnit.id,
+                    name: selectedUnit.transportUnit,
+                    plateNumber: selectedUnit.plateNumber,
+                    color: selectedUnit.color,
+                    unitType: selectedUnit.unitType
+                };
+            } else {
+                // Fallback: create minimal object if unit not found in array
+                transportUnitData = {
+                    name: unitName,
+                    plateNumber: unitPlateNumber,
+                    id: null,
+                    color: "",
+                    unitType: ""
+                };
+            }
+        }
+        
+        // Get driver data - FIXED
+        const selectedDriverValue = formData.get("driverId");
         let driverData = null;
         
-        if (selectedDriverId && driverSelect) {
-            const selectedOption = driverSelect.options[driverSelect.selectedIndex];
-            if (selectedOption && selectedOption.value) {
+        if (selectedDriverValue && selectedDriverValue !== "") {
+            // Find driver from drivers array
+            const selectedDriver = drivers.find(d => d.uid === selectedDriverValue);
+            if (selectedDriver) {
+                const fullName = `${selectedDriver.firstName || ''} ${selectedDriver.middleName || ''} ${selectedDriver.lastName || ''}`.trim();
                 driverData = {
-                    uid: selectedOption.value,
-                    name: selectedOption.text
+                    uid: selectedDriver.uid,
+                    name: fullName,
+                    firstName: selectedDriver.firstName,
+                    lastName: selectedDriver.lastName
                 };
+            } else {
+                // If not found in array, use the selected option text
+                const driverSelect = document.getElementById("driver");
+                const selectedOption = driverSelect.options[driverSelect.selectedIndex];
+                if (selectedOption && selectedOption.value) {
+                    driverData = {
+                        uid: selectedOption.value,
+                        name: selectedOption.text
+                    };
+                }
             }
         }
         
@@ -982,6 +1027,8 @@ document.addEventListener("DOMContentLoaded", () => {
             await fetchMaintenanceRecords();
             await fetchStatistics();
             await fetchAlerts();
+            await fetchTransportUnits(); // Refresh transport units
+            await fetchDrivers(); // Refresh drivers
         } catch (err) {
             console.error("Error saving maintenance record:", err);
             showToast("Failed to save record", "error");
@@ -1152,7 +1199,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ---------------- Helper Functions ----------------
-    function populateUnitFilters() {
+    function populateUnitFilters(selectedUnitValue = "") {
         console.log(`🎯 Populating ${transportUnits.length} transport units (including same names with different plates)`);
         
         const options = ['<option value="">All Transport Units</option>'];
@@ -1164,11 +1211,15 @@ document.addEventListener("DOMContentLoaded", () => {
             const displayText = `${unit.transportUnit} (${unit.plateNumber})`;
             const optionValue = `${unit.transportUnit}|${unit.plateNumber}`; // Unique combo
             
-            const option = `<option value="${optionValue}">${displayText}</option>`;
+            // Check if this option should be selected
+            const isSelected = (selectedUnitValue === optionValue);
+            const selectedAttr = isSelected ? ' selected' : '';
+            
+            const option = `<option value="${optionValue}"${selectedAttr}>${displayText}</option>`;
             options.push(option);
             unitOptions.push(option);
             
-            console.log(`✅ Added: ${displayText}`);
+            console.log(`✅ Added: ${displayText}${isSelected ? ' (SELECTED)' : ''}`);
         });
         
         console.log(`📊 Total options created: ${options.length - 1} unique units`);

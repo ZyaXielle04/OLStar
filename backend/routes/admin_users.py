@@ -47,48 +47,6 @@ class UserManagementCache:
 user_cache = UserManagementCache()
 
 # =======================
-# OPTIMIZED GET TRANSPORT UNITS (Cached)
-# =======================
-@admin_users_api.route("/api/admin/transport-units", methods=["GET"])
-@admin_required
-def get_transport_units():
-    """Get all transport units with caching"""
-    try:
-        # Check cache first
-        cached_data = user_cache.get("transport_units")
-        if cached_data:
-            return jsonify(cached_data)
-        
-        # Fetch only needed fields from transportUnits
-        units_ref = db.reference("transportUnits")
-        units_snapshot = units_ref.get() or {}
-        
-        # Transform data efficiently
-        units_list = []
-        for key, info in units_snapshot.items():
-            if info:  # Only add if data exists
-                units_list.append({
-                    "id": key,
-                    "name": info.get("transportUnit", ""),
-                    "plateNo": info.get("plateNumber", ""),
-                    "color": info.get("color", ""),
-                    "unitType": info.get("unitType", "")
-                })
-        
-        # Sort by name for consistent display
-        units_list.sort(key=lambda x: x.get("name", "").lower())
-        
-        response = {"units": units_list}
-        
-        # Cache for 1 hour (transport units rarely change)
-        user_cache.set("transport_units", response, ttl=3600)
-        return jsonify(response)
-        
-    except Exception as e:
-        logging.error(f"Error fetching transport units: {e}")
-        return jsonify({"error": str(e)}), 500
-
-# =======================
 # OPTIMIZED GET USERS (FILTERED FOR DRIVERS)
 # =======================
 @admin_users_api.route("/api/admin/users", methods=["GET"])
@@ -120,9 +78,9 @@ def get_users():
             if role != "driver":
                 continue
             
-            # Check driverType is valid
+            # Check driverType is valid (updated to include "project")
             driver_type = info.get("driverType", "").lower()
-            valid_driver_types = ["main", "direct", "indirect"]
+            valid_driver_types = ["main", "direct", "indirect", "project"]
             if driver_type not in valid_driver_types:
                 continue
             
@@ -157,7 +115,8 @@ def get_users():
         driver_type_map = {
             "main": "Main Driver",
             "indirect": "Outsource Indirect",
-            "direct": "Outsource Direct"
+            "direct": "Outsource Direct",
+            "project": "Project-based"
         }
         
         for item in valid_users:
@@ -213,11 +172,11 @@ def create_user():
     if missing_fields:
         return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
     
-    # Validate driverType
+    # Validate driverType (updated to include "project")
     driver_type = data.get("driverType")
-    valid_driver_types = ["main", "direct", "indirect"]
+    valid_driver_types = ["main", "direct", "indirect", "project"]
     if driver_type not in valid_driver_types:
-        return jsonify({"error": "Invalid driverType. Must be 'main', 'direct', or 'indirect'"}), 400
+        return jsonify({"error": "Invalid driverType. Must be 'main', 'direct', 'indirect', or 'project'"}), 400
     
     try:
         # Create Firebase Auth user with fixed password
@@ -271,11 +230,11 @@ def edit_user(uid):
     allowed_fields = ["phone", "firstName", "middleName", "lastName", "role", "active", "driverType", "defaultTransportUnit"]
     updates = {k: data[k] for k in allowed_fields if k in data}
     
-    # Validate driverType if present
+    # Validate driverType if present (updated to include "project")
     if "driverType" in updates:
-        valid_driver_types = ["main", "direct", "indirect"]
+        valid_driver_types = ["main", "direct", "indirect", "project"]
         if updates["driverType"] not in valid_driver_types:
-            return jsonify({"error": "Invalid driverType. Must be 'main', 'direct', or 'indirect'"}), 400
+            return jsonify({"error": "Invalid driverType. Must be 'main', 'direct', 'indirect', or 'project'"}), 400
     
     # Prevent changing role to non-driver for this page
     if "role" in updates and updates["role"].lower() != "driver":
@@ -416,12 +375,13 @@ def get_single_user(uid):
         except:
             disabled = False
         
-        # Format driver type
+        # Format driver type (updated to include "project")
         driver_type = user_data.get("driverType", "")
         driver_type_map = {
             "main": "Main Driver",
             "indirect": "Outsource Indirect", 
-            "direct": "Outsource Direct"
+            "direct": "Outsource Direct",
+            "project": "Project-based"
         }
         
         response = {

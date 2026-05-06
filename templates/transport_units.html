@@ -111,10 +111,16 @@
       <span class="close">&times;</span>
       <h2 class="modal-title">Add Transport Unit</h2>
       <form id="transportForm">
-        <input type="text" name="unitType" placeholder="Unit Type (SUV, Sedan, Van)" required />
-        <input type="text" name="transportUnit" placeholder="Transport Unit (Brand / Model)" required />
-        <input type="text" name="color" placeholder="Color" required />
-        <input type="text" name="plateNumber" placeholder="Plate Number" required />
+        <select name="unitCategory" id="unitCategory" required>
+          <option value="">Select Unit Category</option>
+          <option value="company-owned">Company Owned</option>
+          <option value="outsource">Outsource</option>
+          <option value="project-based">Project Based</option>
+        </select>
+        <input type="text" name="unitType" id="unitType" placeholder="Unit Type (SUV, Sedan, Van)" required />
+        <input type="text" name="transportUnit" id="transportUnit" placeholder="Transport Unit (Brand / Model)" required />
+        <input type="text" name="color" id="color" placeholder="Color" required />
+        <input type="text" name="plateNumber" id="plateNumber" placeholder="Plate Number" required />
         <button type="submit">Save</button>
       </form>
     </div>
