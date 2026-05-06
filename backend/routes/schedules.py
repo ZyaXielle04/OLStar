@@ -141,7 +141,8 @@ def get_transport_units():
                     "transportUnit": unit.get("transportUnit", ""),
                     "unitType": unit.get("unitType", ""),
                     "color": unit.get("color", ""),
-                    "plateNumber": unit.get("plateNumber", "")
+                    "plateNumber": unit.get("plateNumber", ""),
+                    "unitCategory": unit.get("unitCategory", "")
                 })
         
         response = {"success": True, "transportUnits": transport_units}

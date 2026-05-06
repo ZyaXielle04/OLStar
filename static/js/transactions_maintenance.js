@@ -148,30 +148,40 @@ document.addEventListener("DOMContentLoaded", () => {
     // ---------------- API Calls ----------------
     async function fetchTransportUnits() {
         try {
-            console.log("🔍 FETCHING transport units from /api/transportUnits...");
+            console.log("🔍 FETCHING transport units from /api/admin/transport-units...");
             
-            const response = await fetch("/api/transportUnits");
-            console.log("📡 Response status:", response.status, response.statusText);
+            // Use the admin endpoint which has unitCategory
+            const response = await fetch("/api/admin/transport-units");
             
             if (!response.ok) throw new Error("Failed to fetch transport units");
             
             const data = await response.json();
-            console.log("📦 RAW API Response:", JSON.stringify(data, null, 2));
-            console.log("📊 Response type:", typeof data);
-            console.log("🔑 Response keys:", Object.keys(data));
             
-            transportUnits = data.transportUnits || [];
-            console.log(`✅ Transport units loaded: ${transportUnits.length} units`);
-            console.log("📋 First 3 units (sample):", transportUnits.slice(0, 3));
+            // Transform data to match expected format (using 'units' array from admin endpoint)
+            const units = data.units || [];
             
-            if (transportUnits.length === 0) {
-                console.warn("⚠️ No transport units found in response! Check if data.transportUnits exists or if the endpoint returns data in different format.");
-            }
+            // Map to the format expected by this page
+            transportUnits = units.map(unit => ({
+                id: unit.id,
+                transportUnit: unit.name,
+                unitType: unit.unitType,
+                color: unit.color,
+                plateNumber: unit.plateNo,
+                unitCategory: unit.unitCategory
+            }));
             
+            console.log(`📊 Transport units loaded: ${transportUnits.length} units`);
+            
+            // Log categories for debugging
+            transportUnits.forEach(unit => {
+                console.log(`  - ${unit.transportUnit}: category = "${unit.unitCategory}"`);
+            });
+            
+            // Now populate filters - only company-owned will show
             populateUnitFilters();
+            
         } catch (err) {
             console.error("❌ Error fetching transport units:", err);
-            console.trace(); // This will show the full stack trace
             showToast("Failed to load transport units", "error");
         }
     }
@@ -276,7 +286,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Type filter
             if (type !== "all" && record.serviceType !== type) return false;
             
-            // Unit filter
+            // Unit filter - compare by name
             if (unitName && record.transportUnit?.name !== unitName) return false;
             
             // Date range filter
@@ -614,8 +624,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     return `
                         <div class="unit-item">
                             <div class="unit-info">
-                                <div class="unit-name">${unitName}</div>
-                                <div class="unit-plate">${record?.transportUnit?.plateNumber || ""}</div>
+                                <div class="unit-name">${escapeHtml(unitName)}</div>
+                                <div class="unit-plate">${escapeHtml(record?.transportUnit?.plateNumber || "")}</div>
                             </div>
                             <div class="unit-cost">₱${cost.toLocaleString()}</div>
                         </div>
@@ -625,6 +635,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 topUnitsList.innerHTML = '<div class="loading">No data available</div>';
             }
         }, 50);
+    }
+
+    function escapeHtml(text) {
+        if (!text) return "";
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     // ---------------- Table Rendering ----------------
@@ -648,14 +665,14 @@ document.addEventListener("DOMContentLoaded", () => {
             return `
                 <tr>
                     <td>${formatDate(record.date)}</td>
-                    <td><strong>${record.transportUnit?.name || "—"}</strong></td>
-                    <td>${record.transportUnit?.plateNumber || "—"}</td>
+                    <td><strong>${escapeHtml(record.transportUnit?.name || "—")}</strong></td>
+                    <td>${escapeHtml(record.transportUnit?.plateNumber || "—")}</td>
                     <td><span class="service-type-badge">${formatServiceType(record.serviceType)}</span></td>
                     <td>${truncateText(record.description, 50)}</td>
                     <td><strong>₱${parseFloat(record.cost || 0).toLocaleString()}</strong></td>
                     <td><span class="status-badge ${statusClass}">${formatStatus(record.status)}</span></td>
-                    <td>${record.mechanic || "—"}</td>
-                    <td>${record.driver?.name || "—"}</td>
+                    <td>${escapeHtml(record.mechanic || "—")}</td>
+                    <td>${escapeHtml(record.driver?.name || "—")}</td>
                     <td>
                         <button class="action-btn view" data-id="${record.id}" title="View Details">
                             <i class="fas fa-eye"></i>
@@ -710,7 +727,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="alert-item">
                     <div class="alert-content">
                         <div class="alert-title">
-                            <strong>${alert.record?.transportUnit?.name || "Unknown Unit"}</strong> - ${alert.message}
+                            <strong>${escapeHtml(alert.record?.transportUnit?.name || "Unknown Unit")}</strong> - ${alert.message}
                         </div>
                         <div class="alert-details">
                             ${alert.record?.serviceType ? formatServiceType(alert.record.serviceType) : ""}
@@ -740,7 +757,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 recordId.value = record.id;
                 document.getElementById("maintenanceDate").value = record.date || "";
                 
-                // FIX: Set the transport unit dropdown value correctly
+                // Set the transport unit dropdown value correctly
                 const unitSelect = document.getElementById("transportUnit");
                 if (record.transportUnit?.name && record.transportUnit?.plateNumber) {
                     const unitValue = `${record.transportUnit.name}|${record.transportUnit.plateNumber}`;
@@ -823,11 +840,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="detail-row">
                         <div>
                             <div class="detail-label">Unit</div>
-                            <div class="detail-value">${record.transportUnit?.name || "—"}</div>
+                            <div class="detail-value">${escapeHtml(record.transportUnit?.name || "—")}</div>
                         </div>
                         <div>
                             <div class="detail-label">Plate Number</div>
-                            <div class="detail-value">${record.transportUnit?.plateNumber || "—"}</div>
+                            <div class="detail-value">${escapeHtml(record.transportUnit?.plateNumber || "—")}</div>
                         </div>
                     </div>
                 </div>
@@ -837,7 +854,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="detail-row">
                         <div>
                             <div class="detail-label">Assigned Driver</div>
-                            <div class="detail-value">${record.driver?.name || "—"}</div>
+                            <div class="detail-value">${escapeHtml(record.driver?.name || "—")}</div>
                         </div>
                     </div>
                 </div>
@@ -847,7 +864,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="detail-row">
                         <div>
                             <div class="detail-label">Description</div>
-                            <div class="detail-value">${record.description || "—"}</div>
+                            <div class="detail-value">${escapeHtml(record.description || "—")}</div>
                         </div>
                         <div>
                             <div class="detail-label">Cost</div>
@@ -857,7 +874,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="detail-row">
                         <div>
                             <div class="detail-label">Mechanic/Shop</div>
-                            <div class="detail-value">${record.mechanic || "—"}</div>
+                            <div class="detail-value">${escapeHtml(record.mechanic || "—")}</div>
                         </div>
                         <div>
                             <div class="detail-label">Odometer Reading</div>
@@ -868,7 +885,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 
                 <div class="detail-group">
                     <h3>Additional Notes</h3>
-                    <div class="detail-value">${record.notes || "No notes"}</div>
+                    <div class="detail-value">${escapeHtml(record.notes || "No notes")}</div>
                 </div>
                 
                 <div class="detail-group">
@@ -876,7 +893,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="detail-row">
                         <div>
                             <div class="detail-label">Created By</div>
-                            <div class="detail-value">${record.createdBy || "—"}</div>
+                            <div class="detail-value">${escapeHtml(record.createdBy || "—")}</div>
                         </div>
                         <div>
                             <div class="detail-label">Created At</div>
@@ -886,7 +903,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="detail-row">
                         <div>
                             <div class="detail-label">Last Modified By</div>
-                            <div class="detail-value">${record.lastModifiedBy || "—"}</div>
+                            <div class="detail-value">${escapeHtml(record.lastModifiedBy || "—")}</div>
                         </div>
                         <div>
                             <div class="detail-label">Last Modified</div>
@@ -920,7 +937,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const formData = new FormData(maintenanceForm);
         const id = recordId.value;
         
-        // FIX: Get the selected unit value (which is formatted as "name|plateNumber")
+        // Get the selected unit value (which is formatted as "name|plateNumber")
         const selectedUnitValue = formData.get("unitId");
         
         let transportUnitData = null;
@@ -954,7 +971,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
         
-        // Get driver data - FIXED
+        // Get driver data
         const selectedDriverValue = formData.get("driverId");
         let driverData = null;
         
@@ -971,8 +988,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 };
             } else {
                 // If not found in array, use the selected option text
-                const driverSelect = document.getElementById("driver");
-                const selectedOption = driverSelect.options[driverSelect.selectedIndex];
+                const driverSelectElem = document.getElementById("driver");
+                const selectedOption = driverSelectElem.options[driverSelectElem.selectedIndex];
                 if (selectedOption && selectedOption.value) {
                     driverData = {
                         uid: selectedOption.value,
@@ -1146,7 +1163,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     const date = new Date(entry.timestamp);
                     historyHtml += `
                         <div class="history-item" style="margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
-                            <div><strong>${entry.action || "updated"}</strong> by ${entry.user || "Unknown"}</div>
+                            <div><strong>${entry.action || "updated"}</strong> by ${escapeHtml(entry.user || "Unknown")}</div>
                             <div style="font-size: 12px; color: #666;">${date.toLocaleString()}</div>
                             ${entry.changes ? `
                                 <div style="margin-top: 8px;">
@@ -1157,7 +1174,7 @@ document.addEventListener("DOMContentLoaded", () => {
                                             return `
                                                 <div style="font-size: 12px; padding: 2px 0;">
                                                     <strong>Transport Unit:</strong> 
-                                                    ${oldName} → ${newName}
+                                                    ${escapeHtml(oldName)} → ${escapeHtml(newName)}
                                                 </div>
                                             `;
                                         } else if (change.field === "driver") {
@@ -1166,14 +1183,14 @@ document.addEventListener("DOMContentLoaded", () => {
                                             return `
                                                 <div style="font-size: 12px; padding: 2px 0;">
                                                     <strong>Driver:</strong> 
-                                                    ${oldName} → ${newName}
+                                                    ${escapeHtml(oldName)} → ${escapeHtml(newName)}
                                                 </div>
                                             `;
                                         } else {
                                             return `
                                                 <div style="font-size: 12px; padding: 2px 0;">
-                                                    <strong>${change.field}:</strong> 
-                                                    ${change.old || "(empty)"} → ${change.new || "(empty)"}
+                                                    <strong>${escapeHtml(change.field)}:</strong> 
+                                                    ${escapeHtml(change.old || "(empty)")} → ${escapeHtml(change.new || "(empty)")}
                                                 </div>
                                             `;
                                         }
@@ -1200,13 +1217,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------------- Helper Functions ----------------
     function populateUnitFilters(selectedUnitValue = "") {
-        console.log(`🎯 Populating ${transportUnits.length} transport units (including same names with different plates)`);
+        console.log(`🎯 Populating transport units - filtering for company-owned only`);
+        
+        // Filter units to only show company-owned
+        const companyOwnedUnits = transportUnits.filter(unit => unit.unitCategory === "company-owned");
+        
+        console.log(`📊 Total units: ${transportUnits.length}, Company-owned: ${companyOwnedUnits.length}`);
         
         const options = ['<option value="">All Transport Units</option>'];
         const unitOptions = ['<option value="">— Select Transport Unit —</option>'];
         
-        // Direct loop - NO deduplication
-        transportUnits.forEach(unit => {
+        // Only loop through company-owned units
+        companyOwnedUnits.forEach(unit => {
             // Create a unique identifier using both name AND plate number
             const displayText = `${unit.transportUnit} (${unit.plateNumber})`;
             const optionValue = `${unit.transportUnit}|${unit.plateNumber}`; // Unique combo
@@ -1215,32 +1237,22 @@ document.addEventListener("DOMContentLoaded", () => {
             const isSelected = (selectedUnitValue === optionValue);
             const selectedAttr = isSelected ? ' selected' : '';
             
-            const option = `<option value="${optionValue}"${selectedAttr}>${displayText}</option>`;
+            const option = `<option value="${optionValue}"${selectedAttr}>${escapeHtml(displayText)}</option>`;
             options.push(option);
             unitOptions.push(option);
             
             console.log(`✅ Added: ${displayText}${isSelected ? ' (SELECTED)' : ''}`);
         });
         
-        console.log(`📊 Total options created: ${options.length - 1} unique units`);
+        console.log(`📊 Total options created: ${options.length - 1} company-owned units`);
         
-        unitFilter.innerHTML = options.join("");
-        transportUnitSelect.innerHTML = unitOptions.join("");
-        scheduleUnitSelect.innerHTML = unitOptions.join("");
+        if (unitFilter) unitFilter.innerHTML = options.join("");
+        if (transportUnitSelect) transportUnitSelect.innerHTML = unitOptions.join("");
+        if (scheduleUnitSelect) scheduleUnitSelect.innerHTML = unitOptions.join("");
         
         // Verify counts
-        console.log(`🔍 Verification - unitFilter has ${unitFilter.options.length - 1} units`);
-        console.log(`🔍 Verification - transportUnitSelect has ${transportUnitSelect.options.length - 1} units`);
-    }
-
-    // Add this right after populateUnitFilters() is called
-    function verifyDropdowns() {
-        console.log("🔍 VERIFYING dropdowns:");
-        console.log("  - unitFilter options count:", unitFilter.options.length);
-        console.log("  - transportUnitSelect options count:", transportUnitSelect.options.length);
-        console.log("  - scheduleUnitSelect options count:", scheduleUnitSelect.options.length);
-        
-        console.log("  - unitFilter values:", Array.from(unitFilter.options).map(opt => opt.value));
+        console.log(`🔍 Verification - unitFilter has ${unitFilter?.options?.length - 1 || 0} company-owned units`);
+        console.log(`🔍 Verification - transportUnitSelect has ${transportUnitSelect?.options?.length - 1 || 0} company-owned units`);
     }
 
     function populateDriverDropdowns() {
@@ -1248,7 +1260,7 @@ document.addEventListener("DOMContentLoaded", () => {
         
         drivers.forEach(driver => {
             const fullName = `${driver.firstName || ''} ${driver.middleName || ''} ${driver.lastName || ''}`.trim();
-            const option = `<option value="${driver.uid}">${fullName}</option>`;
+            const option = `<option value="${driver.uid}">${escapeHtml(fullName)}</option>`;
             options.push(option);
         });
         
