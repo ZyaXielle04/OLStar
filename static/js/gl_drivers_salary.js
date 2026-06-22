@@ -412,6 +412,90 @@ function renderTripsGrid(entries, trips) {
     tbody.innerHTML = html;
 }
 
+function renderTripsGrid(entries, trips) {
+    const tbody = document.getElementById('tripsGridBody');
+    if (!tbody) return;
+
+    const groupedTrips = {};
+    trips.forEach(trip => {
+        const date = trip.date;
+        let formattedDate = date;
+        if (date && date.includes(',')) {
+            const dateObj = new Date(date);
+            formattedDate = dateObj.toISOString().split('T')[0];
+        }
+
+        if (!groupedTrips[formattedDate]) {
+            groupedTrips[formattedDate] = {
+                time: trip.time,
+                schedules: [],
+                tripCount: 0
+            };
+        }
+
+        const status = trip.status || 'Unknown';
+        const isCompleted = trip.isCompleted !== false && status.toLowerCase() === 'completed';
+        groupedTrips[formattedDate].schedules.push({
+            id: trip.transactionID || trip.scheduleId || 'Schedule',
+            clientName: trip.clientName || '',
+            status,
+            driverRate: trip.driverRate || 0,
+            isCompleted
+        });
+        groupedTrips[formattedDate].tripCount++;
+
+        if (groupedTrips[formattedDate].time !== trip.time) {
+            groupedTrips[formattedDate].time = trip.time;
+        }
+    });
+
+    const allDates = Object.keys(entries).sort();
+    let html = '';
+
+    allDates.forEach(date => {
+        const entry = entries[date] || {};
+        const trip = groupedTrips[date];
+        const dayName = new Date(date).toLocaleDateString('en-US', { weekday: 'short' });
+        const hasTrips = trip && trip.tripCount > 0;
+        const completedTrips = entry.tripCount || 0;
+        const totalSchedules = hasTrips ? trip.tripCount : 0;
+        const amount = entry.amount || 0;
+        const driverRate = entry.driverRate || 0;
+        const time = hasTrips ? (trip.time || '-') : '-';
+        const advance = entry.advance || 0;
+        const scheduleList = hasTrips ? trip.schedules.map(schedule => `
+            <div class="schedule-line ${schedule.isCompleted ? 'completed-schedule' : 'excluded-schedule'}">
+                <span class="schedule-id">${escapeHtml(schedule.id)}</span>
+                <span class="schedule-client">${escapeHtml(schedule.clientName)}</span>
+                <span class="schedule-money">₱${schedule.driverRate.toLocaleString()}</span>
+            </div>
+        `).join('') : '-';
+        const statusList = hasTrips ? trip.schedules.map(schedule => `
+            <span class="schedule-status ${schedule.isCompleted ? 'status-completed' : 'status-excluded'}">${escapeHtml(schedule.status)}</span>
+        `).join('') : '-';
+        const rowClass = hasTrips ? '' : 'empty-day-row';
+
+        html += `
+            <tr data-date="${date}" class="${rowClass}">
+                <td>${escapeHtml(date)}</td>
+                <td>${dayName}</td>
+                <td>${escapeHtml(time)}</td>
+                <td>
+                    <div class="schedule-count">${completedTrips}/${totalSchedules} completed</div>
+                    <div class="schedule-list">${scheduleList}</div>
+                </td>
+                <td><div class="schedule-status-list">${statusList}</div></td>
+                <td>₱${amount.toLocaleString()}</td>
+                <td>₱${driverRate.toLocaleString()}</td>
+                <td><input type="number" class="advance-input" step="0.01" min="0" value="${advance}" onchange="updateAdvance('${date}', this.value)"></td>
+                <td><button type="button" class="btn-sm btn-danger" onclick="clearAdvance('${date}')"><i class="fas fa-times"></i></button></td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
 function updateAdvance(date, amount) {
     const advanceAmount = parseFloat(amount) || 0;
     

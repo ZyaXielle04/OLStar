@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, jsonify, request, session
 from functools import wraps
 from datetime import datetime, timedelta
 import calendar
+import re
 from decorators import login_required, admin_required
 import firebase_admin
 from firebase_admin import db
@@ -75,6 +76,174 @@ def calculate_hours(start_time, end_time):
         hours += 24
     
     return hours
+
+def normalize_phone(phone):
+    """Normalize PH mobile numbers so schedules and user profiles can match."""
+    digits = re.sub(r'\D', '', str(phone or ''))
+    if digits.startswith('63') and len(digits) == 12:
+        return '0' + digits[2:]
+    if digits.startswith('9') and len(digits) == 10:
+        return '0' + digits
+    return digits
+
+def parse_amount(value):
+    """Parse money/rate values that may contain peso signs, commas, or spaces."""
+    if value in (None, ''):
+        return 0
+    if isinstance(value, (int, float)):
+        return float(value)
+    cleaned = re.sub(r'[^\d.-]', '', str(value))
+    try:
+        return float(cleaned) if cleaned else 0
+    except ValueError:
+        return 0
+
+def parse_schedule_date(date_value):
+    if not date_value:
+        return None
+    date_text = str(date_value).strip()
+    for fmt in ('%Y-%m-%d', '%B %d, %Y', '%b %d, %Y'):
+        try:
+            return datetime.strptime(date_text, fmt)
+        except ValueError:
+            continue
+    return None
+
+def parse_cutoff_range(cutoff):
+    cutoff_parts = cutoff.split(' - ')
+    month_year = cutoff_parts[0].split()
+    month = month_year[0]
+    year = int(month_year[1])
+    period = cutoff_parts[1]
+
+    months = ['January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November', 'December']
+    month_num = months.index(month) + 1
+
+    if period == '1st Half':
+        start_day = 1
+        end_day = 15
+    else:
+        start_day = 16
+        end_day = calendar.monthrange(year, month_num)[1]
+
+    return month, year, period, month_num, start_day, end_day
+
+def build_entries_for_cutoff(cutoff, trips, existing_entries=None):
+    month, year, period, month_num, start_day, end_day = parse_cutoff_range(cutoff)
+    entries = {}
+    current_date = datetime(year, month_num, start_day)
+    end_date_obj = datetime(year, month_num, end_day)
+    existing_entries = existing_entries or {}
+
+    while current_date <= end_date_obj:
+        date_str = current_date.strftime('%Y-%m-%d')
+        old_entry = existing_entries.get(date_str, {})
+        entries[date_str] = {
+            'date': date_str,
+            'timeIn': '',
+            'timeOut': '',
+            'driverRate': 0,
+            'amount': 0,
+            'tripCount': 0,
+            'advance': old_entry.get('advance', 0),
+            'scheduleIds': []
+        }
+        current_date += timedelta(days=1)
+
+    for trip in trips:
+        if not trip.get('isCompleted', True):
+            continue
+
+        date_obj = parse_schedule_date(trip.get('date', ''))
+        if not date_obj:
+            continue
+        date_str = date_obj.strftime('%Y-%m-%d')
+
+        if date_str in entries:
+            trip_time = trip.get('time', '')
+            entries[date_str]['timeIn'] = trip_time.split(' - ')[0] if ' - ' in trip_time else ''
+            entries[date_str]['timeOut'] = trip_time.split(' - ')[1] if ' - ' in trip_time else ''
+            entries[date_str]['driverRate'] += trip.get('driverRate', 0)
+            entries[date_str]['amount'] += trip.get('amount', 0)
+            entries[date_str]['tripCount'] += 1
+            entries[date_str]['scheduleIds'].append(trip.get('scheduleId', ''))
+
+    return entries, month, year, period, start_day, end_day
+
+def summarize_entries(entries):
+    total_trips = 0
+    total_driver_rate = 0
+    total_amount = 0
+
+    for entry in entries.values():
+        total_trips += entry.get('tripCount', 0)
+        total_driver_rate += entry.get('driverRate', 0)
+        total_amount += entry.get('amount', 0)
+
+    return {
+        'totalTrips': total_trips,
+        'totalDriverRate': total_driver_rate,
+        'totalAmount': total_amount
+    }
+
+def calculate_driver_net(summary, deductions=None, transactions=None):
+    deductions = deductions or {}
+    transactions = transactions or {}
+    gross = summary.get('totalDriverRate', 0)
+    total_deductions = (
+        deductions.get('sss', 0) +
+        deductions.get('philhealth', 0) +
+        deductions.get('pagibig', 0) +
+        deductions.get('otherDeductions', 0) +
+        transactions.get('totalPaid', 0)
+    )
+    return gross - total_deductions
+
+def refresh_existing_driver_dtr(record_id, record, cutoff):
+    """Refresh draft DTR trip totals from schedules while preserving edits."""
+    if record.get('status') in ['approved', 'paid']:
+        return record
+
+    trips = get_driver_trips_for_cutoff(record.get('driverPhone', ''), cutoff, include_all=True)
+    entries, month, year, period, start_day, end_day = build_entries_for_cutoff(
+        cutoff,
+        trips,
+        record.get('entries', {})
+    )
+    summary = summarize_entries(entries)
+    deductions = record.get('deductions', {})
+    transactions = record.get('transactions', {})
+    net_total = calculate_driver_net(summary, deductions, transactions)
+
+    refreshed = {
+        **record,
+        'month': month,
+        'year': year,
+        'period': period,
+        'startDay': start_day,
+        'endDay': end_day,
+        'entries': entries,
+        'trips': trips,
+        'summary': summary,
+        'netTotal': net_total,
+        'updatedAt': datetime.now().isoformat()
+    }
+
+    get_driver_dtr_ref().child(record_id).update({
+        'month': month,
+        'year': year,
+        'period': period,
+        'startDay': start_day,
+        'endDay': end_day,
+        'entries': entries,
+        'trips': trips,
+        'summary': summary,
+        'netTotal': net_total,
+        'updatedAt': refreshed['updatedAt']
+    })
+
+    return refreshed
 
 # ==================== PAGE ROUTE ====================
 
@@ -220,6 +389,7 @@ def get_or_create_driver_dtr(driver_id, cutoff):
                 break
         
         if existing_record:
+            existing_record = refresh_existing_driver_dtr(existing_id, existing_record, cutoff)
             return jsonify({
                 'success': True,
                 'data': {'id': existing_id, **existing_record},
@@ -227,78 +397,17 @@ def get_or_create_driver_dtr(driver_id, cutoff):
             })
         
         # Create new record from trips
-        trips = get_driver_trips_for_cutoff(driver_phone, cutoff)
+        trips = get_driver_trips_for_cutoff(driver_phone, cutoff, include_all=True)
         
-        # Calculate summary
-        total_trips = len(trips)
-        total_driver_rate = sum(t.get('driverRate', 0) for t in trips)
-        total_amount = sum(t.get('amount', 0) for t in trips)
-        
-        # Parse cutoff for date range
-        cutoff_parts = cutoff.split(' - ')
-        month_year = cutoff_parts[0].split()
-        month = month_year[0]
-        year = int(month_year[1])
-        period = cutoff_parts[1]
-        
-        months = ['January', 'February', 'March', 'April', 'May', 'June',
-                  'July', 'August', 'September', 'October', 'November', 'December']
-        month_num = months.index(month) + 1
-        
-        if period == '1st Half':
-            start_day = 1
-            end_day = 15
-        else:
-            start_day = 16
-            end_day = calendar.monthrange(year, month_num)[1]
-        
-        # Create daily entries for ALL dates in the cutoff period
-        entries = {}
-        start_date_obj = datetime(year, month_num, start_day)
-        end_date_obj = datetime(year, month_num, end_day)
-        
-        current_date = start_date_obj
-        while current_date <= end_date_obj:
-            date_str = current_date.strftime('%Y-%m-%d')
-            entries[date_str] = {
-                'date': date_str,
-                'timeIn': '',
-                'timeOut': '',
-                'driverRate': 0,
-                'amount': 0,
-                'tripCount': 0,
-                'advance': 0,
-                'scheduleIds': []
-            }
-            current_date += timedelta(days=1)
-        
-        # Populate with actual trip data
-        for trip in trips:
-            trip_date = trip.get('date', '')
-            try:
-                if '-' in trip_date:
-                    date_obj = datetime.strptime(trip_date, '%Y-%m-%d')
-                else:
-                    date_obj = datetime.strptime(trip_date, '%B %d, %Y')
-                date_str = date_obj.strftime('%Y-%m-%d')
-                
-                if date_str in entries:
-                    entries[date_str]['timeIn'] = trip.get('time', '').split(' - ')[0] if ' - ' in trip.get('time', '') else ''
-                    entries[date_str]['timeOut'] = trip.get('time', '').split(' - ')[1] if ' - ' in trip.get('time', '') else ''
-                    entries[date_str]['driverRate'] += trip.get('driverRate', 0)
-                    entries[date_str]['amount'] += trip.get('amount', 0)
-                    entries[date_str]['tripCount'] += 1
-                    entries[date_str]['scheduleIds'].append(trip.get('scheduleId', ''))
-            except Exception as e:
-                print(f"Error processing trip date {trip_date}: {e}")
-                continue
+        entries, month, year, period, start_day, end_day = build_entries_for_cutoff(cutoff, trips)
+        summary = summarize_entries(entries)
         
         # Calculate net total (initially gross minus deductions)
         sss = driver_data.get('sss', 0)
         philhealth = driver_data.get('philhealth', 0)
         pagibig = driver_data.get('pagibig', 0)
         total_deductions = sss + philhealth + pagibig
-        net_total = total_driver_rate - total_deductions
+        net_total = summary['totalDriverRate'] - total_deductions
         
         # Create new record
         new_record = {
@@ -315,9 +424,9 @@ def get_or_create_driver_dtr(driver_id, cutoff):
             'entries': entries,
             'trips': trips,
             'summary': {
-                'totalTrips': total_trips,
-                'totalDriverRate': total_driver_rate,
-                'totalAmount': total_amount
+                'totalTrips': summary['totalTrips'],
+                'totalDriverRate': summary['totalDriverRate'],
+                'totalAmount': summary['totalAmount']
             },
             'transactions': {
                 'totalUtang': 0,
@@ -353,27 +462,14 @@ def get_or_create_driver_dtr(driver_id, cutoff):
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
-def get_driver_trips_for_cutoff(driver_phone, cutoff):
-    """Get all trips for a specific driver within a cutoff period"""
+def get_driver_trips_for_cutoff(driver_phone, cutoff, include_all=False):
+    """Get driver schedules in a cutoff. Payroll totals only use completed trips."""
     try:
         # Parse cutoff to get date range
-        cutoff_parts = cutoff.split(' - ')
-        month_year = cutoff_parts[0].split(' ')
-        month = month_year[0]
-        year = int(month_year[1])
-        period = cutoff_parts[1]
-        
-        months = ['January', 'February', 'March', 'April', 'May', 'June',
-                  'July', 'August', 'September', 'October', 'November', 'December']
-        month_num = months.index(month) + 1
-        
-        if period == '1st Half':
-            start_date = f"{year}-{month_num:02d}-01"
-            end_date = f"{year}-{month_num:02d}-15"
-        else:
-            start_date = f"{year}-{month_num:02d}-16"
-            last_day = calendar.monthrange(year, month_num)[1]
-            end_date = f"{year}-{month_num:02d}-{last_day}"
+        month, year, period, month_num, start_day, end_day = parse_cutoff_range(cutoff)
+        start_date = f"{year}-{month_num:02d}-{start_day:02d}"
+        end_date = f"{year}-{month_num:02d}-{end_day:02d}"
+        normalized_driver_phone = normalize_phone(driver_phone)
         
         # Get all schedules
         schedules_ref = get_schedules_ref()
@@ -381,13 +477,16 @@ def get_driver_trips_for_cutoff(driver_phone, cutoff):
         
         trips = []
         for schedule_id, schedule in all_schedules.items():
-            if schedule.get('status') != 'Completed':
+            schedule_status = str(schedule.get('status') or 'Pending').strip()
+            is_completed = schedule_status.lower() == 'completed'
+
+            if not include_all and not is_completed:
                 continue
             
             current = schedule.get('current', {})
-            cell_phone = current.get('cellPhone', '')
+            cell_phone = normalize_phone(current.get('cellPhone', ''))
             
-            if cell_phone != driver_phone:
+            if cell_phone != normalized_driver_phone:
                 continue
             
             schedule_date = schedule.get('date', '')
@@ -395,10 +494,9 @@ def get_driver_trips_for_cutoff(driver_phone, cutoff):
                 continue
             
             try:
-                if '-' in schedule_date:
-                    date_obj = datetime.strptime(schedule_date, '%Y-%m-%d')
-                else:
-                    date_obj = datetime.strptime(schedule_date, '%B %d, %Y')
+                date_obj = parse_schedule_date(schedule_date)
+                if not date_obj:
+                    continue
                 
                 date_str = date_obj.strftime('%Y-%m-%d')
                 
@@ -407,8 +505,15 @@ def get_driver_trips_for_cutoff(driver_phone, cutoff):
                         'scheduleId': schedule_id,
                         'date': schedule_date,
                         'time': schedule.get('time', ''),
-                        'driverRate': float(schedule.get('driverRate', 0)),
-                        'amount': float(schedule.get('amount', 0))
+                        'driverRate': parse_amount(schedule.get('driverRate', 0)),
+                        'amount': parse_amount(schedule.get('amount', 0)),
+                        'status': schedule_status,
+                        'isCompleted': is_completed,
+                        'clientName': schedule.get('clientName', ''),
+                        'pickup': schedule.get('pickup', ''),
+                        'dropOff': schedule.get('dropOff', ''),
+                        'company': schedule.get('company', ''),
+                        'transactionID': schedule.get('transactionID', schedule_id)
                     })
                     
             except Exception as e:
@@ -672,11 +777,11 @@ def generate_driver_dtr_records(cutoff, driver_type):
                 end_date = f"{year}-{month_num:02d}-{last_day}"
             
             # Find all drivers who have trips but are not in users
-            existing_driver_phones = set(d['data'].get('phone', '') for d in drivers)
+            existing_driver_phones = set(normalize_phone(d['data'].get('phone', '')) for d in drivers)
             unmatched_drivers = {}
             
             for schedule_id, schedule in all_schedules.items():
-                if schedule.get('status') != 'Completed':
+                if str(schedule.get('status', '')).strip().lower() != 'completed':
                     continue
                 
                 schedule_date = schedule.get('date', '')
@@ -684,16 +789,15 @@ def generate_driver_dtr_records(cutoff, driver_type):
                     continue
                 
                 try:
-                    if '-' in schedule_date:
-                        date_obj = datetime.strptime(schedule_date, '%Y-%m-%d')
-                    else:
-                        date_obj = datetime.strptime(schedule_date, '%B %d, %Y')
+                    date_obj = parse_schedule_date(schedule_date)
+                    if not date_obj:
+                        continue
                     
                     date_str = date_obj.strftime('%Y-%m-%d')
                     
                     if start_date <= date_str <= end_date:
                         current = schedule.get('current', {})
-                        cell_phone = current.get('cellPhone', '')
+                        cell_phone = normalize_phone(current.get('cellPhone', ''))
                         driver_name = current.get('driverName', 'Unknown')
                         
                         if cell_phone and cell_phone not in existing_driver_phones:
@@ -738,81 +842,21 @@ def generate_driver_dtr_records(cutoff, driver_type):
                     break
             
             if existing_record:
+                existing_record = refresh_existing_driver_dtr(existing_id, existing_record, cutoff)
                 records.append({'id': existing_id, **existing_record})
             else:
                 # Create new record from trips
-                trips = get_driver_trips_for_cutoff(driver_phone, cutoff)
+                trips = get_driver_trips_for_cutoff(driver_phone, cutoff, include_all=True)
                 
-                # Calculate summary
-                total_trips = len(trips)
-                total_driver_rate = sum(t.get('driverRate', 0) for t in trips)
-                total_amount = sum(t.get('amount', 0) for t in trips)
-                
-                # Parse cutoff for date range
-                cutoff_parts = cutoff.split(' - ')
-                month_year = cutoff_parts[0].split()
-                month = month_year[0]
-                year = int(month_year[1])
-                period = cutoff_parts[1]
-                
-                months = ['January', 'February', 'March', 'April', 'May', 'June',
-                          'July', 'August', 'September', 'October', 'November', 'December']
-                month_num = months.index(month) + 1
-                
-                if period == '1st Half':
-                    start_day = 1
-                    end_day = 15
-                else:
-                    start_day = 16
-                    end_day = calendar.monthrange(year, month_num)[1]
-                
-                # Create daily entries for ALL dates in the cutoff period
-                entries = {}
-                start_date_obj = datetime(year, month_num, start_day)
-                end_date_obj = datetime(year, month_num, end_day)
-                
-                current_date = start_date_obj
-                while current_date <= end_date_obj:
-                    date_str = current_date.strftime('%Y-%m-%d')
-                    entries[date_str] = {
-                        'date': date_str,
-                        'timeIn': '',
-                        'timeOut': '',
-                        'driverRate': 0,
-                        'amount': 0,
-                        'tripCount': 0,
-                        'advance': 0,
-                        'scheduleIds': []
-                    }
-                    current_date += timedelta(days=1)
-                
-                # Populate with actual trip data
-                for trip in trips:
-                    trip_date = trip.get('date', '')
-                    try:
-                        if '-' in trip_date:
-                            date_obj = datetime.strptime(trip_date, '%Y-%m-%d')
-                        else:
-                            date_obj = datetime.strptime(trip_date, '%B %d, %Y')
-                        date_str = date_obj.strftime('%Y-%m-%d')
-                        
-                        if date_str in entries:
-                            entries[date_str]['timeIn'] = trip.get('time', '').split(' - ')[0] if ' - ' in trip.get('time', '') else ''
-                            entries[date_str]['timeOut'] = trip.get('time', '').split(' - ')[1] if ' - ' in trip.get('time', '') else ''
-                            entries[date_str]['driverRate'] += trip.get('driverRate', 0)
-                            entries[date_str]['amount'] += trip.get('amount', 0)
-                            entries[date_str]['tripCount'] += 1
-                            entries[date_str]['scheduleIds'].append(trip.get('scheduleId', ''))
-                    except Exception as e:
-                        print(f"Error processing trip date {trip_date}: {e}")
-                        continue
+                entries, month, year, period, start_day, end_day = build_entries_for_cutoff(cutoff, trips)
+                summary = summarize_entries(entries)
                 
                 # Calculate net total (initially gross minus deductions)
                 sss = driver_data.get('sss', 0)
                 philhealth = driver_data.get('philhealth', 0)
                 pagibig = driver_data.get('pagibig', 0)
                 total_deductions = sss + philhealth + pagibig
-                net_total = total_driver_rate - total_deductions
+                net_total = summary['totalDriverRate'] - total_deductions
                 
                 # Create new record
                 new_record = {
@@ -829,9 +873,9 @@ def generate_driver_dtr_records(cutoff, driver_type):
                     'entries': entries,
                     'trips': trips,
                     'summary': {
-                        'totalTrips': total_trips,
-                        'totalDriverRate': total_driver_rate,
-                        'totalAmount': total_amount
+                        'totalTrips': summary['totalTrips'],
+                        'totalDriverRate': summary['totalDriverRate'],
+                        'totalAmount': summary['totalAmount']
                     },
                     'transactions': {
                         'totalUtang': 0,
