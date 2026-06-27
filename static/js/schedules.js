@@ -737,7 +737,7 @@ ${item.dropOff || ""}
 
 🚗 DRIVER INFORMATION
 Name: ${current.driverName || ""}
-Mobile: ${current.cellPhone || ""}
+WhatsApp: ${current.cellPhone || ""}
 Vehicle: ${item.transportUnit || ""} (${item.unitType || ""})
 Color: ${item.color || ""}
 Plate No: ${item.plateNumber || ""}
@@ -752,9 +752,7 @@ After that, PHP 150 per succeeding hour.
 
 📞 0917-657-7693
 📱 WhatsApp: 0963-492-2662
-📧 olstaropc@gmail.com
-
-This is an automated message. Please do not reply.`;
+📧 olstaropc@gmail.com`;
     }
 
     function copyText(text, successMsg) {

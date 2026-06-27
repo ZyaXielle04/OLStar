@@ -17,19 +17,21 @@ def get_drivers():
         drivers = []
         for uid, user in users_data.items():
             if user.get("role") == "driver":
-                drivers.append({
-                    "uid": uid,
-                    "firstName": user.get("firstName", ""),
-                    "middleName": user.get("middleName", ""),
-                    "lastName": user.get("lastName", ""),
-                    "email": user.get("email", ""),
-                    "status": user.get("status", "active")
-                })
+                # Only return active drivers for dropdown
+                if user.get("status") == "active":
+                    drivers.append({
+                        "uid": uid,
+                        "firstName": user.get("firstName", ""),
+                        "middleName": user.get("middleName", ""),
+                        "lastName": user.get("lastName", ""),
+                        "email": user.get("email", ""),
+                        "status": user.get("status", "active")
+                    })
         
         # Sort by last name
         drivers.sort(key=lambda x: x.get("lastName", ""))
         
-        print(f"Found {len(drivers)} drivers")
+        print(f"Found {len(drivers)} active drivers")
         
         return jsonify({
             "success": True,
@@ -39,6 +41,86 @@ def get_drivers():
         
     except Exception as e:
         print(f"Error in get_drivers: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ---------------- GET TRANSPORT UNITS (ALL UNITS - NO FILTER) ----------------
+@maintenance_transactions_bp.route("/transportUnits", methods=["GET"])
+@superadmin_required
+def get_transport_units():
+    try:
+        # Get all transport units from Firebase
+        units_ref = db.reference("transportUnits")
+        units_data = units_ref.get() or {}
+        
+        print(f"Raw units data from Firebase: {units_data}")
+        
+        units = []
+        for unit_id, unit in units_data.items():
+            # Get the unit category, default to empty string if not set
+            unit_category = unit.get("unitCategory", "")
+            
+            # For debugging - log each unit
+            print(f"Unit: {unit.get('name')} - Category: '{unit_category}'")
+            
+            # Check if unit has a name (required for display)
+            if unit.get("name"):
+                units.append({
+                    "id": unit_id,
+                    "transportUnit": unit.get("name", ""),
+                    "plateNumber": unit.get("plateNo", ""),
+                    "color": unit.get("color", ""),
+                    "unitType": unit.get("unitType", ""),
+                    "unitCategory": unit_category
+                })
+        
+        # Sort by name
+        units.sort(key=lambda x: x.get("transportUnit", ""))
+        
+        print(f"Total units found: {len(units)}")
+        
+        return jsonify({
+            "success": True,
+            "transportUnits": units,
+            "total": len(units)
+        }), 200
+    except Exception as e:
+        print(f"Error in get_transport_units: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ---------------- GET COMPANY-OWNED TRANSPORT UNITS ----------------
+@maintenance_transactions_bp.route("/transportUnits/company", methods=["GET"])
+@superadmin_required
+def get_company_transport_units():
+    try:
+        # Get all transport units
+        units_ref = db.reference("transportUnits")
+        units_data = units_ref.get() or {}
+        
+        units = []
+        for unit_id, unit in units_data.items():
+            # Only return company-owned units
+            if unit.get("unitCategory") == "company-owned":
+                units.append({
+                    "id": unit_id,
+                    "transportUnit": unit.get("name", ""),
+                    "plateNumber": unit.get("plateNo", ""),
+                    "color": unit.get("color", ""),
+                    "unitType": unit.get("unitType", ""),
+                    "unitCategory": unit.get("unitCategory", "")
+                })
+        
+        # Sort by name
+        units.sort(key=lambda x: x.get("transportUnit", ""))
+        
+        print(f"Found {len(units)} company-owned transport units")
+        
+        return jsonify({
+            "success": True,
+            "transportUnits": units,
+            "total": len(units)
+        }), 200
+    except Exception as e:
+        print(f"Error in get_company_transport_units: {e}")
         return jsonify({"error": str(e)}), 500
 
 # ---------------- GET ALL MAINTENANCE RECORDS ----------------
@@ -51,6 +133,15 @@ def get_maintenance_records():
         
         records = []
         for record_id, record in data.items():
+            # Ensure transportUnit has all required fields
+            if "transportUnit" in record and record["transportUnit"]:
+                # If transportUnit is stored with different field names, normalize
+                tu = record["transportUnit"]
+                if "name" not in tu and "transportUnit" in tu:
+                    tu["name"] = tu.get("transportUnit", "")
+                if "plateNumber" not in tu and "plateNo" in tu:
+                    tu["plateNumber"] = tu.get("plateNo", "")
+            
             record["id"] = record_id
             records.append(record)
         
@@ -79,6 +170,14 @@ def get_maintenance_record(record_id):
         
         if not record:
             return jsonify({"error": "Record not found"}), 404
+        
+        # Normalize transportUnit data
+        if "transportUnit" in record and record["transportUnit"]:
+            tu = record["transportUnit"]
+            if "name" not in tu and "transportUnit" in tu:
+                tu["name"] = tu.get("transportUnit", "")
+            if "plateNumber" not in tu and "plateNo" in tu:
+                tu["plateNumber"] = tu.get("plateNo", "")
         
         record["id"] = record_id
         transport_unit = record.get('transportUnit', {})
@@ -110,16 +209,36 @@ def create_maintenance_record():
             if field not in data:
                 return jsonify({"error": f"Missing required field: {field}"}), 400
         
-        # transportUnit is now an object, not just an ID
+        # Validate transportUnit
         transport_unit = data.get("transportUnit")
+        if not transport_unit or not transport_unit.get("name"):
+            return jsonify({"error": "Transport unit is required"}), 400
+        
+        # Validate driver (optional but if provided should be valid)
         driver = data.get("driver")
-        print(f"Creating record with transportUnit: {transport_unit.get('name') if transport_unit else 'None'}, driver: {driver.get('name') if driver else 'None'}")
+        if driver and not driver.get("name"):
+            return jsonify({"error": "Driver name is required when driver is provided"}), 400
+        
+        # Ensure transportUnit has plateNumber
+        if not transport_unit.get("plateNumber"):
+            # Try to find the unit to get plate number
+            units_ref = db.reference("transportUnits")
+            units_data = units_ref.get() or {}
+            
+            for unit_id, unit in units_data.items():
+                if unit.get("name") == transport_unit.get("name"):
+                    transport_unit["plateNumber"] = unit.get("plateNo", "")
+                    transport_unit["id"] = unit_id
+                    break
+        
+        print(f"Creating record with transportUnit: {transport_unit.get('name')} ({transport_unit.get('plateNumber')})")
+        print(f"Driver: {driver.get('name') if driver else 'None'}")
         
         # Create record with metadata
         record_data = {
             "date": data["date"],
-            "transportUnit": transport_unit,  # Store the complete transport unit object
-            "driver": driver,  # Store the complete driver object
+            "transportUnit": transport_unit,
+            "driver": driver,
             "serviceType": data["serviceType"],
             "status": data.get("status", "pending"),
             "description": data["description"],
@@ -190,20 +309,34 @@ def update_maintenance_record(record_id):
                 old_val = existing.get(field)
                 new_val = data[field]
                 
-                # For transportUnit, compare the name field
+                # For transportUnit, compare the name and plateNumber
                 if field == "transportUnit":
                     old_name = old_val.get('name') if old_val else None
                     new_name = new_val.get('name') if new_val else None
-                    if old_name != new_name:
+                    old_plate = old_val.get('plateNumber') if old_val else None
+                    new_plate = new_val.get('plateNumber') if new_val else None
+                    
+                    if old_name != new_name or old_plate != new_plate:
+                        # Ensure new transportUnit has both name and plateNumber
+                        if new_val and not new_val.get('plateNumber'):
+                            # Try to find plate number from transportUnits
+                            units_ref = db.reference("transportUnits")
+                            units_data = units_ref.get() or {}
+                            for unit_id, unit in units_data.items():
+                                if unit.get("name") == new_val.get("name"):
+                                    new_val["plateNumber"] = unit.get("plateNo", "")
+                                    new_val["id"] = unit_id
+                                    break
+                        
                         changes.append({
                             "field": field,
                             "old": old_val,
                             "new": new_val
                         })
                         updates[field] = new_val
-                        print(f"TransportUnit changed from '{old_name}' to '{new_name}'")
+                        print(f"TransportUnit changed from '{old_name} ({old_plate})' to '{new_name} ({new_plate})'")
                 
-                # For driver, compare the name field
+                # For driver, compare the name
                 elif field == "driver":
                     old_name = old_val.get('name') if old_val else None
                     new_name = new_val.get('name') if new_val else None
@@ -581,29 +714,4 @@ def bulk_operation():
         
     except Exception as e:
         print(f"Error in bulk_operation: {e}")
-        return jsonify({"error": str(e)}), 500
-    
-@maintenance_transactions_bp.route("/transportUnits", methods=["GET"])
-@superadmin_required
-def get_transport_units():
-    try:
-        # Assuming units are stored in Firebase
-        units_ref = db.reference("transportUnits")  # or whatever your node is called
-        units_data = units_ref.get() or {}
-        
-        units = []
-        for unit_id, unit in units_data.items():
-            units.append({
-                "id": unit_id,
-                "transportUnit": unit.get("name", ""),
-                "plateNumber": unit.get("plateNumber", ""),
-                "color": unit.get("color", ""),
-                "unitType": unit.get("unitType", "")
-            })
-        
-        return jsonify({
-            "success": True,
-            "transportUnits": units
-        }), 200
-    except Exception as e:
         return jsonify({"error": str(e)}), 500

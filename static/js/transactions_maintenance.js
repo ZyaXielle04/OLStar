@@ -148,36 +148,37 @@ document.addEventListener("DOMContentLoaded", () => {
     // ---------------- API Calls ----------------
     async function fetchTransportUnits() {
         try {
-            console.log("🔍 FETCHING transport units from /api/admin/transport-units...");
+            console.log("🔍 FETCHING transport units...");
             
-            // Use the admin endpoint which has unitCategory
+            // Use the admin endpoint which has all units
             const response = await fetch("/api/admin/transport-units");
             
             if (!response.ok) throw new Error("Failed to fetch transport units");
             
             const data = await response.json();
+            console.log("Raw API response:", data);
             
-            // Transform data to match expected format (using 'units' array from admin endpoint)
+            // Transform data from admin endpoint
             const units = data.units || [];
             
             // Map to the format expected by this page
             transportUnits = units.map(unit => ({
                 id: unit.id,
-                transportUnit: unit.name,
-                unitType: unit.unitType,
-                color: unit.color,
-                plateNumber: unit.plateNo,
-                unitCategory: unit.unitCategory
+                transportUnit: unit.name || unit.transportUnit || "",
+                plateNumber: unit.plateNo || unit.plateNumber || "",
+                color: unit.color || "",
+                unitType: unit.unitType || "",
+                unitCategory: unit.unitCategory || ""
             }));
             
             console.log(`📊 Transport units loaded: ${transportUnits.length} units`);
             
-            // Log categories for debugging
+            // Log all units for debugging
             transportUnits.forEach(unit => {
-                console.log(`  - ${unit.transportUnit}: category = "${unit.unitCategory}"`);
+                console.log(`  - ${unit.transportUnit} (${unit.plateNumber}): category="${unit.unitCategory}"`);
             });
             
-            // Now populate filters - only company-owned will show
+            // Populate filters and dropdowns
             populateUnitFilters();
             
         } catch (err) {
@@ -194,8 +195,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await response.json();
             console.log("Drivers API response:", data);
             
+            // Only active drivers are returned from backend now
             drivers = data.drivers || [];
-            console.log("Processed drivers:", drivers);
+            console.log(`Processed ${drivers.length} active drivers`);
             
             populateDriverDropdowns();
         } catch (err) {
@@ -266,6 +268,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const unitName = unitFilter.value;
         const dateRange = dateRangeFilter.value;
         
+        console.log("🔍 Filtering with unit:", unitName);
+        
         filteredRecords = allRecords.filter(record => {
             // Search filter
             if (searchTerm) {
@@ -286,8 +290,19 @@ document.addEventListener("DOMContentLoaded", () => {
             // Type filter
             if (type !== "all" && record.serviceType !== type) return false;
             
-            // Unit filter - compare by name
-            if (unitName && record.transportUnit?.name !== unitName) return false;
+            // Unit filter - compare by name (exact match)
+            if (unitName) {
+                // unitName from dropdown is the full name like "Nissan Sylphy"
+                const recordUnitName = record.transportUnit?.name || "";
+                
+                // Debug: Log comparison for Nissan Sylphy
+                if (recordUnitName.includes("Nissan") || unitName.includes("Nissan")) {
+                    console.log(`Comparing: "${recordUnitName}" vs "${unitName}"`);
+                    console.log(`Match: ${recordUnitName === unitName}`);
+                }
+                
+                if (recordUnitName !== unitName) return false;
+            }
             
             // Date range filter
             if (dateRange !== "all" && dateRange !== "custom") {
@@ -303,6 +318,8 @@ document.addEventListener("DOMContentLoaded", () => {
             
             return true;
         });
+        
+        console.log(`📊 Filtered ${filteredRecords.length} records out of ${allRecords.length}`);
         
         updateSummary();
         updateCharts();
@@ -944,11 +961,14 @@ document.addEventListener("DOMContentLoaded", () => {
         
         if (selectedUnitValue) {
             // Parse the value to get name and plate number
-            const [unitName, unitPlateNumber] = selectedUnitValue.split('|');
+            const parts = selectedUnitValue.split('|');
+            const unitName = parts[0];
+            const unitPlateNumber = parts.length > 1 ? parts[1] : "";
             
             // Find the full unit data from transportUnits array
             const selectedUnit = transportUnits.find(u => 
-                u.transportUnit === unitName && u.plateNumber === unitPlateNumber
+                u.transportUnit === unitName && 
+                (u.plateNumber === unitPlateNumber || !unitPlateNumber)
             );
             
             if (selectedUnit) {
@@ -956,19 +976,25 @@ document.addEventListener("DOMContentLoaded", () => {
                     id: selectedUnit.id,
                     name: selectedUnit.transportUnit,
                     plateNumber: selectedUnit.plateNumber,
-                    color: selectedUnit.color,
-                    unitType: selectedUnit.unitType
+                    color: selectedUnit.color || "",
+                    unitType: selectedUnit.unitType || ""
                 };
             } else {
-                // Fallback: create minimal object if unit not found in array
+                // Fallback: create minimal object
                 transportUnitData = {
                     name: unitName,
-                    plateNumber: unitPlateNumber,
+                    plateNumber: unitPlateNumber || "",
                     id: null,
                     color: "",
                     unitType: ""
                 };
             }
+        }
+        
+        // Validate transport unit
+        if (!transportUnitData || !transportUnitData.name) {
+            showToast("Please select a transport unit", "error");
+            return;
         }
         
         // Get driver data
@@ -986,16 +1012,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     firstName: selectedDriver.firstName,
                     lastName: selectedDriver.lastName
                 };
-            } else {
-                // If not found in array, use the selected option text
-                const driverSelectElem = document.getElementById("driver");
-                const selectedOption = driverSelectElem.options[driverSelectElem.selectedIndex];
-                if (selectedOption && selectedOption.value) {
-                    driverData = {
-                        uid: selectedOption.value,
-                        name: selectedOption.text
-                    };
-                }
             }
         }
         
@@ -1048,7 +1064,7 @@ document.addEventListener("DOMContentLoaded", () => {
             await fetchDrivers(); // Refresh drivers
         } catch (err) {
             console.error("Error saving maintenance record:", err);
-            showToast("Failed to save record", "error");
+            showToast(`Failed to save record: ${err.message}`, "error");
         }
     }
 
@@ -1057,29 +1073,46 @@ document.addEventListener("DOMContentLoaded", () => {
         
         const formData = new FormData(scheduleForm);
         
-        const selectedUnitName = formData.get("unitId");
-        const selectedUnit = transportUnits.find(u => u.transportUnit === selectedUnitName);
+        // Get the selected unit value
+        const selectedUnitValue = formData.get("unitId");
+        let transportUnitData = null;
+        
+        if (selectedUnitValue) {
+            const parts = selectedUnitValue.split('|');
+            const unitName = parts[0];
+            const unitPlateNumber = parts.length > 1 ? parts[1] : "";
+            
+            const selectedUnit = transportUnits.find(u => 
+                u.transportUnit === unitName && 
+                (u.plateNumber === unitPlateNumber || !unitPlateNumber)
+            );
+            
+            if (selectedUnit) {
+                transportUnitData = {
+                    id: selectedUnit.id,
+                    name: selectedUnit.transportUnit,
+                    plateNumber: selectedUnit.plateNumber
+                };
+            }
+        }
         
         // Get driver data
-        const selectedDriverId = formData.get("driverId");
+        const selectedDriverValue = formData.get("driverId");
         let driverData = null;
         
-        if (selectedDriverId && scheduleDriverSelect) {
-            const selectedOption = scheduleDriverSelect.options[scheduleDriverSelect.selectedIndex];
-            if (selectedOption && selectedOption.value) {
+        if (selectedDriverValue && selectedDriverValue !== "") {
+            const selectedDriver = drivers.find(d => d.uid === selectedDriverValue);
+            if (selectedDriver) {
+                const fullName = `${selectedDriver.firstName || ''} ${selectedDriver.middleName || ''} ${selectedDriver.lastName || ''}`.trim();
                 driverData = {
-                    uid: selectedOption.value,
-                    name: selectedOption.text
+                    uid: selectedDriver.uid,
+                    name: fullName
                 };
             }
         }
         
         const scheduleData = {
-            transportUnit: selectedUnit ? {
-                id: selectedUnit.id,
-                name: selectedUnit.transportUnit,
-                plateNumber: selectedUnit.plateNumber
-            } : null,
+            transportUnit: transportUnitData,
             driver: driverData,
             serviceType: formData.get("serviceType"),
             scheduledDate: formData.get("scheduledDate"),
@@ -1217,42 +1250,45 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------------- Helper Functions ----------------
     function populateUnitFilters(selectedUnitValue = "") {
-        console.log(`🎯 Populating transport units - filtering for company-owned only`);
+        console.log(`🎯 Populating transport units - using ${transportUnits.length} company-owned units`);
         
-        // Filter units to only show company-owned
-        const companyOwnedUnits = transportUnits.filter(unit => unit.unitCategory === "company-owned");
+        // Create options array
+        const filterOptions = ['<option value="">All Transport Units</option>'];
+        const formOptions = ['<option value="">— Select Transport Unit —</option>'];
+        const scheduleOptions = ['<option value="">— Select Transport Unit —</option>'];
         
-        console.log(`📊 Total units: ${transportUnits.length}, Company-owned: ${companyOwnedUnits.length}`);
-        
-        const options = ['<option value="">All Transport Units</option>'];
-        const unitOptions = ['<option value="">— Select Transport Unit —</option>'];
-        
-        // Only loop through company-owned units
-        companyOwnedUnits.forEach(unit => {
-            // Create a unique identifier using both name AND plate number
+        // Add each company-owned unit
+        transportUnits.forEach(unit => {
+            // Create a unique identifier using name
             const displayText = `${unit.transportUnit} (${unit.plateNumber})`;
-            const optionValue = `${unit.transportUnit}|${unit.plateNumber}`; // Unique combo
+            const optionValue = unit.transportUnit; // Use name as value for filtering
+            const fullValue = `${unit.transportUnit}|${unit.plateNumber}`; // For form submission
             
             // Check if this option should be selected
-            const isSelected = (selectedUnitValue === optionValue);
+            const isSelected = (selectedUnitValue === optionValue || selectedUnitValue === fullValue);
             const selectedAttr = isSelected ? ' selected' : '';
             
-            const option = `<option value="${optionValue}"${selectedAttr}>${escapeHtml(displayText)}</option>`;
-            options.push(option);
-            unitOptions.push(option);
+            // Filter dropdown uses just the name
+            filterOptions.push(`<option value="${optionValue}"${selectedAttr}>${escapeHtml(displayText)}</option>`);
             
-            console.log(`✅ Added: ${displayText}${isSelected ? ' (SELECTED)' : ''}`);
+            // Form dropdowns use name|plateNumber
+            const formOption = `<option value="${fullValue}"${selectedAttr}>${escapeHtml(displayText)}</option>`;
+            formOptions.push(formOption);
+            scheduleOptions.push(formOption);
+            
+            console.log(`✅ Added: ${displayText}`);
         });
         
-        console.log(`📊 Total options created: ${options.length - 1} company-owned units`);
+        console.log(`📊 Total options created: ${filterOptions.length - 1} company-owned units`);
         
-        if (unitFilter) unitFilter.innerHTML = options.join("");
-        if (transportUnitSelect) transportUnitSelect.innerHTML = unitOptions.join("");
-        if (scheduleUnitSelect) scheduleUnitSelect.innerHTML = unitOptions.join("");
+        // Populate all three dropdowns
+        if (unitFilter) unitFilter.innerHTML = filterOptions.join("");
+        if (transportUnitSelect) transportUnitSelect.innerHTML = formOptions.join("");
+        if (scheduleUnitSelect) scheduleUnitSelect.innerHTML = scheduleOptions.join("");
         
         // Verify counts
-        console.log(`🔍 Verification - unitFilter has ${unitFilter?.options?.length - 1 || 0} company-owned units`);
-        console.log(`🔍 Verification - transportUnitSelect has ${transportUnitSelect?.options?.length - 1 || 0} company-owned units`);
+        console.log(`🔍 Verification - unitFilter has ${unitFilter?.options?.length - 1 || 0} options`);
+        console.log(`🔍 Verification - transportUnitSelect has ${transportUnitSelect?.options?.length - 1 || 0} options`);
     }
 
     function populateDriverDropdowns() {
@@ -1267,6 +1303,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const optionsHtml = options.join('');
         if (driverSelect) driverSelect.innerHTML = optionsHtml;
         if (scheduleDriverSelect) scheduleDriverSelect.innerHTML = optionsHtml;
+        
+        console.log(`👤 Driver dropdowns populated with ${drivers.length} active drivers`);
     }
 
     function setDefaultDates() {

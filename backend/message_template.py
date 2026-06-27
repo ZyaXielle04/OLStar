@@ -18,7 +18,7 @@ def build_message(item):
 
         f"🚗 DRIVER INFORMATION\n"
         f"Name: {current.get('driverName')}\n"
-        f"Mobile: {current.get('cellPhone')}\n"
+        f"WhatsApp: {current.get('cellPhone')}\n"
         f"Vehicle: {item.get('transportUnit')} ({item.get('unitType')})\n"
         f"Color: {item.get('color')}\n"
         f"Plate No: {item.get('plateNumber')}\n\n"
