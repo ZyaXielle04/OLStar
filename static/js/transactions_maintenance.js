@@ -101,7 +101,25 @@ document.addEventListener("DOMContentLoaded", () => {
         searchInput.addEventListener("input", filterRecords);
         statusFilter.addEventListener("change", filterRecords);
         typeFilter.addEventListener("change", filterRecords);
-        unitFilter.addEventListener("change", filterRecords);
+        unitFilter.addEventListener("change", function() {
+            const selectedUnit = this.value;
+            console.log("🔄 Unit filter changed to:", selectedUnit);
+            
+            if (selectedUnit) {
+                // Find the unit ID from the transportUnits array
+                const unit = transportUnits.find(u => u.transportUnit === selectedUnit);
+                if (unit) {
+                    console.log(`📋 Fetching records for unit: ${unit.transportUnit} (${unit.id})`);
+                    fetchRecordsByUnit(unit.id);
+                } else {
+                    console.log("📋 Fetching all records");
+                    fetchRecordsByUnit(null);
+                }
+            } else {
+                console.log("📋 Fetching all records");
+                fetchRecordsByUnit(null);
+            }
+        });
         dateRangeFilter.addEventListener("change", handleDateRangeChange);
         applyDateFilter.addEventListener("click", filterRecords);
         refreshBtn.addEventListener("click", refreshData);
@@ -150,7 +168,6 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             console.log("🔍 FETCHING transport units...");
             
-            // Use the admin endpoint which has all units
             const response = await fetch("/api/admin/transport-units");
             
             if (!response.ok) throw new Error("Failed to fetch transport units");
@@ -161,21 +178,26 @@ document.addEventListener("DOMContentLoaded", () => {
             // Transform data from admin endpoint
             const units = data.units || [];
             
+            // ✅ FILTER: Only keep company-owned units
+            const companyUnits = units.filter(unit => 
+                unit.unitCategory === "company-owned"
+            );
+            
             // Map to the format expected by this page
-            transportUnits = units.map(unit => ({
+            transportUnits = companyUnits.map(unit => ({
                 id: unit.id,
                 transportUnit: unit.name || unit.transportUnit || "",
                 plateNumber: unit.plateNo || unit.plateNumber || "",
                 color: unit.color || "",
                 unitType: unit.unitType || "",
-                unitCategory: unit.unitCategory || ""
+                unitCategory: unit.unitCategory || "company-owned"
             }));
             
-            console.log(`📊 Transport units loaded: ${transportUnits.length} units`);
+            console.log(`📊 Company-owned transport units loaded: ${transportUnits.length} units`);
             
             // Log all units for debugging
             transportUnits.forEach(unit => {
-                console.log(`  - ${unit.transportUnit} (${unit.plateNumber}): category="${unit.unitCategory}"`);
+                console.log(`  - ${unit.transportUnit} (${unit.plateNumber}): ${unit.unitCategory}`);
             });
             
             // Populate filters and dropdowns
@@ -232,6 +254,15 @@ document.addEventListener("DOMContentLoaded", () => {
             if (startDate.value) params.append("startDate", startDate.value);
             if (endDate.value) params.append("endDate", endDate.value);
             
+            // Add unit filter to statistics
+            const selectedUnit = unitFilter.value;
+            if (selectedUnit) {
+                const unit = transportUnits.find(u => u.transportUnit === selectedUnit);
+                if (unit && unit.id) {
+                    params.append("unitId", unit.id);
+                }
+            }
+            
             const response = await fetch(`/api/maintenance/statistics?${params}`);
             if (!response.ok) throw new Error("Failed to fetch statistics");
             
@@ -260,7 +291,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // ---------------- Filtering ----------------
+    // Add a new variable to track selected unit
+    let selectedUnitId = null;
+
+    // Update the filterRecords function to include unit filtering
     function filterRecords() {
         const searchTerm = searchInput.value.toLowerCase();
         const status = statusFilter.value;
@@ -292,15 +326,15 @@ document.addEventListener("DOMContentLoaded", () => {
             
             // Unit filter - compare by name (exact match)
             if (unitName) {
-                // unitName from dropdown is the full name like "Nissan Sylphy"
                 const recordUnitName = record.transportUnit?.name || "";
                 
-                // Debug: Log comparison for Nissan Sylphy
-                if (recordUnitName.includes("Nissan") || unitName.includes("Nissan")) {
+                // Debug: Log comparison
+                if (recordUnitName.includes(unitName) || unitName.includes(recordUnitName)) {
                     console.log(`Comparing: "${recordUnitName}" vs "${unitName}"`);
                     console.log(`Match: ${recordUnitName === unitName}`);
                 }
                 
+                // Exact match by name
                 if (recordUnitName !== unitName) return false;
             }
             
@@ -326,6 +360,34 @@ document.addEventListener("DOMContentLoaded", () => {
         currentPage = 1;
         renderTable();
         updatePagination();
+    }
+
+    // Add a function to fetch records for a specific unit
+    async function fetchRecordsByUnit(unitId) {
+        try {
+            let url = "/api/maintenance/records";
+            
+            // If unitId is provided, add it as a query parameter
+            if (unitId) {
+                url += `?unitId=${encodeURIComponent(unitId)}`;
+            }
+            
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("Failed to fetch maintenance records");
+            
+            const data = await response.json();
+            allRecords = (data.records || []).sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            filterRecords();
+        } catch (err) {
+            console.error("Error fetching maintenance records:", err);
+            showToast("Failed to load maintenance records", "error");
+            maintenanceTableBody.innerHTML = `
+                <tr>
+                    <td colspan="10" class="text-center">Failed to load records</td>
+                </tr>
+            `;
+        }
     }
 
     function isInDateRange(dateStr, range) {
@@ -1252,43 +1314,51 @@ document.addEventListener("DOMContentLoaded", () => {
     function populateUnitFilters(selectedUnitValue = "") {
         console.log(`🎯 Populating transport units - using ${transportUnits.length} company-owned units`);
         
-        // Create options array
+        // First, get all records to count maintenance per unit
+        const recordCounts = {};
+        allRecords.forEach(record => {
+            const unitName = record.transportUnit?.name;
+            if (unitName) {
+                recordCounts[unitName] = (recordCounts[unitName] || 0) + 1;
+            }
+        });
+        
         const filterOptions = ['<option value="">All Transport Units</option>'];
         const formOptions = ['<option value="">— Select Transport Unit —</option>'];
         const scheduleOptions = ['<option value="">— Select Transport Unit —</option>'];
         
-        // Add each company-owned unit
-        transportUnits.forEach(unit => {
-            // Create a unique identifier using name
+        // Sort units by name
+        const sortedUnits = [...transportUnits].sort((a, b) => 
+            a.transportUnit.localeCompare(b.transportUnit)
+        );
+        
+        sortedUnits.forEach(unit => {
             const displayText = `${unit.transportUnit} (${unit.plateNumber})`;
-            const optionValue = unit.transportUnit; // Use name as value for filtering
-            const fullValue = `${unit.transportUnit}|${unit.plateNumber}`; // For form submission
+            const optionValue = unit.transportUnit;
+            const fullValue = `${unit.transportUnit}|${unit.plateNumber}`;
             
-            // Check if this option should be selected
+            // Get record count for this unit
+            const count = recordCounts[unit.transportUnit] || 0;
+            const countDisplay = count > 0 ? ` (${count} records)` : '';
+            
             const isSelected = (selectedUnitValue === optionValue || selectedUnitValue === fullValue);
             const selectedAttr = isSelected ? ' selected' : '';
             
-            // Filter dropdown uses just the name
-            filterOptions.push(`<option value="${optionValue}"${selectedAttr}>${escapeHtml(displayText)}</option>`);
+            // Filter dropdown shows count
+            filterOptions.push(`<option value="${optionValue}"${selectedAttr}>${escapeHtml(displayText)}${countDisplay}</option>`);
             
-            // Form dropdowns use name|plateNumber
+            // Form dropdowns don't show count (cleaner)
             const formOption = `<option value="${fullValue}"${selectedAttr}>${escapeHtml(displayText)}</option>`;
             formOptions.push(formOption);
             scheduleOptions.push(formOption);
-            
-            console.log(`✅ Added: ${displayText}`);
         });
-        
-        console.log(`📊 Total options created: ${filterOptions.length - 1} company-owned units`);
         
         // Populate all three dropdowns
         if (unitFilter) unitFilter.innerHTML = filterOptions.join("");
         if (transportUnitSelect) transportUnitSelect.innerHTML = formOptions.join("");
         if (scheduleUnitSelect) scheduleUnitSelect.innerHTML = scheduleOptions.join("");
         
-        // Verify counts
-        console.log(`🔍 Verification - unitFilter has ${unitFilter?.options?.length - 1 || 0} options`);
-        console.log(`🔍 Verification - transportUnitSelect has ${transportUnitSelect?.options?.length - 1 || 0} options`);
+        console.log(`📊 Added ${sortedUnits.length} company-owned units with counts`);
     }
 
     function populateDriverDropdowns() {

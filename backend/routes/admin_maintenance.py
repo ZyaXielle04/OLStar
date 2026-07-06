@@ -128,14 +128,60 @@ def get_company_transport_units():
 @superadmin_required
 def get_maintenance_records():
     try:
+        # Get filter parameters
+        unit_id = request.args.get("unitId")
+        start_date = request.args.get("startDate")
+        end_date = request.args.get("endDate")
+        status = request.args.get("status")
+        service_type = request.args.get("serviceType")
+        
+        print(f"📋 Fetching records with filters: unitId={unit_id}")
+        
         ref = db.reference("maintenanceRecords")
         data = ref.get() or {}
         
         records = []
         for record_id, record in data.items():
-            # Ensure transportUnit has all required fields
-            if "transportUnit" in record and record["transportUnit"]:
-                # If transportUnit is stored with different field names, normalize
+            # Filter by unit ID if provided
+            if unit_id:
+                # Check if the record's transport unit matches the selected unit
+                tu = record.get("transportUnit", {})
+                record_unit_id = tu.get("id") if tu else None
+                
+                # Also check by name as fallback
+                record_unit_name = tu.get("name") if tu else ""
+                
+                # Find the selected unit to get its name for matching
+                selected_unit = None
+                if unit_id:
+                    # Try to find the unit in your transportUnits (you might need to fetch it)
+                    units_ref = db.reference("transportUnits")
+                    units_data = units_ref.get() or {}
+                    for uid, unit in units_data.items():
+                        if uid == unit_id:
+                            selected_unit = unit
+                            break
+                
+                # Match by ID first, then by name
+                if record_unit_id != unit_id and record_unit_name != (selected_unit.get("name") if selected_unit else ""):
+                    continue
+            
+            # Filter by date range
+            if start_date and record.get("date") < start_date:
+                continue
+            if end_date and record.get("date") > end_date:
+                continue
+            
+            # Filter by status
+            if status and record.get("status") != status:
+                continue
+            
+            # Filter by service type
+            if service_type and record.get("serviceType") != service_type:
+                continue
+            
+            # Normalize transport unit data
+            if "transportUnit" in record:
                 tu = record["transportUnit"]
                 if "name" not in tu and "transportUnit" in tu:
                     tu["name"] = tu.get("transportUnit", "")
@@ -145,12 +191,7 @@ def get_maintenance_records():
             record["id"] = record_id
             records.append(record)
         
-        # Debug: Print first few records to see transportUnit and driver data
-        print(f"Total records: {len(records)}")
-        for i, record in enumerate(records[:3]):  # First 3 records
-            transport_unit = record.get('transportUnit', {})
-            driver = record.get('driver', {})
-            print(f"Record {i+1}: ID={record.get('id')}, transportUnit={transport_unit.get('name')} ({transport_unit.get('plateNumber')}), driver={driver.get('name')}")
+        print(f"📊 Found {len(records)} records matching filters")
         
         return jsonify({
             "success": True,
