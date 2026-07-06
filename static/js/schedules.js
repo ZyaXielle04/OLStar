@@ -1189,18 +1189,35 @@ After that, PHP 150 per succeeding hour.
             });
         }
 
+        // Find this section in your createCalendarEvent function
         const btnEdit = event.querySelector(".btn-edit");
         if (btnEdit) {
             btnEdit.addEventListener("click", () => {
                 if (modal) modal.style.display = "block";
                 editingTransactionID = data.transactionID;
+                
+                // Populate all fields
                 for (let [key, value] of Object.entries(data)) {
                     const input = manualForm ? manualForm.querySelector(`[name="${key}"]`) : null;
                     if (input) input.value = value;
                 }
+                
+                // Populate current driver info
                 if (data.current) {
                     if (driverInput) driverInput.value = data.current.driverName || "";
                     if (cellPhoneInput) cellPhoneInput.value = data.current.cellPhone || "";
+                }
+                
+                // NEW: Set the status dropdown
+                const statusSelect = document.getElementById('editStatus');
+                if (statusSelect && data.status) {
+                    statusSelect.value = data.status;
+                }
+                
+                // Update modal title
+                const modalTitle = modal?.querySelector('.modal-header h2');
+                if (modalTitle) {
+                    modalTitle.textContent = 'Edit Schedule';
                 }
             });
         }
@@ -1473,6 +1490,18 @@ After that, PHP 150 per succeeding hour.
         editingTransactionID = null;
         if (driverInput) driverInput.value = "";
         if (cellPhoneInput) cellPhoneInput.value = "";
+        
+        // NEW: Reset status dropdown to default
+        const statusSelect = document.getElementById('editStatus');
+        if (statusSelect) {
+            statusSelect.value = 'Pending';
+        }
+        
+        // Reset modal title
+        const modalTitle = modal?.querySelector('.modal-header h2');
+        if (modalTitle) {
+            modalTitle.textContent = 'Add New Schedule';
+        }
     }
 
     // =======================
@@ -1636,6 +1665,7 @@ After that, PHP 150 per succeeding hour.
                 pax: f.get("pax"), flightNumber: f.get("flightNumber"), note: note,
                 unitType: f.get("unitType"), amount: f.get("amount"), driverRate: f.get("driverRate"),
                 company: f.get("company"), bookingType: f.get("bookingType"), transportUnit: f.get("transportUnit"),
+                status: f.get("status"),
                 color: f.get("color"), plateNumber: f.get("plateNumber"), luggage: f.get("luggage"),
                 tripType: f.get("tripType"), current: { driverName: driverInput?.value || "", cellPhone: cellPhoneInput?.value || "" }
             };

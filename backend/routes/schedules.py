@@ -220,27 +220,27 @@ def create_schedule():
     # Get user info
     user_email = request.cookies.get("user_email", "system")
     user_full_name = request.cookies.get("user_full_name", "System")
-    user_first_name = request.cookies.get("user_first_name", "")
-    user_last_name = request.cookies.get("user_last_name", "")
     
-    if not user_full_name and user_first_name and user_last_name:
-        user_full_name = f"{user_first_name} {user_last_name}".strip()
-    elif not user_full_name and user_first_name:
-        user_full_name = user_first_name
-    else:
-        user_full_name = user_full_name or "System"
-
     try:
         for item in data:
             transaction_id = item.get("transactionID")
             if not transaction_id:
                 return jsonify({"error": "transactionID is required"}), 400
 
-            item["status"] = item.get("status", "Pending")
+            # Set default status if not provided
+            if "status" not in item or not item["status"]:
+                item["status"] = "Pending"
             
+            # Ensure status is valid
+            valid_statuses = ["Pending", "Confirmed", "Arrived", "On Route", "Completed", "Cancelled"]
+            if item["status"] not in valid_statuses:
+                item["status"] = "Pending"
+            
+            # Initialize history if not exists
             if "history" not in item:
                 item["history"] = []
             
+            # Add creation history
             item["history"].append({
                 "timestamp": datetime.now().isoformat(),
                 "action": "created",
@@ -275,22 +275,20 @@ def update_schedule(transaction_id):
     
     user_email = request.cookies.get("user_email", "unknown")
     user_full_name = request.cookies.get("user_full_name", "Unknown")
-    user_first_name = request.cookies.get("user_first_name", "")
-    user_last_name = request.cookies.get("user_last_name", "")
     
-    if not user_full_name and user_first_name and user_last_name:
-        user_full_name = f"{user_first_name} {user_last_name}".strip()
-    elif not user_full_name and user_first_name:
-        user_full_name = user_first_name
-    else:
-        user_full_name = user_full_name or "Unknown"
-
     ref = db.reference(f"schedules/{transaction_id}")
     existing = ref.get()
     if not existing:
         return jsonify({"error": "Schedule not found"}), 404
 
     changes = []
+    
+    # Track status changes
+    if "status" in data:
+        old_status = existing.get("status", "Pending")
+        new_status = data["status"]
+        if old_status != new_status:
+            changes.append({"field": "status", "old": old_status, "new": new_status})
     
     # Track driver assignment changes
     if "current" in data:
@@ -306,14 +304,6 @@ def update_schedule(transaction_id):
         if old_phone != new_phone:
             changes.append({"field": "cellPhone", "old": old_phone, "new": new_phone})
         
-        if old_driver and new_driver and old_driver != new_driver:
-            changes.append({
-                "field": "driver_transfer",
-                "old": f"Driver {old_driver}",
-                "new": f"Driver {new_driver}",
-                "note": "Driver Transfer"
-            })
-        
         ref.child("current").update({
             "driverName": new_driver,
             "cellPhone": new_phone
@@ -322,11 +312,15 @@ def update_schedule(transaction_id):
     # Track other field changes
     updates = {}
     for k, v in data.items():
-        if k in EDITABLE_FIELDS:
+        if k in EDITABLE_FIELDS and k != "status":  # Don't duplicate status
             old_val = existing.get(k, "")
             if str(old_val) != str(v):
                 changes.append({"field": k, "old": old_val, "new": v})
                 updates[k] = v
+    
+    # Add status to updates if changed
+    if "status" in data:
+        updates["status"] = data["status"]
 
     if updates:
         ref.update(updates)
