@@ -20,7 +20,7 @@ from datetime import datetime
 flight_tracker = Blueprint("flight_tracker", __name__)
 
 # Cloudinary configuration
-CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dekdyp7bb/upload"
+CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/devyvqaxr/upload"
 CLOUDINARY_UPLOAD_PRESET = "OLStar"
 
 class FlightAwareScreenshot:

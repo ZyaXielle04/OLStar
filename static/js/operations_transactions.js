@@ -1,7 +1,7 @@
 const container = document.getElementById("requestsContainer");
 
 // Cloudinary configuration
-const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dekdyp7bb/upload";
+const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/devyvqaxr/upload";
 const CLOUDINARY_UPLOAD_PRESET = "OLStar";
 
 fetch("/api/admin/requests")
