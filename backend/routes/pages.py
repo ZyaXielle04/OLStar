@@ -38,6 +38,12 @@ def bk_drivers():
 def admin_transport_units():
     return render_template("transport_units.html")
 
+@pages_bp.route("/admin/vehicle-inspections")
+@login_required
+@admin_required
+def vehicle_inspections():
+    return render_template("vehicle_inspections.html")
+
 @pages_bp.route("/admin/schedules")
 @login_required
 @admin_required

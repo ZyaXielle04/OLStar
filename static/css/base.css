@@ -40,6 +40,7 @@ body {
    SIDEBAR - DARK THEME
 ================================= */
 .sidebar {
+    overflow-y: auto;
     width: var(--sidebar-width);
     background-color: var(--primary-color);
     color: var(--font-color-light);

@@ -109,6 +109,7 @@ try:
     from routes.gl_overview import gl_overview_bp
     from routes.track_drivers import groups_bp
     from routes.admin_bk_drivers_api import admin_bk_drivers_api
+    from routes.vehicle_inspections import vehicle_inspections_api
 except ModuleNotFoundError:
     raise RuntimeError("routes modules not found in /routes")
 
@@ -136,6 +137,7 @@ app.register_blueprint(gl_drivers_salary_bp)
 app.register_blueprint(gl_overview_bp)
 app.register_blueprint(groups_bp)
 app.register_blueprint(admin_bk_drivers_api)
+app.register_blueprint(vehicle_inspections_api)
 
 # -----------------------
 # Inject CSRF token cookie for JS

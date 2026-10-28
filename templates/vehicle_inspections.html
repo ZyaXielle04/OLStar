@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OLStar | Vehicle Inspection</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vehicle_inspections.css') }}">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-header"><h2>Admin Panel</h2></div>
+      <nav class="nav" aria-label="Main navigation">
+        <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
+        <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
+        <a href="{{ url_for('pages.bk_drivers') }}" class="nav-link">BK Drivers</a>
+        <a href="{{ url_for('pages.admin_transport_units') }}" class="nav-link">Transport Units</a>
+        <a href="{{ url_for('pages.vehicle_inspections') }}" class="nav-link active" aria-current="page">Vehicle Inspection</a>
+        <a href="{{ url_for('pages.bookings_schedules') }}" class="nav-link">Schedules</a>
+        <a href="{{ url_for('pages.bookings_track_drivers') }}" class="nav-link">Track Drivers</a>
+        <details class="nav-group" open>
+          <summary><span>Expenses</span></summary>
+          <div class="nav-submenu">
+            <a href="{{ url_for('pages.gas_transactions') }}" class="nav-sublink">Gas Transactions</a>
+            <a href="{{ url_for('pages.rfid_transactions') }}" class="nav-sublink">RFID Transactions</a>
+            <a href="{{ url_for('pages.maintenance_transactions') }}" class="nav-sublink">Maintenance</a>
+          </div>
+        </details>
+        <details class="nav-group" open>
+          <summary><span>Accounting</span></summary>
+          <div class="nav-submenu">
+            <a href="{{ url_for('pages.gl_overview') }}" class="nav-sublink">General Ledger</a>
+            <a href="{{ url_for('pages.gl_admin_salary') }}" class="nav-sublink">Admin DTR</a>
+            <a href="{{ url_for('pages.gl_drivers_salary') }}" class="nav-sublink">Drivers DTR</a>
+          </div>
+        </details>
+        <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+      </div>
+    </aside>
+
+    <main class="content inspection-page">
+      <header class="inspection-header">
+        <button id="btnToggleSidebar" class="hamburger" aria-label="Toggle navigation">☰</button>
+        <div>
+          <p class="eyebrow">FLEET OPERATIONS</p>
+          <h1>Vehicle Inspection</h1>
+          <p class="subtitle">Review driver submissions, inspection windows, and vehicle photos.</p>
+        </div>
+        <button id="refreshInspections" class="inspection-button" type="button">Refresh submissions</button>
+      </header>
+
+      <section class="inspection-summary" aria-label="Summary for the current filters">
+        <article class="inspection-stat"><p>Submissions</p><strong id="submissionCount">—</strong><span>Matching the current filters</span></article>
+        <article class="inspection-stat"><p>Vehicles</p><strong id="vehicleCount">—</strong><span>With submitted inspections</span></article>
+        <article class="inspection-stat"><p>AM inspections</p><strong id="amCount">—</strong><span>Morning period</span></article>
+        <article class="inspection-stat"><p>PM inspections</p><strong id="pmCount">—</strong><span>Afternoon period</span></article>
+      </section>
+
+      <section class="inspection-panel" aria-label="Inspection records">
+        <div class="inspection-filters">
+          <label>Date <input type="date" id="inspectionDate" required></label>
+          <label>Period
+            <select id="periodFilter"><option value="">AM &amp; PM</option><option value="AM">AM</option><option value="PM">PM</option></select>
+          </label>
+          <label>Status <select id="statusFilter"><option value="">All statuses</option></select></label>
+          <label class="inspection-search">Search <input type="search" id="inspectionSearch" placeholder="Plate, vehicle, driver, or trip ID"></label>
+        </div>
+        <div class="inspection-list-header">
+          <h2>Inspection submissions</h2>
+          <p id="inspectionResults" aria-live="polite">Loading submissions…</p>
+        </div>
+        <div id="inspectionError" class="inspection-error" role="alert" hidden></div>
+        <div id="inspectionState" class="inspection-state" role="status">Loading inspections…</div>
+        <div id="inspectionTableWrap" class="inspection-table-wrap" hidden>
+          <table class="inspection-table">
+            <caption class="visually-hidden">Driver vehicle inspection submissions. All times are in Philippine time.</caption>
+            <thead><tr><th scope="col">Vehicle</th><th scope="col">Driver</th><th scope="col">Period</th><th scope="col">Status</th><th scope="col">Submitted (PHT)</th><th scope="col">Photos</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+            <tbody id="inspectionRows"></tbody>
+          </table>
+        </div>
+        <p class="inspection-footnote">Times are shown in Philippine time (UTC+8). Only submitted records are listed.</p>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="inspectionDialog" class="inspection-dialog" aria-labelledby="inspectionDetailTitle">
+    <div class="inspection-dialog-header">
+      <div><p class="eyebrow">INSPECTION DETAILS</p><h2 id="inspectionDetailTitle">Vehicle inspection</h2></div>
+      <button id="closeInspectionDialog" class="inspection-close" type="button" aria-label="Close inspection details" autofocus>×</button>
+    </div>
+    <dl id="inspectionDetails" class="inspection-detail-grid"></dl>
+    <div class="inspection-photo-heading"><h3>Inspection photos</h3><p>Select a photo to open the original.</p></div>
+    <div id="inspectionPhotos" class="inspection-photos"></div>
+    <details id="inspectionPhotoMetadata" class="inspection-photo-metadata">
+      <summary>All photo details</summary>
+      <pre id="inspectionPhotoData"></pre>
+    </details>
+  </dialog>
+
+  <script src="{{ url_for('static', filename='js/base.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/vehicle_inspections.js') }}"></script>
+</body>
+</html>
