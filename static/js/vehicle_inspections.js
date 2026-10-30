@@ -1,5 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
     const inspectionApi = document.querySelector(".inspection-page").dataset.inspectionApi;
+    const inspectorPortal = inspectionApi.startsWith("/api/inspector/");
+    const approveButton = document.getElementById("approveInspection");
+    const inspectorLocked = record => inspectorPortal && record?.approved === true;
     const dateInput = document.getElementById("inspectionDate");
     const periodFilter = document.getElementById("periodFilter");
     const statusFilter = document.getElementById("statusFilter");
@@ -283,7 +286,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function showUploadForm() {
-        if (uploading) return;
+        if (uploading || inspectorLocked(activeRecord)) return;
         adminForm.hidden = false;
         adminMessage.hidden = true;
         adminForm.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -299,6 +302,14 @@ document.addEventListener("DOMContentLoaded", () => {
     function showDetails(record, upload = false) {
         if (uploading) return;
         activeRecord = record;
+        openAdminForm.disabled = inspectorLocked(record);
+        const sealState = document.getElementById("inspectionSealState");
+        sealState.hidden = record.approved !== true;
+        sealState.textContent = `Approved by ${text(record.approvedByName)} · ${dateTime(record.approvedAt)}. Sealed for inspector uploads.`;
+        if (approveButton) {
+            approveButton.disabled = record.approved === true;
+            approveButton.textContent = record.approved === true ? "Approved" : "Approve";
+        }
         resetAdminForm();
         adminMessage.hidden = true;
         document.getElementById("inspectionDetailTitle").textContent = text(record.plateNumber);
@@ -330,7 +341,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function submitAdminPictures(event) {
         event.preventDefault();
-        if (uploading || !activeRecord) return;
+        if (uploading || !activeRecord || inspectorLocked(activeRecord)) return;
         const payload = new FormData();
         let count = 0;
         for (const input of adminForm.querySelectorAll('input[type="file"]')) {
@@ -367,6 +378,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error("Your session may have expired. Please sign in again.");
             }
             const data = await response.json();
+            if (data.code === "INSPECTION_SEALED") {
+                activeRecord.approved = true;
+                resetAdminForm();
+                openAdminForm.disabled = true;
+                render();
+            }
             if (!response.ok) throw new Error(data.error || "Unable to save admin pictures.");
             if (!data.inspection || data.inspection.id !== activeRecord.id) throw new Error("Refresh the inspection to confirm the uploaded pictures.");
             Object.assign(activeRecord, data.inspection);
@@ -381,7 +398,7 @@ document.addEventListener("DOMContentLoaded", () => {
             uploading = false;
             adminForm.querySelectorAll("input, button").forEach(control => { control.disabled = false; });
             closeDialogButton.disabled = false;
-            openAdminForm.disabled = false;
+            openAdminForm.disabled = inspectorLocked(activeRecord);
             saveAdminButton.textContent = "Submit Admin Pictures";
         }
     }
@@ -432,6 +449,7 @@ document.addEventListener("DOMContentLoaded", () => {
             period.append(element("span", "inspection-badge", record.period));
             const status = element("td");
             status.append(statusBadge(record.status));
+            if (record.approved === true) status.append(element("span", "inspection-secondary", "Approved · Sealed"));
             const submitted = element("td", "", dateTime(record.submittedAt));
             const photos = element("td");
             photos.append(element("span", "inspection-primary", `Driver: ${photoEntries(record.photos).length}`),
@@ -444,8 +462,16 @@ document.addEventListener("DOMContentLoaded", () => {
             const actions = element("div", "inspection-row-actions");
             const uploadButton = element("button", "inspection-view", "Submit Admin Pictures");
             uploadButton.type = "button";
+            uploadButton.disabled = inspectorLocked(record);
             uploadButton.addEventListener("click", () => showDetails(record, true));
             actions.append(button, uploadButton);
+            if (approveButton) {
+                const approve = element("button", "inspection-view", record.approved ? "Approved" : "Approve");
+                approve.type = "button";
+                approve.disabled = record.approved === true;
+                approve.addEventListener("click", () => approveCase(record));
+                actions.append(approve);
+            }
             action.append(actions);
             row.append(vehicle, driver, period, status, submitted, photos, action);
             fragment.append(row);
@@ -507,6 +533,37 @@ document.addEventListener("DOMContentLoaded", () => {
     searchInput.addEventListener("input", render);
     closeDialogButton.addEventListener("click", () => { if (!uploading) dialog.close(); });
     openAdminForm.addEventListener("click", showUploadForm);
+    async function approveCase(record) {
+        if (uploading || record.approved) return;
+        uploading = true;
+        // Keep popups inside an open native dialog so they remain interactive.
+        const popupOptions = () => ({ target: dialog.open ? dialog : document.body, heightAuto: false, confirmButtonColor: "#2f4156" });
+        try {
+            const confirmation = await Swal.fire({
+                ...popupOptions(), icon: "question", title: "Approve inspection?",
+                text: `Approve ${text(record.plateNumber)} for ${text(record.driverName)}? Inspectors will no longer be able to add or replace pictures for this case.`,
+                showCancelButton: true, confirmButtonText: "Approve and seal", cancelButtonText: "Cancel",
+                cancelButtonColor: "#64748b", focusCancel: true, reverseButtons: true
+            });
+            if (!confirmation.isConfirmed) return;
+            const response = await fetch(`/api/admin/vehicle-inspections/${record.id.split("/").map(encodeURIComponent).join("/")}/approve`, {
+                method: "POST", headers: { Accept: "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content }
+            });
+            if (response.redirected || !response.headers.get("content-type")?.includes("application/json")) throw new Error("Please sign in again.");
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Unable to approve inspection.");
+            Object.assign(record, data.inspection);
+            uploading = false;
+            render();
+            showDetails(record);
+            await Swal.fire({ ...popupOptions(), icon: "success", title: "Inspection approved", text: "This case is now sealed for inspector photo submissions.", confirmButtonText: "Done" });
+        } catch (error) {
+            await Swal.fire({ ...popupOptions(), icon: "error", title: "Approval failed", text: error.message || "Unable to approve inspection.", confirmButtonText: "OK" });
+        } finally {
+            uploading = false;
+        }
+    }
+    approveButton?.addEventListener("click", () => { if (activeRecord) approveCase(activeRecord); });
     document.getElementById("cancelAdminPhotos").addEventListener("click", resetAdminForm);
     adminForm.addEventListener("submit", submitAdminPictures);
     adminForm.querySelectorAll('input[type="file"]').forEach(input => {
@@ -527,7 +584,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
     dialog.addEventListener("close", resetAdminForm);
-    dialog.addEventListener("cancel", event => { if (uploading) event.preventDefault(); });
+    dialog.addEventListener("cancel", event => { if (uploading || Swal.isVisible()) event.preventDefault(); });
     dialog.addEventListener("click", event => {
         const bounds = dialog.getBoundingClientRect();
         if (!uploading && event.target === dialog && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) dialog.close();

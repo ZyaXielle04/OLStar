@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OLStar | {{ 'Inspector Portal' if inspector_portal else 'Vehicle Inspection' }}</title>
   <meta name="csrf-token" content="{{ csrf_token() }}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vehicle_inspections.css') }}">
 </head>
@@ -101,8 +102,12 @@
     <div class="inspection-photo-heading inspection-comparison-heading">
       <div><h3>Driver &amp; admin pictures</h3><p>Compare the same vehicle side and photo number. Select a picture to enlarge it.</p></div>
       <button id="openAdminPhotoForm" class="inspection-button" type="button">Submit Admin Pictures</button>
+      {% if session.get('role') == 'admin' %}
+      <button id="approveInspection" class="inspection-button" type="button">Approve</button>
+      {% endif %}
     </div>
     <p id="adminPhotoMessage" class="inspection-upload-message" role="status" aria-live="polite" hidden></p>
+    <p id="inspectionSealState" class="inspection-upload-message" role="status" hidden></p>
     <form id="adminPhotoForm" class="inspection-upload-form" hidden>
       <h3>Submit Admin Pictures</h3>
       <p>Choose pictures for this vehicle and driver. JPEG, PNG, or WebP, up to 10 MB per picture.</p>
@@ -148,6 +153,7 @@
     </div>
   </dialog>
 
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
   <script src="{{ url_for('static', filename='js/base.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vehicle_inspections.js') }}"></script>
 </body>

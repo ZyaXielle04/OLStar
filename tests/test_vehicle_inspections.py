@@ -412,9 +412,10 @@ def test_inspector_can_submit_pictures_using_inspector_endpoint(client, nested_s
     with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
         reference.return_value.get.return_value = nested_submission
         upload.return_value = {"url": "https://example.test/inspector.png", "publicId": "inspection/example"}
+        reference.return_value.transaction.side_effect = lambda callback: callback(copy.deepcopy(nested_submission))
         response = client.post(UPLOAD_PATH.replace("/api/admin/", "/api/inspector/"), data={"front_photo1": (picture(), "front.png")}, headers={"X-CSRFToken": token})
         assert response.status_code == 200
-        assert reference.return_value.update.call_args.args[0]["adminSubmittedBy"] == "example-inspector"
+        assert response.json["inspection"]["adminSubmittedBy"] == "example-inspector"
     with patch.object(routes.db, "reference") as reference:
         assert client.post(UPLOAD_PATH).status_code == 403
         reference.assert_not_called()
@@ -510,3 +511,60 @@ def test_inspector_development_verification_and_role_errors(role, environment, v
         assert response.json["redirect"] == "/inspector/vehicle-inspections"
     else:
         assert response.json["code"] == ("PORTAL_ROLE_REQUIRED" if role is None else "EMAIL_NOT_VERIFIED")
+
+
+def test_admin_approval_preserves_photos_and_is_idempotent(client, nested_submission):
+    headers = csrf_headers(client)
+    with patch.object(routes.db, "reference") as reference:
+        reference.return_value.transaction.side_effect = lambda callback: callback(copy.deepcopy(nested_submission))
+        response = client.post(UPLOAD_PATH.replace("/admin-photos", "/approve"), headers=headers)
+        assert response.status_code == 200
+        saved = response.json["inspection"]
+        assert saved["approved"] is True
+        assert saved["approvedBy"] == "test-admin"
+        assert saved["photos"] == nested_submission["photos"]
+        assert saved["adminPhotos"] == nested_submission["adminPhotos"]
+        reference.return_value.transaction.side_effect = lambda callback: callback(copy.deepcopy(saved))
+        again = client.post(UPLOAD_PATH.replace("/admin-photos", "/approve"), headers=headers)
+        assert again.json["inspection"]["approvedAt"] == saved["approvedAt"]
+
+
+def test_inspector_cannot_approve_or_upload_sealed_case(client, nested_submission):
+    with client.session_transaction() as session:
+        session.update(uid="inspector-example", role="inspector")
+    html = client.get("/inspector/vehicle-inspections").get_data(as_text=True)
+    assert 'id="approveInspection"' not in html
+    token = re.search(r'<meta name="csrf-token" content="([^"]+)"', html)[1]
+    headers = {"X-CSRFToken": token}
+    nested_submission["approved"] = True
+    with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
+        reference.return_value.get.return_value = nested_submission
+        assert client.post(UPLOAD_PATH.replace("/admin-photos", "/approve"), headers=headers).status_code == 403
+        response = client.post(UPLOAD_PATH.replace("/api/admin/", "/api/inspector/"), data={"front_photo1": (picture(), "front.png")}, headers=headers)
+        assert response.status_code == 409
+        assert response.json["code"] == "INSPECTION_SEALED"
+        upload.assert_not_called()
+        reference.return_value.transaction.assert_not_called()
+
+
+def test_approval_during_upload_blocks_final_inspector_save(client, nested_submission):
+    with client.session_transaction() as session:
+        session.update(uid="inspector-example", role="inspector")
+    html = client.get("/inspector/vehicle-inspections").get_data(as_text=True)
+    token = re.search(r'<meta name="csrf-token" content="([^"]+)"', html)[1]
+    with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
+        reference.return_value.get.return_value = nested_submission
+        upload.return_value = {"url": "https://example.test/new.png", "publicId": "new"}
+        reference.return_value.transaction.side_effect = lambda callback: callback({**nested_submission, "approved": True})
+        response = client.post(UPLOAD_PATH.replace("/api/admin/", "/api/inspector/"), data={"front_photo1": (picture(), "front.png")}, headers={"X-CSRFToken": token})
+        assert response.status_code == 409
+        reference.return_value.update.assert_not_called()
+
+
+def test_approval_requires_csrf_and_existing_case(client):
+    url = UPLOAD_PATH.replace("/admin-photos", "/approve")
+    with patch.object(routes.db, "reference") as reference:
+        assert client.post(url).status_code == 400
+        reference.assert_not_called()
+        reference.return_value.transaction.side_effect = lambda callback: callback(None)
+        assert client.post(url, headers=csrf_headers(client)).status_code == 404

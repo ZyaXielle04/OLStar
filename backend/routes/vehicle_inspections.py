@@ -28,6 +28,10 @@ MAX_PHOTO_BYTES = 10 * 1024 * 1024
 MAX_UPLOAD_BYTES = MAX_PHOTO_BYTES * 8 + 1024 * 1024
 
 
+class InspectionSealedError(Exception):
+    pass
+
+
 def valid_date(value):
     try:
         return date.fromisoformat(value).isoformat() == value
@@ -88,6 +92,7 @@ def flatten_inspections(snapshot, inspection_date, selected_period=None):
                         "driverName", "driverPhone", "photos", "source", "status",
                         "submittedAt", "transportUnit", "tripId", "windowEnd", "windowStart",
                         "adminPhotos", "adminSubmittedAt", "adminSubmittedBy", "adminSubmittedByName",
+                        "approved", "approvedAt", "approvedBy", "approvedByName",
                     )
                 }
                 record.update({
@@ -218,6 +223,8 @@ def submit_admin_photos(inspection_date, period, vehicle_key, driver_id):
         existing = inspection_ref.get()
         if not isinstance(existing, dict) or not any(key in existing for key in ("photos", "status", "submittedAt")):
             return jsonify({"error": "This inspection no longer exists. Refresh the page."}), 404
+        if existing.get("approved") is True and session["role"] == "inspector":
+            return jsonify({"error": "This inspection is approved and sealed.", "code": "INSPECTION_SEALED"}), 409
     except Exception:
         current_app.logger.exception("Unable to locate inspection for admin pictures")
         return jsonify({"error": "Unable to load this inspection. Please try again."}), 500
@@ -249,10 +256,63 @@ def submit_admin_photos(inspection_date, period, vehicle_key, driver_id):
 
     try:
         # Multi-location update preserves driver photos and all unselected admin slots.
-        inspection_ref.update(updates)
+        if session["role"] == "inspector":
+            def save_if_open(current):
+                if not isinstance(current, dict) or current.get("approved") is True:
+                    raise InspectionSealedError()
+                merged = copy.deepcopy(current)
+                for key, value in updates.items():
+                    parent = merged
+                    parts = key.split("/")
+                    for part in parts[:-1]:
+                        if not isinstance(parent.get(part), dict):
+                            parent[part] = {}
+                        parent = parent[part]
+                    parent[parts[-1]] = value
+                return merged
+            updated = inspection_ref.transaction(save_if_open)
+        else:
+            inspection_ref.update(updates)
+    except InspectionSealedError:
+        return jsonify({"error": "This inspection was sealed before your pictures could be saved. Refresh the case.", "code": "INSPECTION_SEALED"}), 409
     except Exception:
         current_app.logger.exception("Unable to save admin inspection pictures")
         return jsonify({"error": "Unable to confirm the pictures were saved. Refresh the inspection before retrying."}), 500
     updated.update({key: value for key, value in updates.items() if "/" not in key})
     record = flatten_inspections({period: {vehicle_key: {driver_id: updated}}}, inspection_date)[0]
     return jsonify({"message": "Admin pictures saved.", "uploaded": len(prepared), "inspection": record})
+
+
+@vehicle_inspections_api.route(
+    "/api/admin/vehicle-inspections/<inspection_date>/<period>/<vehicle_key>/<driver_id>/approve", methods=["POST"],
+)
+@inspection_access_required
+def approve_inspection(inspection_date, period, vehicle_key, driver_id):
+    if session.get("role") != "admin":
+        return jsonify({"error": "Only admins can approve inspections."}), 403
+    if not valid_date(inspection_date) or period not in ("AM", "PM") or any(
+        not key or len(key.encode("utf-8")) > 768 or re.search(r"[.#$\[\]/\x00-\x1f\x7f]", key)
+        for key in (vehicle_key, driver_id)
+    ):
+        return jsonify({"error": "Invalid inspection path."}), 400
+    try:
+        validate_csrf(request.headers.get("X-CSRFToken"))
+    except ValidationError:
+        return jsonify({"error": "Refresh the page and try again."}), 400
+    approval = {"approved": True, "approvedAt": int(datetime.now(MANILA).timestamp() * 1000),
+                "approvedBy": session["uid"],
+                "approvedByName": session.get("full_name") or session.get("email") or session["uid"]}
+    def seal(current):
+        if not isinstance(current, dict) or not any(key in current for key in ("photos", "status", "submittedAt")):
+            raise LookupError()
+        return current if current.get("approved") is True else {**current, **approval}
+    try:
+        ref = db.reference(f"vehicleInspections/{inspection_date}/{period}/{vehicle_key}/{driver_id}")
+        saved = ref.transaction(seal)
+        record = flatten_inspections({period: {vehicle_key: {driver_id: saved}}}, inspection_date)[0]
+        return jsonify({"message": "Inspection approved and sealed for inspectors.", "inspection": record})
+    except LookupError:
+        return jsonify({"error": "Inspection not found."}), 404
+    except Exception:
+        current_app.logger.exception("Unable to approve inspection")
+        return jsonify({"error": "Unable to approve inspection. Refresh and try again."}), 500
