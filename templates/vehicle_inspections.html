@@ -3,15 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OLStar | Vehicle Inspection</title>
+  <title>OLStar | {{ 'Inspector Portal' if inspector_portal else 'Vehicle Inspection' }}</title>
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vehicle_inspections.css') }}">
 </head>
 <body>
   <div class="layout">
     <aside class="sidebar">
-      <div class="sidebar-header"><h2>Admin Panel</h2></div>
+      <div class="sidebar-header"><h2>{{ 'Inspector Portal' if inspector_portal else 'Admin Panel' }}</h2></div>
       <nav class="nav" aria-label="Main navigation">
+        {% if inspector_portal %}
+        <a href="{{ url_for('pages.inspector_vehicle_inspections') }}" class="nav-link active" aria-current="page">Vehicle Inspection</a>
+        {% else %}
         <a href="{{ url_for('pages.admin_dashboard') }}" class="nav-link">Dashboard</a>
         <a href="{{ url_for('pages.admin_users') }}" class="nav-link">Users</a>
         <a href="{{ url_for('pages.bk_drivers') }}" class="nav-link">BK Drivers</a>
@@ -36,13 +40,14 @@
           </div>
         </details>
         <a href="{{ url_for('pages.admin_settings') }}" class="nav-link">Settings</a>
+        {% endif %}
       </nav>
       <div class="sidebar-footer">
-        <a href="{{ url_for('pages.admin_logout') }}" class="logout-btn">Logout</a>
+        <a href="{{ url_for('pages.inspector_logout' if inspector_portal else 'pages.admin_logout') }}" class="logout-btn">Logout</a>
       </div>
     </aside>
 
-    <main class="content inspection-page">
+    <main class="content inspection-page" data-inspection-api="{{ '/api/inspector/vehicle-inspections' if inspector_portal else '/api/admin/vehicle-inspections' }}">
       <header class="inspection-header">
         <button id="btnToggleSidebar" class="hamburger" aria-label="Toggle navigation">☰</button>
         <div>
@@ -93,12 +98,54 @@
       <button id="closeInspectionDialog" class="inspection-close" type="button" aria-label="Close inspection details" autofocus>×</button>
     </div>
     <dl id="inspectionDetails" class="inspection-detail-grid"></dl>
-    <div class="inspection-photo-heading"><h3>Inspection photos</h3><p>Select a photo to open the original.</p></div>
-    <div id="inspectionPhotos" class="inspection-photos"></div>
+    <div class="inspection-photo-heading inspection-comparison-heading">
+      <div><h3>Driver &amp; admin pictures</h3><p>Compare the same vehicle side and photo number. Select a picture to enlarge it.</p></div>
+      <button id="openAdminPhotoForm" class="inspection-button" type="button">Submit Admin Pictures</button>
+    </div>
+    <p id="adminPhotoMessage" class="inspection-upload-message" role="status" aria-live="polite" hidden></p>
+    <form id="adminPhotoForm" class="inspection-upload-form" hidden>
+      <h3>Submit Admin Pictures</h3>
+      <p>Choose pictures for this vehicle and driver. JPEG, PNG, or WebP, up to 10 MB per picture.</p>
+      <p>Only the slots you select will be updated. Selecting an existing admin slot replaces that picture.</p>
+      <div class="inspection-upload-groups">
+        {% for side in ['front', 'back', 'left', 'right'] %}
+        <fieldset>
+          <legend>{{ side|capitalize }}</legend>
+          {% for slot in ['photo1', 'photo2'] %}
+          <label for="admin_{{ side }}_{{ slot }}">Photo {{ loop.index }}</label>
+          <input type="file" id="admin_{{ side }}_{{ slot }}" name="{{ side }}_{{ slot }}" accept="image/jpeg,image/png,image/webp" data-preview="preview_{{ side }}_{{ slot }}">
+          <img id="preview_{{ side }}_{{ slot }}" class="inspection-upload-preview" alt="Selected admin {{ side }} {{ slot }}" hidden>
+          {% endfor %}
+        </fieldset>
+        {% endfor %}
+      </div>
+      <div class="inspection-upload-actions">
+        <button id="saveAdminPhotos" class="inspection-button" type="submit">Submit Admin Pictures</button>
+        <button id="cancelAdminPhotos" class="inspection-view" type="button">Cancel</button>
+      </div>
+    </form>
+    <div id="inspectionPhotos" class="inspection-comparisons"></div>
     <details id="inspectionPhotoMetadata" class="inspection-photo-metadata">
       <summary>All photo details</summary>
       <pre id="inspectionPhotoData"></pre>
     </details>
+  </dialog>
+
+  <dialog id="inspectionImageViewer" class="inspection-image-viewer" aria-labelledby="inspectionImageTitle">
+    <div class="inspection-image-toolbar">
+      <h2 id="inspectionImageTitle">Inspection picture</h2>
+      <div class="inspection-image-controls">
+        <button id="inspectionZoomOut" type="button" aria-label="Zoom out">−</button>
+        <output id="inspectionZoomLevel" aria-live="polite">100%</output>
+        <button id="inspectionZoomIn" type="button" aria-label="Zoom in">+</button>
+        <button id="inspectionZoomReset" type="button">Fit</button>
+        <button id="closeInspectionImage" type="button" aria-label="Close enlarged picture" autofocus>×</button>
+      </div>
+    </div>
+    <div id="inspectionImageStage" class="inspection-image-stage">
+      <img id="inspectionLargeImage" alt="" referrerpolicy="no-referrer">
+      <p id="inspectionImageError" role="status" hidden>This picture could not be loaded.</p>
+    </div>
   </dialog>
 
   <script src="{{ url_for('static', filename='js/base.js') }}"></script>

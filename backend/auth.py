@@ -48,17 +48,18 @@ def admin_login():
         if not uid:
             return jsonify({"error": "Login failed"}), 401
 
-        # Email verified
-        user = auth.get_user(uid)
-        if not user.email_verified:
-            return jsonify({"error": "Login failed"}), 403
-
-        # Check role (admin or demo)
-        role = db.reference(f"/users/{uid}/role").get()
+        # Resolve the portal role before applying the inspector development policy.
+        stored_role = db.reference(f"/users/{uid}/role").get()
+        role = stored_role.strip().lower() if isinstance(stored_role, str) else None
         
         # Allow both admin and demo roles
-        if role not in ["admin", "demo"]:
-            return jsonify({"error": "Login failed"}), 403
+        if role not in ["admin", "demo", "inspector"]:
+            return jsonify({"error": "This account has no web portal access. Ask an administrator to check its role in users/{UID}/role.", "code": "PORTAL_ROLE_REQUIRED"}), 403
+
+        user = auth.get_user(uid)
+        local_inspector = role == "inspector" and os.getenv("FLASK_ENV", "development") == "development"
+        if not user.email_verified and not local_inspector:
+            return jsonify({"error": "This account's email is not verified. Ask an administrator to verify the account.", "code": "EMAIL_NOT_VERIFIED"}), 403
 
         # Get user's firstName and lastName from Firebase Realtime Database
         user_ref = db.reference(f"/users/{uid}")
@@ -96,10 +97,11 @@ def admin_login():
         session["id_token"] = id_token
 
         # Determine redirect URL based on role
-        if role == "demo":
-            redirect_url = "/demo/track-drivers"
-        else:
-            redirect_url = "/admin/dashboard"
+        redirect_url = {
+            "admin": "/admin/dashboard",
+            "demo": "/demo/track-drivers",
+            "inspector": "/inspector/vehicle-inspections",
+        }[role]
 
         # Create response
         response = make_response(jsonify({

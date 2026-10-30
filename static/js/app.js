@@ -116,7 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
         Swal.fire({
           icon: "success",
           title: "Login Successful!",
-          text: "Redirecting to Admin Dashboard...",
+          text: "Opening your portal...",
           timer: 1500,
           showConfirmButton: false,
           didClose: () => {

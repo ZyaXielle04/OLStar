@@ -594,6 +594,57 @@ form select[name="driverType"] {
   background-image: none;
 }
 
+#userForm #userRole {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 42px 12px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--border-radius);
+  background-color: #f8fafc;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23567C8D' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  color: var(--primary-color);
+  font-size: .95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+}
+
+#userForm #userRole:hover:not(:disabled) {
+  border-color: var(--secondary-color);
+  background-color: #f0f6f8;
+}
+
+#userForm #userRole:focus-visible {
+  outline: none;
+  border-color: var(--secondary-color);
+  box-shadow: 0 0 0 3px rgba(86, 124, 141, .18);
+}
+
+#userForm #userRole:disabled {
+  background-color: #edf0f3;
+  color: #64748b;
+  cursor: not-allowed;
+  opacity: .8;
+}
+
+#userForm #userRole option {
+  color: #2f4156;
+  background-color: white;
+  font-weight: 500;
+}
+
+#userForm .account-type-help {
+  margin: 0 0 12px;
+  color: #64748b;
+  font-size: .8rem;
+  line-height: 1.5;
+}
+
 .custom-select-wrapper {
   position: relative;
   width: 100%;

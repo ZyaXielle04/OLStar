@@ -6,6 +6,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const modalTitle = userModal.querySelector(".modal-title");
   const defaultUnitSelect = userForm.defaultUnit;
   const driverTypeSelect = userForm.driverType;
+  const roleSelect = document.getElementById("userRole");
+  function updateRoleFields() {
+    const inspector = roleSelect.value === "inspector";
+    driverTypeSelect.hidden = inspector;
+    driverTypeSelect.disabled = inspector;
+    driverTypeSelect.required = !inspector;
+    defaultUnitSelect.hidden = inspector;
+    defaultUnitSelect.disabled = inspector;
+  }
+  roleSelect.addEventListener("change", updateRoleFields);
 
   let editingUserId = null;
   let transportUnits = [];
@@ -174,6 +184,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const card = document.createElement("article");
         card.className = "card user-card";
         card.dataset.uid = user.uid;
+        card.dataset.role = user.role || "driver";
         card.dataset.firstName = user.firstName || "";
         card.dataset.middleName = user.middleName || "";
         card.dataset.lastName = user.lastName || "";
@@ -223,8 +234,8 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
           <div class="user-details">
             <p><strong>Phone:</strong> ${escapeHtml(user.phone || "-")}</p>
-            <p><strong>Driver Type:</strong> ${escapeHtml(driverTypeDisplay)}</p>
-            <p><strong>Default Unit:</strong> ${unitDetails}</p>
+            <p><strong>Account Type:</strong> ${escapeHtml(user.role === "inspector" ? "Inspector" : "Driver")}</p>
+            ${user.role === "inspector" ? "" : `<p><strong>Driver Type:</strong> ${escapeHtml(driverTypeDisplay)}</p><p><strong>Default Unit:</strong> ${unitDetails}</p>`}
           </div>
           <div class="user-actions">
             <button class="btn btn-sm edit-btn">Edit</button>
@@ -257,6 +268,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!card) return;
     
     editingUserId = card.dataset.uid;
+    roleSelect.value = card.dataset.role;
+    roleSelect.disabled = true;
+    updateRoleFields();
 
     userForm.firstName.value = card.dataset.firstName;
     userForm.middleName.value = card.dataset.middleName;
@@ -266,7 +280,7 @@ document.addEventListener("DOMContentLoaded", () => {
     userForm.email.disabled = true;
 
     const driverType = card.dataset.driverType;
-    if (driverType && ["main", "indirect", "direct"].includes(driverType)) {
+    if (driverType && ["main", "indirect", "direct", "project"].includes(driverType)) {
       driverTypeSelect.value = driverType;
     } else {
       driverTypeSelect.value = "";
@@ -363,7 +377,7 @@ document.addEventListener("DOMContentLoaded", () => {
   userForm.addEventListener("submit", async e => {
     e.preventDefault();
 
-    if (!driverTypeSelect.value) {
+    if (roleSelect.value === "driver" && !driverTypeSelect.value) {
       toast.fire({ icon: "error", title: "Please select a driver type" });
       return;
     }
@@ -373,9 +387,12 @@ document.addEventListener("DOMContentLoaded", () => {
       middleName: userForm.middleName.value.trim(),
       lastName: userForm.lastName.value.trim(),
       phone: userForm.phone.value.trim(),
-      driverType: driverTypeSelect.value,
-      defaultTransportUnit: defaultUnitSelect.value || ""
+      role: roleSelect.value
     };
+    if (roleSelect.value === "driver") {
+      payload.driverType = driverTypeSelect.value;
+      payload.defaultTransportUnit = defaultUnitSelect.value || "";
+    }
 
     let url = "/api/admin/users";
     let method = "POST";
@@ -399,6 +416,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!ok) return toast.fire({ icon: "error", title: data.error });
 
+    if (!editingUserId && data.temp_password) {
+      await Swal.fire({ icon: "success", title: "Account created", text: `Temporary password: ${data.temp_password}`, confirmButtonText: "OK" });
+    }
     toast.fire({ icon: "success", title: editingUserId ? "User updated" : "User created" });
     editingUserId = null;
     userForm.reset();
@@ -433,6 +453,8 @@ document.addEventListener("DOMContentLoaded", () => {
       editingUserId = null;
       userForm.reset();
       userForm.email.disabled = false;
+      roleSelect.disabled = false;
+      updateRoleFields();
       driverTypeSelect.value = "";
       populateTransportUnits();
       modalTitle.textContent = "Create User";

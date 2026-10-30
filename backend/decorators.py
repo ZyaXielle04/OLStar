@@ -13,6 +13,30 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def inspector_required(f):
+    """Restrict the inspector portal to authenticated inspector accounts."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("uid"):
+            return redirect(url_for("pages.login_page"))
+        if session.get("role") != "inspector":
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated
+
+
+def inspection_access_required(f):
+    """Share inspection operations without granting inspectors admin access."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("uid") or session.get("role") not in ("admin", "inspector"):
+            return redirect(url_for("pages.login_page"))
+        if session["role"] == "inspector" and request.path.startswith("/api/admin/"):
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated
+
+
 def admin_required(f):
     """Ensure the user is an admin (or demo account for demo pages)."""
     @wraps(f)

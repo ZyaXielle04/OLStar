@@ -3,7 +3,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from flask import Blueprint, render_template, redirect, url_for, session
-from decorators import login_required, admin_required, superadmin_required, demo_account_required
+from decorators import login_required, admin_required, superadmin_required, demo_account_required, inspector_required
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -43,6 +43,17 @@ def admin_transport_units():
 @admin_required
 def vehicle_inspections():
     return render_template("vehicle_inspections.html")
+
+@pages_bp.route("/inspector/vehicle-inspections")
+@inspector_required
+def inspector_vehicle_inspections():
+    return render_template("inspector.html")
+
+@pages_bp.route("/inspector/logout")
+@login_required
+def inspector_logout():
+    session.clear()
+    return redirect(url_for("pages.login_page"))
 
 @pages_bp.route("/admin/schedules")
 @login_required

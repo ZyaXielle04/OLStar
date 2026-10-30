@@ -109,6 +109,12 @@
       <span class="close">&times;</span>
       <h2 class="modal-title"></h2>
       <form id="userForm">
+        <label for="userRole" class="form-field-label required">Account type</label>
+        <select name="role" id="userRole" aria-describedby="accountTypeHelp" required>
+          <option value="driver">Driver</option>
+          <option value="inspector">Inspector</option>
+        </select>
+        <p id="accountTypeHelp" class="account-type-help">Accounts created here have verified emails and can sign in immediately.</p>
         <input type="text" name="firstName" placeholder="First Name" required />
         <input type="text" name="middleName" placeholder="Middle Name" />
         <input type="text" name="lastName" placeholder="Last Name" required />

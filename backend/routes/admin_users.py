@@ -75,13 +75,13 @@ def get_users():
             
             # Check role is "driver"
             role = info.get("role", "").lower()
-            if role != "driver":
+            if role not in ("driver", "inspector"):
                 continue
             
             # Check driverType is valid (updated to include "project")
             driver_type = info.get("driverType", "").lower()
             valid_driver_types = ["main", "direct", "indirect", "project"]
-            if driver_type not in valid_driver_types:
+            if role == "driver" and driver_type not in valid_driver_types:
                 continue
             
             # Skip incomplete users
@@ -161,13 +161,15 @@ def get_users():
 @admin_users_api.route("/api/admin/users", methods=["POST"])
 @admin_required
 def create_user():
-    from app import csrf
-    csrf.exempt(create_user)
-
     data = request.get_json(force=True) or {}
+    role = data.get("role", "driver")
+    if role not in ("driver", "inspector"):
+        return jsonify({"error": "Role must be driver or inspector."}), 400
     
     # Validate required fields
-    required_fields = ["email", "phone", "firstName", "lastName", "driverType"]
+    required_fields = ["email", "phone", "firstName", "lastName"]
+    if role == "driver":
+        required_fields.append("driverType")
     missing_fields = [f for f in required_fields if not data.get(f)]
     if missing_fields:
         return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
@@ -175,7 +177,7 @@ def create_user():
     # Validate driverType (updated to include "project")
     driver_type = data.get("driverType")
     valid_driver_types = ["main", "direct", "indirect", "project"]
-    if driver_type not in valid_driver_types:
+    if role == "driver" and driver_type not in valid_driver_types:
         return jsonify({"error": "Invalid driverType. Must be 'main', 'direct', 'indirect', or 'project'"}), 400
     
     try:
@@ -195,19 +197,19 @@ def create_user():
             "firstName": data["firstName"],
             "middleName": data.get("middleName", ""),
             "lastName": data["lastName"],
-            "role": "driver",  # Always set role to "driver"
-            "driverType": driver_type,
-            "defaultTransportUnit": data.get("defaultTransportUnit", ""),
+            "role": role,
             "active": True,
             "createdAt": {".sv": "timestamp"}
         }
+        if role == "driver":
+            user_data.update(driverType=driver_type, defaultTransportUnit=data.get("defaultTransportUnit", ""))
         db.reference(f"users/{uid}").set(user_data)
         
         # Clear user cache
         user_cache.clear("all_users")
         
         return jsonify({
-            "message": "Driver created successfully", 
+            "message": f"{role.capitalize()} created successfully",
             "uid": uid,
             "temp_password": temp_password
         }), 201
@@ -237,14 +239,19 @@ def edit_user(uid):
             return jsonify({"error": "Invalid driverType. Must be 'main', 'direct', 'indirect', or 'project'"}), 400
     
     # Prevent changing role to non-driver for this page
-    if "role" in updates and updates["role"].lower() != "driver":
-        return jsonify({"error": "Role must remain 'driver' for driver management"}), 400
+    if "role" in updates and updates["role"] not in ("driver", "inspector"):
+        return jsonify({"error": "Role must be driver or inspector."}), 400
     
     if not updates:
         return jsonify({"error": "No valid fields to update"}), 400
     
     try:
         # Handle transport unit reassignment
+        existing = db.reference(f"users/{uid}").get() or {}
+        if existing.get("role") not in ("driver", "inspector"):
+            return jsonify({"error": "Only drivers and inspectors can be edited here."}), 400
+        if "role" in updates and updates["role"] != existing.get("role"):
+            return jsonify({"error": "Account roles cannot be changed here. Create a separate account."}), 400
         new_unit = updates.get("defaultTransportUnit")
         if new_unit:
             # Find any user who currently has this transport unit

@@ -1,4 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
+    const inspectionApi = document.querySelector(".inspection-page").dataset.inspectionApi;
     const dateInput = document.getElementById("inspectionDate");
     const periodFilter = document.getElementById("periodFilter");
     const statusFilter = document.getElementById("statusFilter");
@@ -10,10 +11,79 @@ document.addEventListener("DOMContentLoaded", () => {
     const errorBox = document.getElementById("inspectionError");
     const results = document.getElementById("inspectionResults");
     const dialog = document.getElementById("inspectionDialog");
+    const adminForm = document.getElementById("adminPhotoForm");
+    const adminMessage = document.getElementById("adminPhotoMessage");
+    const openAdminForm = document.getElementById("openAdminPhotoForm");
+    const saveAdminButton = document.getElementById("saveAdminPhotos");
+    const closeDialogButton = document.getElementById("closeInspectionDialog");
+    const previewUrls = new Map();
     let inspections = [];
     let controller;
     let loading = false;
     let loadFailed = false;
+    let activeRecord = null;
+    let uploading = false;
+    const imageViewer = document.getElementById("inspectionImageViewer");
+    const largeImage = document.getElementById("inspectionLargeImage");
+    const imageStage = document.getElementById("inspectionImageStage");
+    let imageZoom = 1;
+
+    function resizeLargeImage() {
+        if (!imageViewer.open || !largeImage.naturalWidth) return;
+        const fit = Math.min((imageStage.clientWidth - 24) / largeImage.naturalWidth,
+            (imageStage.clientHeight - 24) / largeImage.naturalHeight);
+        largeImage.style.width = `${largeImage.naturalWidth * fit * imageZoom}px`;
+        largeImage.style.height = `${largeImage.naturalHeight * fit * imageZoom}px`;
+        document.getElementById("inspectionZoomLevel").textContent = `${Math.round(imageZoom * 100)}%`;
+        document.getElementById("inspectionZoomOut").disabled = imageZoom <= 1;
+        document.getElementById("inspectionZoomIn").disabled = imageZoom >= 4;
+    }
+
+    function openPicture(url, title) {
+        imageZoom = 1;
+        largeImage.hidden = true;
+        largeImage.style.width = "";
+        largeImage.style.height = "";
+        largeImage.alt = title;
+        document.getElementById("inspectionImageTitle").textContent = title;
+        document.getElementById("inspectionImageError").hidden = true;
+        document.getElementById("inspectionZoomLevel").textContent = "100%";
+        imageViewer.showModal();
+        largeImage.src = url;
+        imageStage.scrollTo(0, 0);
+    }
+
+    largeImage.addEventListener("load", () => {
+        largeImage.hidden = false;
+        resizeLargeImage();
+    });
+    largeImage.addEventListener("error", () => {
+        largeImage.hidden = true;
+        document.getElementById("inspectionImageError").hidden = false;
+    });
+    document.getElementById("inspectionZoomIn").addEventListener("click", () => {
+        imageZoom = Math.min(4, imageZoom + .5);
+        resizeLargeImage();
+    });
+    document.getElementById("inspectionZoomOut").addEventListener("click", () => {
+        imageZoom = Math.max(1, imageZoom - .5);
+        resizeLargeImage();
+    });
+    document.getElementById("inspectionZoomReset").addEventListener("click", () => {
+        imageZoom = 1;
+        resizeLargeImage();
+        imageStage.scrollTo(0, 0);
+    });
+    document.getElementById("closeInspectionImage").addEventListener("click", () => imageViewer.close());
+    imageViewer.addEventListener("click", event => {
+        const bounds = imageViewer.getBoundingClientRect();
+        if (event.target === imageViewer && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) imageViewer.close();
+    });
+    imageViewer.addEventListener("close", () => {
+        largeImage.removeAttribute("src");
+        largeImage.hidden = true;
+    });
+    window.addEventListener("resize", resizeLargeImage);
 
     const dateFormatter = new Intl.DateTimeFormat("en-PH", {
         timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric",
@@ -133,7 +203,104 @@ document.addEventListener("DOMContentLoaded", () => {
         return badge;
     }
 
-    function showDetails(record) {
+    function photoCard(photo, side, slot, owner) {
+        const figure = element("figure", "inspection-photo");
+        const title = `${label(side)} · Photo ${slot === "photo2" ? "2" : "1"}`;
+        const entry = photoEntries(photo)[0];
+        if (entry) {
+            const link = element("a");
+            link.href = entry.url;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.setAttribute("aria-label", `Enlarge ${owner} — ${title}`);
+            link.addEventListener("click", event => {
+                if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                openPicture(entry.url, `${owner} — ${title}`);
+            });
+            const image = element("img");
+            image.src = entry.url;
+            image.alt = `${owner} — ${title}`;
+            image.loading = "lazy";
+            image.referrerPolicy = "no-referrer";
+            image.addEventListener("error", () => {
+                image.hidden = true;
+                link.prepend(element("span", "inspection-photo-error", "Preview unavailable. Open original photo."));
+            }, { once: true });
+            link.append(image);
+            figure.append(link);
+        } else {
+            figure.append(element("div", "inspection-photo-placeholder", `No ${owner.toLowerCase()} picture submitted`));
+        }
+        const caption = element("figcaption", "inspection-photo-caption", title);
+        if (photo?.capturedAt !== undefined) caption.append(element("span", "", `Captured ${dateTime(photo.capturedAt)}`));
+        if (photo?.uploadedAt !== undefined) caption.append(element("span", "", `Uploaded ${dateTime(photo.uploadedAt)}`));
+        if (photo?.uploadedByName) caption.append(element("span", "", `By ${text(photo.uploadedByName)}`));
+        figure.append(caption);
+        return figure;
+    }
+
+    function renderComparison(record) {
+        const gallery = document.getElementById("inspectionPhotos");
+        gallery.replaceChildren();
+        const pairs = Array.isArray(record.photoPairs) ? record.photoPairs : [];
+        ["front", "back", "left", "right"].forEach(side => {
+            const section = element("section", "inspection-comparison-side");
+            section.append(element("h4", "", label(side)));
+            const labels = element("div", "inspection-comparison-labels");
+            labels.append(element("span", "", "Driver pictures"), element("span", "", "Admin pictures"));
+            section.append(labels);
+            ["photo1", "photo2"].forEach(slot => {
+                const pair = pairs.find(item => item.side === side && item.slot === slot);
+                const row = element("div", "inspection-photo-pair");
+                row.append(photoCard(pair?.driverPhoto, side, slot, "Driver"), photoCard(pair?.adminPhoto, side, slot, "Admin"));
+                section.append(row);
+            });
+            gallery.append(section);
+        });
+        // Preserve the display of older submissions with photos outside side/slot groups.
+        const pairedUrls = new Set(pairs.flatMap(pair => [pair.driverPhoto, pair.adminPhoto])
+            .flatMap(photo => photoEntries(photo).map(entry => entry.url)));
+        const extras = photoEntries(record.photos).filter(photo => !pairedUrls.has(photo.url));
+        if (extras.length) {
+            gallery.append(element("h4", "", "Additional driver pictures"));
+            const extraGallery = element("div", "inspection-photos");
+            extras.forEach(photo => extraGallery.append(photoCard({ url: photo.url }, photo.name, "photo1", "Driver")));
+            gallery.append(extraGallery);
+        }
+    }
+
+    function resetAdminForm() {
+        adminForm.reset();
+        adminForm.hidden = true;
+        adminMessage.hidden = true;
+        previewUrls.forEach(url => URL.revokeObjectURL(url));
+        previewUrls.clear();
+        adminForm.querySelectorAll(".inspection-upload-preview").forEach(image => {
+            image.removeAttribute("src");
+            image.hidden = true;
+        });
+    }
+
+    function showUploadForm() {
+        if (uploading) return;
+        adminForm.hidden = false;
+        adminMessage.hidden = true;
+        adminForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function showUploadMessage(message, error = false) {
+        adminMessage.textContent = message;
+        adminMessage.dataset.error = String(error);
+        adminMessage.hidden = false;
+        if (error) adminMessage.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function showDetails(record, upload = false) {
+        if (uploading) return;
+        activeRecord = record;
+        resetAdminForm();
+        adminMessage.hidden = true;
         document.getElementById("inspectionDetailTitle").textContent = text(record.plateNumber);
         const details = document.getElementById("inspectionDetails");
         details.replaceChildren();
@@ -145,39 +312,78 @@ document.addEventListener("DOMContentLoaded", () => {
             ["Submitted at (PHT)", dateTime(record.submittedAt)],
             ["Window start (PHT)", dateTime(record.windowStart)],
             ["Window end (PHT)", dateTime(record.windowEnd)],
-            ["Trip ID", record.tripId], ["Source", record.source]
+            ["Trip ID", record.tripId], ["Source", record.source],
+            ["Admin submitted at (PHT)", dateTime(record.adminSubmittedAt)],
+            ["Admin submitted by", record.adminSubmittedByName], ["Admin user ID", record.adminSubmittedBy]
         ];
         fields.forEach(([name, value]) => {
             const item = element("div");
             item.append(element("dt", "", name), element("dd", "", text(value)));
             details.append(item);
         });
-        const gallery = document.getElementById("inspectionPhotos");
-        gallery.replaceChildren();
-        const photos = photoEntries(record.photos);
-        if (!photos.length) gallery.append(element("p", "inspection-no-photos", "No viewable photos in this submission."));
-        photos.forEach(photo => {
-            const figure = element("figure", "inspection-photo");
-            const link = element("a");
-            link.href = photo.url;
-            link.target = "_blank";
-            link.rel = "noopener noreferrer";
-            const image = element("img");
-            image.src = photo.url;
-            image.alt = photo.name;
-            image.loading = "lazy";
-            image.referrerPolicy = "no-referrer";
-            image.addEventListener("error", () => {
-                image.hidden = true;
-                link.prepend(element("span", "inspection-photo-error", "Preview unavailable. Open original photo."));
-            }, { once: true });
-            link.append(image, element("figcaption", "", photo.name));
-            figure.append(link);
-            gallery.append(figure);
-        });
-        document.getElementById("inspectionPhotoData").textContent = text(record.photos);
+        renderComparison(record);
+        document.getElementById("inspectionPhotoData").textContent = text({ driverPhotos: record.photos, adminPhotos: record.adminPhotos });
         document.getElementById("inspectionPhotoMetadata").open = false;
-        dialog.showModal();
+        if (!dialog.open) dialog.showModal();
+        if (upload) showUploadForm();
+    }
+
+    async function submitAdminPictures(event) {
+        event.preventDefault();
+        if (uploading || !activeRecord) return;
+        const payload = new FormData();
+        let count = 0;
+        for (const input of adminForm.querySelectorAll('input[type="file"]')) {
+            const file = input.files[0];
+            if (!file) continue;
+            if (!file.size || file.size > 10 * 1024 * 1024) {
+                showUploadMessage("Each picture must be between 1 byte and 10 MB.", true);
+                return;
+            }
+            payload.append(input.name, file);
+            count += 1;
+        }
+        if (!count) {
+            showUploadMessage("Choose at least one admin picture before submitting.", true);
+            return;
+        }
+        const parts = String(activeRecord.id).split("/");
+        if (parts.length !== 4) {
+            showUploadMessage("This inspection could not be identified. Refresh the page.", true);
+            return;
+        }
+        uploading = true;
+        adminMessage.hidden = true;
+        adminForm.querySelectorAll("input, button").forEach(control => { control.disabled = true; });
+        closeDialogButton.disabled = true;
+        openAdminForm.disabled = true;
+        saveAdminButton.textContent = "Uploading pictures…";
+        try {
+            const response = await fetch(`${inspectionApi}/${parts.map(encodeURIComponent).join("/")}/admin-photos`, {
+                method: "POST", body: payload,
+                headers: { Accept: "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content }
+            });
+            if (response.redirected || !response.headers.get("content-type")?.includes("application/json")) {
+                throw new Error("Your session may have expired. Please sign in again.");
+            }
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Unable to save admin pictures.");
+            if (!data.inspection || data.inspection.id !== activeRecord.id) throw new Error("Refresh the inspection to confirm the uploaded pictures.");
+            Object.assign(activeRecord, data.inspection);
+            uploading = false;
+            render();
+            showDetails(activeRecord);
+            showUploadMessage("Admin pictures saved. Driver and admin pictures are ready to compare below.");
+            document.querySelector(".inspection-comparison-heading").scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch (error) {
+            showUploadMessage(error.message || "Unable to save admin pictures. Please try again.", true);
+        } finally {
+            uploading = false;
+            adminForm.querySelectorAll("input, button").forEach(control => { control.disabled = false; });
+            closeDialogButton.disabled = false;
+            openAdminForm.disabled = false;
+            saveAdminButton.textContent = "Submit Admin Pictures";
+        }
     }
 
     function render() {
@@ -227,13 +433,20 @@ document.addEventListener("DOMContentLoaded", () => {
             const status = element("td");
             status.append(statusBadge(record.status));
             const submitted = element("td", "", dateTime(record.submittedAt));
-            const photos = element("td", "", String(photoEntries(record.photos).length));
+            const photos = element("td");
+            photos.append(element("span", "inspection-primary", `Driver: ${photoEntries(record.photos).length}`),
+                element("span", "inspection-secondary", `Admin: ${photoEntries(record.adminPhotos).length}`));
             const action = element("td");
             const button = element("button", "inspection-view", "View details");
             button.type = "button";
             button.setAttribute("aria-label", `View inspection for ${text(record.plateNumber)}, ${record.period}, ${text(record.driverName)}`);
             button.addEventListener("click", () => showDetails(record));
-            action.append(button);
+            const actions = element("div", "inspection-row-actions");
+            const uploadButton = element("button", "inspection-view", "Submit Admin Pictures");
+            uploadButton.type = "button";
+            uploadButton.addEventListener("click", () => showDetails(record, true));
+            actions.append(button, uploadButton);
+            action.append(actions);
             row.append(vehicle, driver, period, status, submitted, photos, action);
             fragment.append(row);
         });
@@ -252,7 +465,7 @@ document.addEventListener("DOMContentLoaded", () => {
         refreshButton.disabled = true;
         render();
         try {
-            const response = await fetch(`/api/admin/vehicle-inspections?${new URLSearchParams({ date: dateInput.value })}`, {
+            const response = await fetch(`${inspectionApi}?${new URLSearchParams({ date: dateInput.value })}`, {
                 signal: requestController.signal, headers: { Accept: "application/json" }, cache: "no-store"
             });
             if (response.redirected || !response.headers.get("content-type")?.includes("application/json")) {
@@ -292,10 +505,32 @@ document.addEventListener("DOMContentLoaded", () => {
     periodFilter.addEventListener("change", render);
     statusFilter.addEventListener("change", render);
     searchInput.addEventListener("input", render);
-    document.getElementById("closeInspectionDialog").addEventListener("click", () => dialog.close());
+    closeDialogButton.addEventListener("click", () => { if (!uploading) dialog.close(); });
+    openAdminForm.addEventListener("click", showUploadForm);
+    document.getElementById("cancelAdminPhotos").addEventListener("click", resetAdminForm);
+    adminForm.addEventListener("submit", submitAdminPictures);
+    adminForm.querySelectorAll('input[type="file"]').forEach(input => {
+        input.addEventListener("change", () => {
+            adminMessage.hidden = true;
+            if (previewUrls.has(input.name)) URL.revokeObjectURL(previewUrls.get(input.name));
+            previewUrls.delete(input.name);
+            const image = document.getElementById(input.dataset.preview);
+            image.hidden = true;
+            image.removeAttribute("src");
+            const file = input.files[0];
+            if (file && file.size <= 10 * 1024 * 1024) {
+                const url = URL.createObjectURL(file);
+                previewUrls.set(input.name, url);
+                image.src = url;
+                image.hidden = false;
+            }
+        });
+    });
+    dialog.addEventListener("close", resetAdminForm);
+    dialog.addEventListener("cancel", event => { if (uploading) event.preventDefault(); });
     dialog.addEventListener("click", event => {
         const bounds = dialog.getBoundingClientRect();
-        if (event.target === dialog && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) dialog.close();
+        if (!uploading && event.target === dialog && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) dialog.close();
     });
     loadInspections();
 });
