@@ -13,6 +13,7 @@ import requests
 from firebase_admin import db
 from flask import Blueprint, current_app, jsonify, request, session
 from flask_wtf.csrf import validate_csrf
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 from PIL import Image, UnidentifiedImageError
 from werkzeug.exceptions import RequestEntityTooLarge
 from wtforms import ValidationError
@@ -22,10 +23,12 @@ from decorators import inspection_access_required
 
 vehicle_inspections_api = Blueprint("vehicle_inspections_api", __name__)
 MANILA = timezone(timedelta(hours=8))
-PHOTO_SIDES = ("front", "back", "left", "right")
-PHOTO_SLOTS = ("photo1", "photo2")
+PHOTO_COUNTS = {"front": 2, "back": 2, "right": 4, "left": 4, "inside": 2}
 MAX_PHOTO_BYTES = 10 * 1024 * 1024
-MAX_UPLOAD_BYTES = MAX_PHOTO_BYTES * 8 + 1024 * 1024
+MAX_VIDEO_BYTES = 1024 * 1024 * 1024
+VIDEO_CHUNK_BYTES = 8 * 1024 * 1024
+VIDEO_TOKEN_MAX_AGE = 2 * 60 * 60
+MAX_UPLOAD_BYTES = MAX_PHOTO_BYTES * sum(PHOTO_COUNTS.values()) + MAX_VIDEO_BYTES + 1024 * 1024
 
 
 class InspectionSealedError(Exception):
@@ -61,7 +64,7 @@ def photo_pairs(driver_photos, admin_photos):
         {"side": side, "slot": slot,
          "driverPhoto": photo_at(driver_photos, side, slot),
          "adminPhoto": photo_at(admin_photos, side, slot)}
-        for side in PHOTO_SIDES for slot in PHOTO_SLOTS
+        for side, count in PHOTO_COUNTS.items() for slot in (f"photo{number}" for number in range(1, count + 1))
     ]
 
 
@@ -91,7 +94,7 @@ def flatten_inspections(snapshot, inspection_date, selected_period=None):
                     for field in (
                         "driverName", "driverPhone", "photos", "source", "status",
                         "submittedAt", "transportUnit", "tripId", "windowEnd", "windowStart",
-                        "adminPhotos", "adminSubmittedAt", "adminSubmittedBy", "adminSubmittedByName",
+                        "adminPhotos", "adminVideo", "adminSubmittedAt", "adminSubmittedBy", "adminSubmittedByName",
                         "approved", "approvedAt", "approvedBy", "approvedByName",
                     )
                 }
@@ -138,14 +141,24 @@ def get_vehicle_inspections():
 
 def prepare_admin_photos(files):
     """Validate every image before any Cloudinary uploads take place."""
-    allowed_fields = {f"{side}_{slot}" for side in PHOTO_SIDES for slot in PHOTO_SLOTS}
+    allowed_fields = {f"{side}_photo{number}" for side, count in PHOTO_COUNTS.items() for number in range(1, count + 1)} | {"overall_video"}
     if not files or any(field not in allowed_fields for field in files):
-        raise ValueError("Select at least one front, back, left, or right picture.")
+        raise ValueError("All 14 pictures and the overall inspection video are required.")
     prepared = []
     for field in files:
         if len(files.getlist(field)) != 1:
-            raise ValueError("Choose only one picture for each photo slot.")
+            raise ValueError("Choose only one file for each slot.")
         file = files[field]
+        if field == "overall_video":
+            file.seek(0, 2)
+            size = file.tell()
+            file.seek(0)
+            if not 0 < size <= MAX_VIDEO_BYTES:
+                raise ValueError("The inspection video must be between 1 byte and 1 GB.")
+            video_format = video_container_format(file.read(4096))
+            file.seek(0)
+            prepared.append(("video", "overall", file.stream, video_format))
+            continue
         content = file.read(MAX_PHOTO_BYTES + 1)
         if not content or len(content) > MAX_PHOTO_BYTES:
             raise ValueError("Each picture must be between 1 byte and 10 MB.")
@@ -186,9 +199,160 @@ def upload_admin_photo(content, image_format, folder):
     return {"url": url, "publicId": public_id}
 
 
+def video_container_format(header):
+    # Cloudinary performs the full video decode and video-track validation.
+    if len(header) >= 12 and header[4:8] == b"ftyp":
+        return "MOV" if header[8:12] == b"qt  " else "MP4"
+    if header.startswith(b"\x1a\x45\xdf\xa3") and b"webm" in header:
+        return "WEBM"
+    raise ValueError("Use an MP4, MOV, or WebM inspection video.")
+
+
+def cloudinary_video_metadata(result):
+    url, public_id = result.get("secure_url"), result.get("public_id")
+    if (not isinstance(url, str) or not url.startswith("https://")
+            or not isinstance(public_id, str) or not public_id
+            or result.get("resource_type") != "video" or not result.get("width") or not result.get("height")):
+        raise RuntimeError("Cloudinary did not return an uploaded video with a video track")
+    return {"url": url, "publicId": public_id, "format": result.get("format"), "duration": result.get("duration")}
+
+
+def upload_video_chunk(content, video_format, folder, upload_id, public_id, start, total):
+    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME", "devyvqaxr")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", cloud_name):
+        raise RuntimeError("Invalid Cloudinary configuration")
+    response = requests.post(
+        f"https://api.cloudinary.com/v1_1/{cloud_name}/video/upload",
+        files={"file": (f"{public_id}.{video_format.lower()}", content,
+                        {"MP4": "video/mp4", "MOV": "video/quicktime", "WEBM": "video/webm"}[video_format])},
+        headers={"X-Unique-Upload-Id": upload_id,
+                 "Content-Range": f"bytes {start}-{start + len(content) - 1}/{total}"},
+        data={"upload_preset": os.getenv("CLOUDINARY_UPLOAD_PRESET", "OLStar"), "folder": folder, "public_id": public_id},
+        timeout=(15, 90),
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def upload_admin_video(content, video_format, folder):
+    """Stream legacy multipart uploads in bounded chunks, never buffer a 1 GB file."""
+    stream = BytesIO(content) if isinstance(content, bytes) else content
+    stream.seek(0, 2)
+    total = stream.tell()
+    stream.seek(0)
+    if not 0 < total <= MAX_VIDEO_BYTES:
+        raise ValueError("The inspection video must be between 1 byte and 1 GB.")
+    upload_id, public_id = uuid.uuid4().hex, uuid.uuid4().hex
+    start = 0
+    while start < total:
+        chunk = stream.read(min(VIDEO_CHUNK_BYTES, total - start))
+        if not chunk:
+            raise RuntimeError("Video ended before the expected file size")
+        result = upload_video_chunk(chunk, video_format, folder, upload_id, public_id, start, total)
+        start += len(chunk)
+    return cloudinary_video_metadata(result)
+
+
+def video_tokens():
+    return URLSafeTimedSerializer(current_app.secret_key, salt="inspection-video-upload")
+
+
+def read_video_token(token, inspection_id, kind):
+    try:
+        data = video_tokens().loads(token, max_age=VIDEO_TOKEN_MAX_AGE)
+        if data.get("uid") != session["uid"] or data.get("inspection") != inspection_id or data.get("kind") != kind:
+            raise ValueError()
+        return data
+    except (BadSignature, ValueError, TypeError, AttributeError):
+        raise ValueError("The video upload session expired or is invalid. Select the video and try again.") from None
+
+
+def video_upload_access(inspection_date, period, vehicle_key, driver_id):
+    if session.get("role") != "inspector":
+        return jsonify({"error": "Only inspectors can upload inspection videos."}), 403
+    if not valid_date(inspection_date) or period not in ("AM", "PM") or any(
+        not key or len(key.encode("utf-8")) > 768 or re.search(r"[.#$\[\]/\x00-\x1f\x7f]", key)
+        for key in (vehicle_key, driver_id)
+    ):
+        return jsonify({"error": "Invalid inspection path."}), 400
+    try:
+        validate_csrf(request.headers.get("X-CSRFToken"))
+    except ValidationError:
+        return jsonify({"error": "Your form session expired. Refresh the page and try again."}), 400
+    try:
+        existing = db.reference(f"vehicleInspections/{inspection_date}/{period}/{vehicle_key}/{driver_id}").get()
+        if not isinstance(existing, dict) or not any(key in existing for key in ("photos", "status", "submittedAt")):
+            return jsonify({"error": "This inspection no longer exists. Refresh the page."}), 404
+        if existing.get("approved") is True:
+            return jsonify({"error": "This inspection is approved and sealed.", "code": "INSPECTION_SEALED"}), 409
+    except Exception:
+        current_app.logger.exception("Unable to load inspection for video upload")
+        return jsonify({"error": "Unable to load this inspection. Please try again."}), 500
+    return None
+
+
+@vehicle_inspections_api.route(
+    "/api/inspector/vehicle-inspections/<inspection_date>/<period>/<vehicle_key>/<driver_id>/video-upload", methods=["POST"],
+)
+@inspection_access_required
+def begin_video_upload(inspection_date, period, vehicle_key, driver_id):
+    if request.content_length is None or request.content_length > 4096:
+        return jsonify({"error": "Invalid video upload request."}), 400
+    error = video_upload_access(inspection_date, period, vehicle_key, driver_id)
+    if error is not None:
+        return error
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid video upload request."}), 400
+    size, video_format = data.get("size"), data.get("format")
+    if type(size) is not int or not 0 < size <= MAX_VIDEO_BYTES:
+        return jsonify({"error": "The inspection video must be between 1 byte and 1 GB."}), 400
+    if video_format not in ("MP4", "MOV", "WEBM"):
+        return jsonify({"error": "Use an MP4, MOV, or WebM inspection video."}), 400
+    state = {"kind": "chunk", "uid": session["uid"], "inspection": f"{inspection_date}/{period}/{vehicle_key}/{driver_id}",
+             "size": size, "format": video_format, "offset": 0, "uploadId": uuid.uuid4().hex, "publicId": uuid.uuid4().hex}
+    return jsonify({"token": video_tokens().dumps(state), "chunkSize": VIDEO_CHUNK_BYTES})
+
+
+@vehicle_inspections_api.route(
+    "/api/inspector/vehicle-inspections/<inspection_date>/<period>/<vehicle_key>/<driver_id>/video-upload/chunk", methods=["POST"],
+)
+@inspection_access_required
+def receive_video_chunk(inspection_date, period, vehicle_key, driver_id):
+    if request.content_length is None or request.content_length > VIDEO_CHUNK_BYTES + 64 * 1024:
+        return jsonify({"error": "The video chunk is too large."}), 413
+    error = video_upload_access(inspection_date, period, vehicle_key, driver_id)
+    if error is not None:
+        return error
+    try:
+        state = read_video_token(request.form.get("token"), f"{inspection_date}/{period}/{vehicle_key}/{driver_id}", "chunk")
+        if set(request.files) != {"chunk"} or len(request.files.getlist("chunk")) != 1:
+            raise ValueError("Choose one video chunk.")
+        chunk = request.files["chunk"].read(VIDEO_CHUNK_BYTES + 1)
+        expected = min(VIDEO_CHUNK_BYTES, state["size"] - state["offset"])
+        if not chunk or len(chunk) != expected:
+            raise ValueError("The video chunk has an invalid size. Try uploading again.")
+        if state["offset"] == 0 and video_container_format(chunk[:4096]) != state["format"]:
+            raise ValueError("The video format does not match the selected file.")
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    try:
+        result = upload_video_chunk(chunk, state["format"], f"vehicle_inspections/admin/{inspection_date}",
+                                    state["uploadId"], state["publicId"], state["offset"], state["size"])
+        state["offset"] += len(chunk)
+        if state["offset"] == state["size"]:
+            state = {"kind": "complete", "uid": state["uid"], "inspection": state["inspection"],
+                     "video": cloudinary_video_metadata(result)}
+            return jsonify({"done": True, "videoToken": video_tokens().dumps(state)})
+        return jsonify({"done": False, "token": video_tokens().dumps(state)})
+    except Exception:
+        current_app.logger.exception("Unable to upload inspection video chunk")
+        return jsonify({"error": "Video upload failed. Check your connection and the Cloudinary video size limit, then try again."}), 502
+
+
 @vehicle_inspections_api.errorhandler(RequestEntityTooLarge)
 def upload_too_large(_error):
-    return jsonify({"error": "The selected pictures are too large. Use up to 8 pictures, 10 MB each."}), 413
+    return jsonify({"error": "The selected files are too large. Use up to 14 pictures (10 MB each) and one video (1 GB)."}), 413
 
 
 @vehicle_inspections_api.route(
@@ -201,6 +365,8 @@ def upload_too_large(_error):
 )
 @inspection_access_required
 def submit_admin_photos(inspection_date, period, vehicle_key, driver_id):
+    if session.get("role") != "inspector":
+        return jsonify({"error": "Only inspectors can submit inspection pictures."}), 403
     if not valid_date(inspection_date) or period not in ("AM", "PM"):
         return jsonify({"error": "Invalid inspection date or period."}), 400
     if any(not key or len(key.encode("utf-8")) > 768 or re.search(r"[.#$\[\]/\x00-\x1f\x7f]", key)
@@ -213,7 +379,13 @@ def submit_admin_photos(inspection_date, period, vehicle_key, driver_id):
     if request.content_length is None or request.content_length > MAX_UPLOAD_BYTES:
         return upload_too_large(None)
     try:
-        prepared = prepare_admin_photos(request.files)
+        video_token = request.form.get("overall_video_token")
+        completed_video = None
+        if video_token:
+            if len(request.form.getlist("overall_video_token")) != 1 or "overall_video" in request.files:
+                raise ValueError("Choose only one overall inspection video.")
+            completed_video = read_video_token(video_token, f"{inspection_date}/{period}/{vehicle_key}/{driver_id}", "complete")["video"]
+        prepared = prepare_admin_photos(request.files) if request.files or not completed_video else []
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
 
@@ -229,30 +401,49 @@ def submit_admin_photos(inspection_date, period, vehicle_key, driver_id):
         current_app.logger.exception("Unable to locate inspection for admin pictures")
         return jsonify({"error": "Unable to load this inspection. Please try again."}), 500
 
+    required_photos = {f"{side}_photo{number}" for side, count in PHOTO_COUNTS.items() for number in range(1, count + 1)}
+    submitted_photos = {f"{side}_{slot}" for side, slot, *_ in prepared if side != "video"}
+    missing = sorted(required_photos - submitted_photos)
+    if not completed_video and not any(side == "video" for side, *_ in prepared):
+        missing.append("overall_video")
+    if missing:
+        labels = [slot.replace("_", " ").replace("photo", "photo ").capitalize() for slot in missing]
+        return jsonify({"error": "All 14 pictures and the overall inspection video are required. Missing: " + ", ".join(labels) + ".",
+                        "missing": missing}), 400
+
     submitted_at = int(datetime.now(MANILA).timestamp() * 1000)
     admin_id = session["uid"]
     admin_name = session.get("full_name") or session.get("email") or admin_id
     updates = {"adminSubmittedAt": submitted_at, "adminSubmittedBy": admin_id, "adminSubmittedByName": admin_name}
+    if completed_video:
+        completed_video.update(uploadedAt=submitted_at, uploadedBy=admin_id, uploadedByName=admin_name)
+        updates["adminVideo"] = completed_video
     updated = copy.deepcopy(existing)
     if not isinstance(updated.get("adminPhotos"), dict):
         updated["adminPhotos"] = {}
     try:
         def upload_one(item):
             side, slot, content, image_format = item
-            return side, slot, upload_admin_photo(content, image_format, f"vehicle_inspections/admin/{inspection_date}")
+            upload = upload_admin_video if side == "video" else upload_admin_photo
+            return side, slot, upload(content, image_format, f"vehicle_inspections/admin/{inspection_date}")
 
-        # Avoid eight sequential network round trips for a complete picture set.
-        with ThreadPoolExecutor(max_workers=min(4, len(prepared))) as pool:
-            uploaded = list(pool.map(upload_one, prepared))
+        # Upload independent media files concurrently.
+        uploaded = []
+        if prepared:
+            with ThreadPoolExecutor(max_workers=min(4, len(prepared))) as pool:
+                uploaded = list(pool.map(upload_one, prepared))
         for side, slot, photo in uploaded:
             photo.update(uploadedAt=submitted_at, uploadedBy=admin_id, uploadedByName=admin_name)
+            if side == "video":
+                updates["adminVideo"] = photo
+                continue
             updates[f"adminPhotos/{side}/{slot}"] = photo
             if not isinstance(updated["adminPhotos"].get(side), dict):
                 updated["adminPhotos"][side] = {}
             updated["adminPhotos"][side][slot] = photo
     except Exception:
         current_app.logger.exception("Unable to upload admin inspection pictures")
-        return jsonify({"error": "Picture upload failed. Inspection records were not changed. Please try again."}), 502
+        return jsonify({"error": "Media upload failed. Inspection records were not changed. Please try again."}), 502
 
     try:
         # Multi-location update preserves driver photos and all unselected admin slots.
@@ -280,39 +471,4 @@ def submit_admin_photos(inspection_date, period, vehicle_key, driver_id):
         return jsonify({"error": "Unable to confirm the pictures were saved. Refresh the inspection before retrying."}), 500
     updated.update({key: value for key, value in updates.items() if "/" not in key})
     record = flatten_inspections({period: {vehicle_key: {driver_id: updated}}}, inspection_date)[0]
-    return jsonify({"message": "Admin pictures saved.", "uploaded": len(prepared), "inspection": record})
-
-
-@vehicle_inspections_api.route(
-    "/api/admin/vehicle-inspections/<inspection_date>/<period>/<vehicle_key>/<driver_id>/approve", methods=["POST"],
-)
-@inspection_access_required
-def approve_inspection(inspection_date, period, vehicle_key, driver_id):
-    if session.get("role") != "admin":
-        return jsonify({"error": "Only admins can approve inspections."}), 403
-    if not valid_date(inspection_date) or period not in ("AM", "PM") or any(
-        not key or len(key.encode("utf-8")) > 768 or re.search(r"[.#$\[\]/\x00-\x1f\x7f]", key)
-        for key in (vehicle_key, driver_id)
-    ):
-        return jsonify({"error": "Invalid inspection path."}), 400
-    try:
-        validate_csrf(request.headers.get("X-CSRFToken"))
-    except ValidationError:
-        return jsonify({"error": "Refresh the page and try again."}), 400
-    approval = {"approved": True, "approvedAt": int(datetime.now(MANILA).timestamp() * 1000),
-                "approvedBy": session["uid"],
-                "approvedByName": session.get("full_name") or session.get("email") or session["uid"]}
-    def seal(current):
-        if not isinstance(current, dict) or not any(key in current for key in ("photos", "status", "submittedAt")):
-            raise LookupError()
-        return current if current.get("approved") is True else {**current, **approval}
-    try:
-        ref = db.reference(f"vehicleInspections/{inspection_date}/{period}/{vehicle_key}/{driver_id}")
-        saved = ref.transaction(seal)
-        record = flatten_inspections({period: {vehicle_key: {driver_id: saved}}}, inspection_date)[0]
-        return jsonify({"message": "Inspection approved and sealed for inspectors.", "inspection": record})
-    except LookupError:
-        return jsonify({"error": "Inspection not found."}), 404
-    except Exception:
-        current_app.logger.exception("Unable to approve inspection")
-        return jsonify({"error": "Unable to approve inspection. Refresh and try again."}), 500
+    return jsonify({"message": "Inspection pictures and video saved.", "uploaded": len(prepared) + (1 if completed_video else 0), "inspection": record})

@@ -6,7 +6,7 @@ import re
 import sys
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from types import SimpleNamespace
 
 import pytest
@@ -49,6 +49,13 @@ def client():
     client = make_app().test_client()
     with client.session_transaction() as session:
         session.update(uid="test-admin", role="admin")
+    return client
+
+
+@pytest.fixture
+def inspector_client(client):
+    with client.session_transaction() as session:
+        session.update(uid="test-inspector", role="inspector")
     return client
 
 
@@ -166,7 +173,7 @@ def test_admin_page_renders_and_all_admin_sidebars_link_to_it(client):
             assert "pages.vehicle_inspections" in source, template.name
 
 
-UPLOAD_PATH = "/api/admin/vehicle-inspections/2026-10-28/PM/NLT1055/driver-one/admin-photos"
+UPLOAD_PATH = "/api/inspector/vehicle-inspections/2026-10-28/PM/NLT1055/driver-one/admin-photos"
 
 
 @pytest.fixture
@@ -189,7 +196,9 @@ def nested_submission():
 
 
 def csrf_headers(client):
-    page = client.get("/admin/vehicle-inspections").get_data(as_text=True)
+    with client.session_transaction() as session:
+        portal = "inspector" if session.get("role") == "inspector" else "admin"
+    page = client.get(f"/{portal}/vehicle-inspections").get_data(as_text=True)
     token = re.search(r'<meta name="csrf-token" content="([^"]+)"', page)[1]
     return {"X-CSRFToken": token}
 
@@ -201,6 +210,23 @@ def picture(image_format="PNG"):
     return image
 
 
+def required_submission(client, overrides=None):
+    files = {f"{side}_photo{number}": (picture(), "photo.png")
+             for side, count in routes.PHOTO_COUNTS.items() for number in range(1, count + 1)}
+    with client.session_transaction() as session:
+        uid = session["uid"]
+    with client.application.app_context():
+        files["overall_video_token"] = routes.video_tokens().dumps({
+            "kind": "complete", "uid": uid, "inspection": "2026-10-28/PM/NLT1055/driver-one",
+            "video": {"url": "https://example.test/video.mp4", "publicId": "inspection/video"},
+        })
+    if overrides:
+        if "overall_video" in overrides:
+            files.pop("overall_video_token")
+        files.update(overrides)
+    return files
+
+
 def test_exact_nested_driver_photo_schema_and_millisecond_times(nested_submission):
     original = copy.deepcopy(nested_submission)
     records = routes.flatten_inspections({"PM": {"NLT1055": {"driver-one": nested_submission}}}, "2026-10-28")
@@ -210,56 +236,59 @@ def test_exact_nested_driver_photo_schema_and_millisecond_times(nested_submissio
     assert record["submittedAt"] == 1793178442299
     assert record["windowStart"] == 1793160000000
     assert record["windowEnd"] == 1793185200000
-    assert len(record["photoPairs"]) == 8
+    assert len(record["photoPairs"]) == 14
     for pair in record["photoPairs"]:
-        assert pair["driverPhoto"] == original["photos"][pair["side"]][pair["slot"]]
+        assert pair["driverPhoto"] == original["photos"].get(pair["side"], {}).get(pair["slot"])
     front_two = next(pair for pair in record["photoPairs"] if pair["side"] == "front" and pair["slot"] == "photo2")
     assert front_two["adminPhoto"] == original["adminPhotos"]["front"]["photo2"]
     assert nested_submission == original
 
 
-def test_admin_upload_updates_exact_leaf_and_preserves_driver_and_other_slots(client, nested_submission):
+def test_inspector_submission_updates_all_slots_and_preserves_driver_photos(inspector_client, nested_submission):
     original = copy.deepcopy(nested_submission)
-    headers = csrf_headers(client)
-    with client.session_transaction() as session:
-        session["full_name"] = "Example Admin"
+    headers = csrf_headers(inspector_client)
+    with inspector_client.session_transaction() as session:
+        session["full_name"] = "Example Inspector"
     with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
         reference.return_value.get.return_value = nested_submission
+        reference.return_value.transaction.side_effect = lambda callback: callback(copy.deepcopy(nested_submission))
         upload.return_value = {"url": "https://example.test/admin/new.jpg", "publicId": "admin/new"}
-        response = client.post(UPLOAD_PATH, data={"front_photo1": (picture(), "front.png")}, headers=headers)
+        response = inspector_client.post(UPLOAD_PATH, data=required_submission(inspector_client, {"front_photo1": (picture(), "front.png")}), headers=headers)
     assert response.status_code == 200
     reference.assert_called_once_with("vehicleInspections/2026-10-28/PM/NLT1055/driver-one")
-    updates = reference.return_value.update.call_args.args[0]
-    assert set(updates) == {"adminPhotos/front/photo1", "adminSubmittedAt", "adminSubmittedBy", "adminSubmittedByName"}
-    assert updates["adminSubmittedBy"] == "test-admin"
-    assert updates["adminSubmittedByName"] == "Example Admin"
-    assert updates["adminPhotos/front/photo1"]["uploadedBy"] == "test-admin"
+    updates = response.json["inspection"]
+    reference.return_value.update.assert_not_called()
+    assert updates["adminSubmittedBy"] == "test-inspector"
+    assert updates["adminSubmittedByName"] == "Example Inspector"
+    assert updates["adminPhotos"]["front"]["photo1"]["uploadedBy"] == "test-inspector"
     assert isinstance(updates["adminSubmittedAt"], int)
     saved = response.json["inspection"]
     assert saved["photos"] == original["photos"]
-    assert saved["adminPhotos"]["front"]["photo2"] == original["adminPhotos"]["front"]["photo2"]
+    assert saved["adminPhotos"]["front"]["photo2"]["url"] == "https://example.test/admin/new.jpg"
     assert saved["adminPhotos"]["front"]["photo1"]["url"] == "https://example.test/admin/new.jpg"
     assert saved["status"] == "complete"
     assert saved["driverId"] == "driver-one"
     assert nested_submission == original
 
 
-def test_upload_all_eight_side_slot_pictures(client, nested_submission):
-    headers = csrf_headers(client)
-    files = {f"{side}_{slot}": (picture(), "image.png") for side in routes.PHOTO_SIDES for slot in routes.PHOTO_SLOTS}
+def test_upload_all_fourteen_side_slot_pictures(inspector_client, nested_submission):
+    headers = csrf_headers(inspector_client)
+    files = {f"{side}_{slot}": (picture(), "image.png") for side, count in routes.PHOTO_COUNTS.items() for slot in (f"photo{number}" for number in range(1, count + 1))}
     with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
         reference.return_value.get.return_value = nested_submission
+        reference.return_value.transaction.side_effect = lambda callback: callback(copy.deepcopy(nested_submission))
         upload.return_value = {"url": "https://example.test/new.png", "publicId": "new"}
-        response = client.post(UPLOAD_PATH, data=files, headers=headers)
+        response = inspector_client.post(UPLOAD_PATH, data=required_submission(inspector_client, files), headers=headers)
     assert response.status_code == 200
-    assert response.json["uploaded"] == upload.call_count == 8
-    updates = reference.return_value.update.call_args.args[0]
-    assert len([key for key in updates if key.startswith("adminPhotos/")]) == 8
+    assert response.json["uploaded"] == 15
+    assert upload.call_count == 14
+    saved = response.json["inspection"]["adminPhotos"]
+    assert sum(len(slots) for slots in saved.values()) == 14
 
 
-def test_invalid_csrf_prevents_database_or_cloud_access(client):
+def test_invalid_csrf_prevents_database_or_cloud_access(inspector_client):
     with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
-        response = client.post(UPLOAD_PATH, data={"front_photo1": (picture(), "photo.png")}, headers={"X-CSRFToken": "invalid"})
+        response = inspector_client.post(UPLOAD_PATH, data={"front_photo1": (picture(), "photo.png")}, headers={"X-CSRFToken": "invalid"})
     assert response.status_code == 400
     reference.assert_not_called()
     upload.assert_not_called()
@@ -282,16 +311,16 @@ def test_unauthorized_users_cannot_upload_admin_pictures(client, role):
     "bad/PM/NLT1055/driver-one", "2026-10-28/NIGHT/NLT1055/driver-one",
     "2026-10-28/PM/bad.key/driver-one", "2026-10-28/PM/NLT1055/bad%24key",
 ])
-def test_invalid_record_paths_cannot_be_written(client, suffix):
+def test_invalid_record_paths_cannot_be_written(inspector_client, suffix):
     with patch.object(routes.db, "reference") as reference:
-        response = client.post(f"/api/admin/vehicle-inspections/{suffix}/admin-photos")
+        response = inspector_client.post(f"/api/inspector/vehicle-inspections/{suffix}/admin-photos")
     assert response.status_code == 400
     reference.assert_not_called()
 
 
 @pytest.mark.parametrize("case", ["empty", "unknown-slot", "duplicate", "not-image", "gif", "large-file", "large-request"])
-def test_invalid_files_are_rejected_before_any_upload(client, case):
-    headers = csrf_headers(client)
+def test_invalid_files_are_rejected_before_any_upload(inspector_client, case):
+    headers = csrf_headers(inspector_client)
     data = {"front_photo1": (picture(), "photo.png")}
     if case == "empty":
         data = {"unused": "nothing"}
@@ -305,40 +334,40 @@ def test_invalid_files_are_rejected_before_any_upload(client, case):
         data = {"front_photo1": (picture("GIF"), "animated.gif")}
     with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
         with patch.object(routes, "MAX_PHOTO_BYTES", 10 if case == "large-file" else routes.MAX_PHOTO_BYTES), patch.object(routes, "MAX_UPLOAD_BYTES", 1 if case == "large-request" else routes.MAX_UPLOAD_BYTES):
-            response = client.post(UPLOAD_PATH, data=data, headers=headers)
+            response = inspector_client.post(UPLOAD_PATH, data=data, headers=headers)
     assert response.status_code == (413 if case == "large-request" else 400)
     reference.assert_not_called()
     upload.assert_not_called()
 
 
-def test_deleted_inspection_does_not_create_a_new_record(client):
-    headers = csrf_headers(client)
+def test_deleted_inspection_does_not_create_a_new_record(inspector_client):
+    headers = csrf_headers(inspector_client)
     with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
         reference.return_value.get.return_value = None
-        response = client.post(UPLOAD_PATH, data={"front_photo1": (picture(), "photo.png")}, headers=headers)
+        response = inspector_client.post(UPLOAD_PATH, data={"front_photo1": (picture(), "photo.png")}, headers=headers)
     assert response.status_code == 404
     reference.return_value.update.assert_not_called()
     upload.assert_not_called()
 
 
-def test_partial_cloud_upload_failure_does_not_change_inspection(client, nested_submission):
-    headers = csrf_headers(client)
+def test_partial_cloud_upload_failure_does_not_change_inspection(inspector_client, nested_submission):
+    headers = csrf_headers(inspector_client)
     with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
         reference.return_value.get.return_value = nested_submission
         upload.side_effect = [{"url": "https://example.test/first.png", "publicId": "first"}, RuntimeError("synthetic failure")]
-        response = client.post(UPLOAD_PATH, data={"front_photo1": (picture(), "front.png"), "back_photo1": (picture(), "back.png")}, headers=headers)
+        response = inspector_client.post(UPLOAD_PATH, data=required_submission(inspector_client, {"front_photo1": (picture(), "front.png"), "back_photo1": (picture(), "back.png")}), headers=headers)
     assert response.status_code == 502
     reference.return_value.update.assert_not_called()
     assert "synthetic failure" not in response.get_data(as_text=True)
 
 
-def test_database_save_failure_is_not_reported_as_success(client, nested_submission):
-    headers = csrf_headers(client)
+def test_database_save_failure_is_not_reported_as_success(inspector_client, nested_submission):
+    headers = csrf_headers(inspector_client)
     with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
         reference.return_value.get.return_value = nested_submission
-        reference.return_value.update.side_effect = RuntimeError("synthetic failure")
+        reference.return_value.transaction.side_effect = RuntimeError("synthetic failure")
         upload.return_value = {"url": "https://example.test/new.png", "publicId": "new"}
-        response = client.post(UPLOAD_PATH, data={"front_photo1": (picture(), "front.png")}, headers=headers)
+        response = inspector_client.post(UPLOAD_PATH, data=required_submission(inspector_client, {"front_photo1": (picture(), "front.png")}), headers=headers)
     assert response.status_code == 500
     assert "Refresh the inspection" in response.json["error"]
 
@@ -413,11 +442,11 @@ def test_inspector_can_submit_pictures_using_inspector_endpoint(client, nested_s
         reference.return_value.get.return_value = nested_submission
         upload.return_value = {"url": "https://example.test/inspector.png", "publicId": "inspection/example"}
         reference.return_value.transaction.side_effect = lambda callback: callback(copy.deepcopy(nested_submission))
-        response = client.post(UPLOAD_PATH.replace("/api/admin/", "/api/inspector/"), data={"front_photo1": (picture(), "front.png")}, headers={"X-CSRFToken": token})
+        response = client.post(UPLOAD_PATH.replace("/api/admin/", "/api/inspector/"), data=required_submission(client, {"front_photo1": (picture(), "front.png")}), headers={"X-CSRFToken": token})
         assert response.status_code == 200
         assert response.json["inspection"]["adminSubmittedBy"] == "example-inspector"
     with patch.object(routes.db, "reference") as reference:
-        assert client.post(UPLOAD_PATH).status_code == 403
+        assert client.post(UPLOAD_PATH.replace("/api/inspector/", "/api/admin/")).status_code == 403
         reference.assert_not_called()
 
 
@@ -513,23 +542,9 @@ def test_inspector_development_verification_and_role_errors(role, environment, v
         assert response.json["code"] == ("PORTAL_ROLE_REQUIRED" if role is None else "EMAIL_NOT_VERIFIED")
 
 
-def test_admin_approval_preserves_photos_and_is_idempotent(client, nested_submission):
-    headers = csrf_headers(client)
-    with patch.object(routes.db, "reference") as reference:
-        reference.return_value.transaction.side_effect = lambda callback: callback(copy.deepcopy(nested_submission))
-        response = client.post(UPLOAD_PATH.replace("/admin-photos", "/approve"), headers=headers)
-        assert response.status_code == 200
-        saved = response.json["inspection"]
-        assert saved["approved"] is True
-        assert saved["approvedBy"] == "test-admin"
-        assert saved["photos"] == nested_submission["photos"]
-        assert saved["adminPhotos"] == nested_submission["adminPhotos"]
-        reference.return_value.transaction.side_effect = lambda callback: callback(copy.deepcopy(saved))
-        again = client.post(UPLOAD_PATH.replace("/admin-photos", "/approve"), headers=headers)
-        assert again.json["inspection"]["approvedAt"] == saved["approvedAt"]
 
 
-def test_inspector_cannot_approve_or_upload_sealed_case(client, nested_submission):
+def test_inspector_cannot_upload_sealed_case(client, nested_submission):
     with client.session_transaction() as session:
         session.update(uid="inspector-example", role="inspector")
     html = client.get("/inspector/vehicle-inspections").get_data(as_text=True)
@@ -539,7 +554,6 @@ def test_inspector_cannot_approve_or_upload_sealed_case(client, nested_submissio
     nested_submission["approved"] = True
     with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
         reference.return_value.get.return_value = nested_submission
-        assert client.post(UPLOAD_PATH.replace("/admin-photos", "/approve"), headers=headers).status_code == 403
         response = client.post(UPLOAD_PATH.replace("/api/admin/", "/api/inspector/"), data={"front_photo1": (picture(), "front.png")}, headers=headers)
         assert response.status_code == 409
         assert response.json["code"] == "INSPECTION_SEALED"
@@ -556,15 +570,288 @@ def test_approval_during_upload_blocks_final_inspector_save(client, nested_submi
         reference.return_value.get.return_value = nested_submission
         upload.return_value = {"url": "https://example.test/new.png", "publicId": "new"}
         reference.return_value.transaction.side_effect = lambda callback: callback({**nested_submission, "approved": True})
-        response = client.post(UPLOAD_PATH.replace("/api/admin/", "/api/inspector/"), data={"front_photo1": (picture(), "front.png")}, headers={"X-CSRFToken": token})
+        response = client.post(UPLOAD_PATH.replace("/api/admin/", "/api/inspector/"), data=required_submission(client, {"front_photo1": (picture(), "front.png")}), headers={"X-CSRFToken": token})
         assert response.status_code == 409
         reference.return_value.update.assert_not_called()
 
 
-def test_approval_requires_csrf_and_existing_case(client):
-    url = UPLOAD_PATH.replace("/admin-photos", "/approve")
-    with patch.object(routes.db, "reference") as reference:
-        assert client.post(url).status_code == 400
+
+
+@pytest.mark.parametrize("portal", ["admin", "inspector"])
+@pytest.mark.parametrize("action", ["admin-photos"])
+def test_admin_cannot_modify_inspections(client, portal, action):
+    headers = csrf_headers(client)
+    url = UPLOAD_PATH.replace("/api/inspector/", f"/api/{portal}/").replace("/admin-photos", f"/{action}")
+    with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
+        assert client.post(url, headers=headers).status_code == 403
         reference.assert_not_called()
-        reference.return_value.transaction.side_effect = lambda callback: callback(None)
+        upload.assert_not_called()
+
+
+def test_mutation_controls_are_only_on_inspector_page(client, inspector_client):
+    html = inspector_client.get("/inspector/vehicle-inspections").get_data(as_text=True)
+    for control in ("openAdminPhotoForm", "adminPhotoForm"):
+        assert f'id="{control}"' in html
+    assert 'id="approveInspection"' not in html
+    with client.session_transaction() as session:
+        session.update(uid="test-admin", role="admin")
+    html = client.get("/admin/vehicle-inspections").get_data(as_text=True)
+    for control in ("openAdminPhotoForm", "adminPhotoForm", "approveInspection"):
+        assert f'id="{control}"' not in html
+
+
+@pytest.mark.parametrize("role", ["admin", "inspector"])
+@pytest.mark.parametrize("portal", ["admin", "inspector"])
+def test_approval_is_unavailable(client, role, portal):
+    with client.session_transaction() as session:
+        session.update(uid="test-user", role=role)
+    url = UPLOAD_PATH.replace("/api/inspector/", f"/api/{portal}/").replace("/admin-photos", "/approve")
+    with patch.object(routes.db, "reference") as reference:
         assert client.post(url, headers=csrf_headers(client)).status_code == 404
+        reference.assert_not_called()
+
+
+def inspection_video():
+    # Minimal MP4 container header; actual decoding is checked by Cloudinary.
+    return BytesIO(b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00isommp42")
+
+
+@pytest.mark.parametrize("with_pictures", [False, True])
+def test_inspector_uploads_overall_video_and_preserves_existing_media(inspector_client, nested_submission, with_pictures):
+    original = copy.deepcopy(nested_submission)
+    files = {"overall_video": (inspection_video(), "walkthrough.mp4")}
+    if with_pictures:
+        files.update({f"{side}_photo{number}": (picture(), "photo.png")
+                      for side, count in routes.PHOTO_COUNTS.items() for number in range(1, count + 1)})
+    with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as photo, patch.object(routes, "upload_admin_video") as video:
+        reference.return_value.get.return_value = nested_submission
+        reference.return_value.transaction.side_effect = lambda callback: callback(copy.deepcopy(nested_submission))
+        photo.return_value = {"url": "https://example.test/new.png", "publicId": "photo/new"}
+        video.return_value = {"url": "https://example.test/walkthrough.mp4", "publicId": "video/new", "duration": 12}
+        response = inspector_client.post(UPLOAD_PATH, data=files, headers=csrf_headers(inspector_client))
+        if not with_pictures:
+            assert response.status_code == 400
+            assert len(response.json["missing"]) == 14
+            photo.assert_not_called()
+            video.assert_not_called()
+            reference.return_value.transaction.assert_not_called()
+            return
+        assert response.status_code == 200
+        assert response.json["uploaded"] == 15
+        assert photo.call_count == (14 if with_pictures else 0)
+        video.assert_called_once()
+        saved = response.json["inspection"]
+        assert saved["adminVideo"]["url"] == "https://example.test/walkthrough.mp4"
+        assert saved["adminVideo"]["uploadedBy"] == "test-inspector"
+        assert saved["photos"] == original["photos"]
+        if not with_pictures:
+            assert saved["adminPhotos"] == original["adminPhotos"]
+        assert nested_submission == original
+
+
+@pytest.mark.parametrize("field", ["front_photo3", "back_photo3", "left_photo5", "right_photo5", "inside_photo3"])
+def test_extra_photo_slots_are_rejected(inspector_client, field):
+    with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as upload:
+        response = inspector_client.post(UPLOAD_PATH, data={field: (picture(), "extra.png")}, headers=csrf_headers(inspector_client))
+        assert response.status_code == 400
+        reference.assert_not_called()
+        upload.assert_not_called()
+
+
+@pytest.mark.parametrize("case", ["not-video", "empty", "oversize", "duplicate"])
+def test_invalid_video_rejected_before_any_upload(inspector_client, case):
+    files = {"overall_video": (inspection_video(), "walkthrough.mp4")}
+    if case == "not-video":
+        files = {"overall_video": (picture(), "fake.mp4")}
+    elif case == "empty":
+        files = {"overall_video": (BytesIO(), "empty.mp4")}
+    elif case == "duplicate":
+        files = MultiDict([("overall_video", (inspection_video(), "one.mp4")), ("overall_video", (inspection_video(), "two.mp4"))])
+    with patch.object(routes, "MAX_VIDEO_BYTES", 10 if case == "oversize" else routes.MAX_VIDEO_BYTES), patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_video") as upload:
+        response = inspector_client.post(UPLOAD_PATH, data=files, headers=csrf_headers(inspector_client))
+        assert response.status_code == 400
+        reference.assert_not_called()
+        upload.assert_not_called()
+
+
+def test_cloudinary_video_helper_requires_video_track():
+    with patch.object(routes.requests, "post") as post:
+        post.return_value.json.return_value = {"secure_url": "https://example.test/video.mp4", "public_id": "inspection/video", "resource_type": "video", "width": 1280, "height": 720, "duration": 12}
+        assert routes.upload_admin_video(b"video", "MP4", "inspection/folder")["duration"] == 12
+        assert post.call_args.args[0].endswith("/video/upload")
+        assert post.call_args.kwargs["files"]["file"][2] == "video/mp4"
+        post.return_value.json.return_value = {"secure_url": "https://example.test/audio.mp4", "public_id": "audio", "resource_type": "video"}
+        with pytest.raises(RuntimeError):
+            routes.upload_admin_video(b"audio", "MP4", "inspection/folder")
+
+
+def test_video_upload_failure_preserves_record(inspector_client, nested_submission):
+    with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_video") as upload, patch.object(routes, "upload_admin_photo") as photo:
+        reference.return_value.get.return_value = nested_submission
+        photo.return_value = {"url": "https://example.test/photo.png", "publicId": "photo"}
+        upload.side_effect = RuntimeError("synthetic video failure")
+        response = inspector_client.post(UPLOAD_PATH, data=required_submission(inspector_client, {"overall_video": (inspection_video(), "walkthrough.mp4")}), headers=csrf_headers(inspector_client))
+        assert response.status_code == 502
+        reference.return_value.transaction.assert_not_called()
+        reference.return_value.update.assert_not_called()
+        assert "synthetic video failure" not in response.get_data(as_text=True)
+
+
+def test_upload_form_has_exact_media_slots(inspector_client):
+    html = inspector_client.get("/inspector/vehicle-inspections").get_data(as_text=True)
+    names = re.findall(r'<input type="file"[^>]*name="([^"]+)"', html)
+    expected = {f"{side}_photo{number}" for side, count in routes.PHOTO_COUNTS.items() for number in range(1, count + 1)} | {"overall_video"}
+    assert len(names) == 15
+    assert set(names) == expected
+    assert 'id="approveInspection"' not in html
+
+
+VIDEO_PATH = UPLOAD_PATH.replace("/admin-photos", "/video-upload")
+
+
+@pytest.mark.parametrize("size,expected", [(1024 ** 3, 200), (1024 ** 3 + 1, 400), (0, 400), (-1, 400), (True, 400)])
+def test_video_upload_accepts_up_to_one_gb(inspector_client, nested_submission, size, expected):
+    assert routes.MAX_VIDEO_BYTES == 1024 ** 3
+    with patch.object(routes.db, "reference") as reference:
+        reference.return_value.get.return_value = nested_submission
+        response = inspector_client.post(VIDEO_PATH, json={"size": size, "format": "MP4"}, headers=csrf_headers(inspector_client))
+        assert response.status_code == expected
+        if expected == 200:
+            assert response.json["chunkSize"] == 8 * 1024 * 1024
+        reference.return_value.transaction.assert_not_called()
+
+
+def test_legacy_video_preparation_does_not_read_a_gigabyte():
+    from werkzeug.datastructures import FileStorage
+    stream = Mock()
+    stream.tell.return_value = 1024 ** 3
+    stream.read.return_value = inspection_video().getvalue()
+    file = FileStorage(stream=stream, filename="large.mp4")
+    prepared = routes.prepare_admin_photos(MultiDict([("overall_video", file)]))
+    assert prepared[0][2] is stream
+    stream.read.assert_called_once_with(4096)
+
+
+def test_video_stream_uses_contiguous_chunks_and_one_upload_id():
+    result = {"secure_url": "https://example.test/video.mp4", "public_id": "inspection/video", "resource_type": "video", "width": 1280, "height": 720}
+    with patch.object(routes, "VIDEO_CHUNK_BYTES", 10), patch.object(routes.requests, "post") as post:
+        post.return_value.json.side_effect = [{"done": False}, {"done": False}, result]
+        assert routes.upload_admin_video(BytesIO(b"x" * 25), "MP4", "inspection/folder")["url"] == result["secure_url"]
+        calls = post.call_args_list
+        assert [call.kwargs["headers"]["Content-Range"] for call in calls] == ["bytes 0-9/25", "bytes 10-19/25", "bytes 20-24/25"]
+        assert len({call.kwargs["headers"]["X-Unique-Upload-Id"] for call in calls}) == 1
+        assert len({call.kwargs["data"]["public_id"] for call in calls}) == 1
+        assert [len(call.kwargs["files"]["file"][1]) for call in calls] == [10, 10, 5]
+
+
+def test_chunked_video_is_saved_only_after_completion(inspector_client, nested_submission):
+    content = inspection_video().getvalue()
+    headers = csrf_headers(inspector_client)
+    with patch.object(routes, "VIDEO_CHUNK_BYTES", 16), patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_video_chunk") as upload, patch.object(routes, "upload_admin_photo") as photo:
+        reference.return_value.get.return_value = nested_submission
+        photo.return_value = {"url": "https://example.test/new.png", "publicId": "photo"}
+        reference.return_value.transaction.side_effect = lambda callback: callback(copy.deepcopy(nested_submission))
+        started = inspector_client.post(VIDEO_PATH, json={"size": len(content), "format": "MP4"}, headers=headers)
+        token = started.json["token"]
+        # An unfinished upload cannot be attached to the inspection.
+        assert inspector_client.post(UPLOAD_PATH, data={"overall_video_token": token}, headers=headers).status_code == 400
+        reference.return_value.transaction.assert_not_called()
+        upload.return_value = {"done": False}
+        first = inspector_client.post(VIDEO_PATH + "/chunk", data={"token": token, "chunk": (BytesIO(content[:16]), "part.mp4")}, headers=headers)
+        assert first.status_code == 200
+        assert first.json["done"] is False
+        reference.return_value.transaction.assert_not_called()
+        upload.return_value = {"secure_url": "https://example.test/video.mp4", "public_id": "inspection/video", "resource_type": "video", "width": 1280, "height": 720}
+        last = inspector_client.post(VIDEO_PATH + "/chunk", data={"token": first.json["token"], "chunk": (BytesIO(content[16:]), "part.mp4")}, headers=headers)
+        assert last.status_code == 200
+        assert last.json["done"] is True
+        reference.return_value.transaction.assert_not_called()
+        saved = inspector_client.post(UPLOAD_PATH, data=required_submission(inspector_client, {"overall_video_token": last.json["videoToken"]}), headers=headers)
+        assert saved.status_code == 200
+        assert saved.json["uploaded"] == 15
+        assert saved.json["inspection"]["adminVideo"]["url"] == "https://example.test/video.mp4"
+        assert saved.json["inspection"]["photos"] == nested_submission["photos"]
+        assert len(saved.json["inspection"]["photoPairs"]) == 14
+        assert upload.call_args_list[0].args[5:] == (0, len(content))
+        assert upload.call_args_list[1].args[5:] == (16, len(content))
+
+
+@pytest.mark.parametrize("case", ["tampered", "wrong-user", "wrong-record", "wrong-size", "bad-video", "sealed"])
+def test_chunk_validation_prevents_upload(inspector_client, nested_submission, case):
+    content = inspection_video().getvalue()
+    headers = csrf_headers(inspector_client)
+    with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_video_chunk") as upload:
+        reference.return_value.get.return_value = nested_submission
+        started = inspector_client.post(VIDEO_PATH, json={"size": len(content), "format": "MP4"}, headers=headers)
+        token = started.json["token"]
+        url = VIDEO_PATH + "/chunk"
+        if case == "tampered":
+            token += "invalid"
+        elif case == "wrong-user":
+            with inspector_client.session_transaction() as session:
+                session["uid"] = "another-inspector"
+        elif case == "wrong-record":
+            url = url.replace("driver-one", "driver-two")
+        elif case == "wrong-size":
+            content = content[:-1]
+        elif case == "bad-video":
+            content = b"x" * len(content)
+        elif case == "sealed":
+            reference.return_value.get.return_value = {**nested_submission, "approved": True}
+        response = inspector_client.post(url, data={"token": token, "chunk": (BytesIO(content), "part.mp4")}, headers=headers)
+        assert response.status_code == (409 if case == "sealed" else 400)
+        upload.assert_not_called()
+        reference.return_value.transaction.assert_not_called()
+
+
+@pytest.mark.parametrize("suffix", ["", "/chunk"])
+def test_video_chunk_endpoints_require_csrf_and_inspector_role(client, inspector_client, nested_submission, suffix):
+    with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_video_chunk") as upload:
+        assert inspector_client.post(VIDEO_PATH + suffix, data={"token": "invalid"}).status_code == 400
+        reference.assert_not_called()
+        with client.session_transaction() as session:
+            session.update(uid="test-admin", role="admin")
+        assert client.post(VIDEO_PATH + suffix, data={"token": "invalid"}, headers=csrf_headers(client)).status_code == 403
+        reference.assert_not_called()
+        upload.assert_not_called()
+
+
+def test_video_chunk_cloud_failure_does_not_change_inspection(inspector_client, nested_submission):
+    content = inspection_video().getvalue()
+    headers = csrf_headers(inspector_client)
+    with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_video_chunk") as upload:
+        reference.return_value.get.return_value = nested_submission
+        started = inspector_client.post(VIDEO_PATH, json={"size": len(content), "format": "MP4"}, headers=headers)
+        upload.side_effect = RuntimeError("synthetic failure")
+        response = inspector_client.post(VIDEO_PATH + "/chunk", data={"token": started.json["token"], "chunk": (BytesIO(content), "part.mp4")}, headers=headers)
+        assert response.status_code == 502
+        assert "synthetic failure" not in response.get_data(as_text=True)
+        reference.return_value.transaction.assert_not_called()
+
+
+@pytest.mark.parametrize("missing", [f"{side}_photo{number}" for side, count in routes.PHOTO_COUNTS.items() for number in range(1, count + 1)] + ["overall_video_token"])
+def test_every_picture_and_video_is_mandatory(inspector_client, nested_submission, missing):
+    files = required_submission(inspector_client)
+    del files[missing]
+    # Saved files do not excuse a missing upload in a new mandatory submission.
+    nested_submission["adminPhotos"] = {side: {f"photo{number}": {"url": "https://example.test/existing.png"}
+        for number in range(1, count + 1)} for side, count in routes.PHOTO_COUNTS.items()}
+    nested_submission["adminVideo"] = {"url": "https://example.test/existing.mp4"}
+    with patch.object(routes.db, "reference") as reference, patch.object(routes, "upload_admin_photo") as photo, patch.object(routes, "upload_admin_video") as video:
+        reference.return_value.get.return_value = nested_submission
+        response = inspector_client.post(UPLOAD_PATH, data=files, headers=csrf_headers(inspector_client))
+        assert response.status_code == 400
+        assert response.json["missing"] == (["overall_video"] if missing == "overall_video_token" else [missing])
+        photo.assert_not_called()
+        video.assert_not_called()
+        reference.return_value.transaction.assert_not_called()
+        reference.return_value.update.assert_not_called()
+
+
+def test_all_upload_inputs_are_required(inspector_client):
+    html = inspector_client.get("/inspector/vehicle-inspections").get_data(as_text=True)
+    inputs = re.findall(r'<input type="file"[^>]*>', html)
+    assert len(inputs) == 15
+    assert all(re.search(r"\brequired\b", input_tag) for input_tag in inputs)
+    assert "Optional" not in html
+    assert "All 14 pictures and the overall inspection video are required" in html

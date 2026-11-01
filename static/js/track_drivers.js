@@ -791,109 +791,6 @@ window.isUpdating = false;
 
 const origin = { lat: 14.5222733, lng: 120.999655 };
 
-const fixedLocations = [
-    {
-        id: "grand_west",
-        name: "Grand West",
-        fullName: "Grand Westside Manila Bay",
-        lat: 14.5199,
-        lng: 120.9828,
-        icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-    },
-    {
-        id: "nobu",
-        name: "Nobu",
-        fullName: "Nobu Hotel, City of Dreams Manila",
-        lat: 14.523997,
-        lng: 120.9930,
-        icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-    },
-    {
-        id: "hyatt",
-        name: "Hyatt",
-        fullName: "Hyatt Regency Manila, City of Dreams",
-        lat: 14.52265,
-        lng: 120.9927,
-        icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-    },
-    {
-        id: "solaire",
-        name: "Solaire",
-        fullName: "Entertainment City, 1 Aseana Ave, Tambo, Parañaque",
-        lat: 14.5241,
-        lng: 120.9808,
-        icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-    },
-    {
-        id: "moa_arena",
-        name: "MOA Arena",
-        fullName: "SM Mall of Asia Arena",
-        lat: 14.531944,
-        lng: 120.983611,
-        icon: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png"
-    }
-];
-
-// Function to create fixed location markers
-function createFixedLocationMarkers() {
-    if (!window.map) {
-        console.log("Map not ready yet, waiting...");
-        setTimeout(createFixedLocationMarkers, 500);
-        return;
-    }
-    
-    console.log("Creating fixed location markers...");
-    
-    fixedLocations.forEach(location => {
-        const marker = new google.maps.Marker({
-            position: { lat: location.lat, lng: location.lng },
-            map: window.map,
-            title: location.fullName,
-            animation: google.maps.Animation.DROP,
-            icon: {
-                url: location.icon,
-                scaledSize: new google.maps.Size(48, 48), // Increased to 48px
-                labelOrigin: new google.maps.Point(24, 48) // Adjust label position
-            },
-            optimized: false
-        });
-        
-        const infoWindow = new google.maps.InfoWindow({
-            content: `
-                <div style="min-width: 200px; padding: 12px; font-family: 'Segoe UI', Arial, sans-serif;">
-                    <div style="font-size: 16px; font-weight: bold; color: #1a73e8; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 20px;">📍</span>
-                        <span>${location.name}</span>
-                    </div>
-                    <div style="font-size: 12px; color: #5f6368; margin-bottom: 8px;">
-                        ${location.fullName}
-                    </div>
-                    <div style="font-size: 11px; color: #9aa0a6; border-top: 1px solid #e8eaed; padding-top: 6px;">
-                        ${location.lat.toFixed(4)}°, ${location.lng.toFixed(4)}°
-                    </div>
-                </div>
-            `
-        });
-        
-        marker.addListener("click", () => {
-            closeActiveInfoWindow();
-            infoWindow.open(window.map, marker);
-            window.activeInfoWindow = infoWindow;
-            
-            if (typeof Toast !== 'undefined') {
-                Toast.fire({
-                    icon: 'info',
-                    title: location.name,
-                    text: location.fullName,
-                    timer: 2000
-                });
-            }
-        });
-        
-        console.log(`✅ Added marker for: ${location.name}`);
-    });
-}
-
 let trafficLayer;
 let trafficVisible = false;
 
@@ -933,8 +830,6 @@ function initializeMap() {
                 scaledSize: new google.maps.Size(48, 48) // Increased to 48px
             }
         });
-
-        createFixedLocationMarkers();
 
         trafficLayer = new google.maps.TrafficLayer();
 

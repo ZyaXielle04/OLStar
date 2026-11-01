@@ -69,11 +69,9 @@
       <section class="inspection-panel" aria-label="Inspection records">
         <div class="inspection-filters">
           <label>Date <input type="date" id="inspectionDate" required></label>
-          <label>Period
-            <select id="periodFilter"><option value="">AM &amp; PM</option><option value="AM">AM</option><option value="PM">PM</option></select>
+          <label class="inspection-search">Unit
+            <select id="unitFilter"><option value="">All units</option></select>
           </label>
-          <label>Status <select id="statusFilter"><option value="">All statuses</option></select></label>
-          <label class="inspection-search">Search <input type="search" id="inspectionSearch" placeholder="Plate, vehicle, driver, or trip ID"></label>
         </div>
         <div class="inspection-list-header">
           <h2>Inspection submissions</h2>
@@ -95,40 +93,73 @@
 
   <dialog id="inspectionDialog" class="inspection-dialog" aria-labelledby="inspectionDetailTitle">
     <div class="inspection-dialog-header">
-      <div><p class="eyebrow">INSPECTION DETAILS</p><h2 id="inspectionDetailTitle">Vehicle inspection</h2></div>
+      <div class="inspection-dialog-intro">
+        <p class="eyebrow">INSPECTION DETAILS</p>
+        <h2 id="inspectionDetailTitle">Vehicle inspection</h2>
+        <dl id="inspectionDetails" class="inspection-header-details"></dl>
+      </div>
       <button id="closeInspectionDialog" class="inspection-close" type="button" aria-label="Close inspection details" autofocus>×</button>
     </div>
-    <dl id="inspectionDetails" class="inspection-detail-grid"></dl>
     <div class="inspection-photo-heading inspection-comparison-heading">
       <div><h3>Driver &amp; admin pictures</h3><p>Compare the same vehicle side and photo number. Select a picture to enlarge it.</p></div>
+      {% if inspector_portal %}
       <button id="openAdminPhotoForm" class="inspection-button" type="button">Submit Admin Pictures</button>
-      {% if session.get('role') == 'admin' %}
-      <button id="approveInspection" class="inspection-button" type="button">Approve</button>
       {% endif %}
     </div>
     <p id="adminPhotoMessage" class="inspection-upload-message" role="status" aria-live="polite" hidden></p>
     <p id="inspectionSealState" class="inspection-upload-message" role="status" hidden></p>
+    {% if inspector_portal %}
     <form id="adminPhotoForm" class="inspection-upload-form" hidden>
-      <h3>Submit Admin Pictures</h3>
-      <p>Choose pictures for this vehicle and driver. JPEG, PNG, or WebP, up to 10 MB per picture.</p>
-      <p>Only the slots you select will be updated. Selecting an existing admin slot replaces that picture.</p>
+      <div class="inspection-upload-header">
+        <div><p class="eyebrow">VEHICLE PHOTO UPLOAD</p><h3>Submit Admin Pictures</h3><p>Add exterior and interior pictures, plus a video of the overall inspection.</p></div>
+        <span class="inspection-upload-count" id="adminPhotoCount" role="status" aria-live="polite">0 of 14 pictures · 0 of 1 video</span>
+      </div>
+      <p id="adminPhotoHelp" class="inspection-upload-hint">JPEG, PNG or WebP · Up to 10 MB per picture</p>
       <div class="inspection-upload-groups">
-        {% for side in ['front', 'back', 'left', 'right'] %}
+        {% for side, count in [('front', 2), ('back', 2), ('right', 4), ('left', 4), ('inside', 2)] %}
         <fieldset>
-          <legend>{{ side|capitalize }}</legend>
-          {% for slot in ['photo1', 'photo2'] %}
-          <label for="admin_{{ side }}_{{ slot }}">Photo {{ loop.index }}</label>
-          <input type="file" id="admin_{{ side }}_{{ slot }}" name="{{ side }}_{{ slot }}" accept="image/jpeg,image/png,image/webp" data-preview="preview_{{ side }}_{{ slot }}">
-          <img id="preview_{{ side }}_{{ slot }}" class="inspection-upload-preview" alt="Selected admin {{ side }} {{ slot }}" hidden>
+          <legend>{{ side|capitalize }} <span class="inspection-side-count">{{ count }} pictures</span></legend>
+          <div class="inspection-upload-slots">
+          {% for number in range(1, count + 1) %}
+          {% set slot = 'photo' ~ number %}
+          <div class="inspection-upload-slot">
+            <label class="inspection-slot-title" for="admin_{{ side }}_{{ slot }}">Photo {{ loop.index }}<span>Required</span></label>
+            <label class="inspection-upload-target" for="admin_{{ side }}_{{ slot }}">
+              <span class="inspection-upload-empty" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="m8 5 1-2h6l1 2"/><circle cx="12" cy="12" r="3.5"/></svg>
+                <span>Choose a picture</span><small>{{ side|capitalize }} view · Photo {{ loop.index }}</small>
+              </span>
+              <img id="preview_{{ side }}_{{ slot }}" class="inspection-upload-preview" alt="Selected admin {{ side }} photo {{ loop.index }}" hidden>
+            </label>
+            <input type="file" id="admin_{{ side }}_{{ slot }}" name="{{ side }}_{{ slot }}" required accept="image/jpeg,image/png,image/webp" aria-describedby="adminPhotoHelp" data-preview="preview_{{ side }}_{{ slot }}">
+          </div>
           {% endfor %}
+          </div>
         </fieldset>
         {% endfor %}
+        <fieldset class="inspection-video-group">
+          <legend>Overall inspection <span class="inspection-side-count">1 video</span></legend>
+          <div class="inspection-upload-slot">
+            <label class="inspection-slot-title" for="admin_overall_video">Inspection walkthrough<span>Required</span></label>
+            <div class="inspection-upload-target inspection-video-target">
+              <label class="inspection-upload-empty" for="admin_overall_video">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="5" width="12" height="14" rx="3"/><path d="m15 10 6-4v12l-6-4z"/></svg>
+                <span>Choose an inspection video</span><small>Show the vehicle's overall condition</small>
+              </label>
+              <video id="preview_overall_video" class="inspection-upload-preview" controls playsinline preload="metadata" aria-label="Selected overall inspection video" hidden></video>
+            </div>
+            <input type="file" id="admin_overall_video" name="overall_video" required accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" data-media="video" data-preview="preview_overall_video" aria-describedby="adminVideoHelp">
+            <p id="adminVideoHelp" class="inspection-upload-hint">MP4, MOV or WebM · Up to 1 GB</p>
+          </div>
+        </fieldset>
       </div>
+      <p class="inspection-upload-note">All 14 pictures and the overall inspection video are required for every submission. New files replace the existing pictures and video.</p>
       <div class="inspection-upload-actions">
         <button id="saveAdminPhotos" class="inspection-button" type="submit">Submit Admin Pictures</button>
         <button id="cancelAdminPhotos" class="inspection-view" type="button">Cancel</button>
       </div>
     </form>
+    {% endif %}
     <div id="inspectionPhotos" class="inspection-comparisons"></div>
     <details id="inspectionPhotoMetadata" class="inspection-photo-metadata">
       <summary>All photo details</summary>

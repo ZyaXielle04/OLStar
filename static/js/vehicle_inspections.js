@@ -1,12 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
     const inspectionApi = document.querySelector(".inspection-page").dataset.inspectionApi;
     const inspectorPortal = inspectionApi.startsWith("/api/inspector/");
-    const approveButton = document.getElementById("approveInspection");
     const inspectorLocked = record => inspectorPortal && record?.approved === true;
     const dateInput = document.getElementById("inspectionDate");
-    const periodFilter = document.getElementById("periodFilter");
-    const statusFilter = document.getElementById("statusFilter");
-    const searchInput = document.getElementById("inspectionSearch");
+    const unitFilter = document.getElementById("unitFilter");
     const refreshButton = document.getElementById("refreshInspections");
     const rows = document.getElementById("inspectionRows");
     const tableWrap = document.getElementById("inspectionTableWrap");
@@ -208,7 +205,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function photoCard(photo, side, slot, owner) {
         const figure = element("figure", "inspection-photo");
-        const title = `${label(side)} · Photo ${slot === "photo2" ? "2" : "1"}`;
+        const title = `${label(side)} · Photo ${slot.replace(/^photo/, "")}`;
         const entry = photoEntries(photo)[0];
         if (entry) {
             const link = element("a");
@@ -245,15 +242,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderComparison(record) {
         const gallery = document.getElementById("inspectionPhotos");
+        gallery.querySelectorAll("video").forEach(video => video.pause());
         gallery.replaceChildren();
         const pairs = Array.isArray(record.photoPairs) ? record.photoPairs : [];
-        ["front", "back", "left", "right"].forEach(side => {
+        Object.entries({ front: 2, back: 2, right: 4, left: 4, inside: 2 }).forEach(([side, count]) => {
             const section = element("section", "inspection-comparison-side");
             section.append(element("h4", "", label(side)));
             const labels = element("div", "inspection-comparison-labels");
             labels.append(element("span", "", "Driver pictures"), element("span", "", "Admin pictures"));
             section.append(labels);
-            ["photo1", "photo2"].forEach(slot => {
+            Array.from({ length: count }, (_, index) => `photo${index + 1}`).forEach(slot => {
                 const pair = pairs.find(item => item.side === side && item.slot === slot);
                 const row = element("div", "inspection-photo-pair");
                 row.append(photoCard(pair?.driverPhoto, side, slot, "Driver"), photoCard(pair?.adminPhoto, side, slot, "Admin"));
@@ -261,6 +259,27 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             gallery.append(section);
         });
+        const videoSection = element("section", "inspection-comparison-side inspection-video-section");
+        videoSection.append(element("h4", "", "Overall inspection video"));
+        const videoEntry = photoEntries(record.adminVideo)[0];
+        if (videoEntry) {
+            const video = element("video");
+            video.src = videoEntry.url;
+            video.controls = true;
+            video.playsInline = true;
+            video.preload = "metadata";
+            video.setAttribute("aria-label", "Overall inspection video");
+            videoSection.append(video);
+            const original = element("a", "inspection-video-link", "Open original video");
+            original.href = videoEntry.url;
+            original.target = "_blank";
+            original.rel = "noopener noreferrer";
+            videoSection.append(original);
+            if (record.adminVideo.uploadedAt) videoSection.append(element("p", "inspection-secondary", `Uploaded ${dateTime(record.adminVideo.uploadedAt)}`));
+        } else {
+            videoSection.append(element("p", "inspection-no-photos", "No overall inspection video submitted"));
+        }
+        gallery.append(videoSection);
         // Preserve the display of older submissions with photos outside side/slot groups.
         const pairedUrls = new Set(pairs.flatMap(pair => [pair.driverPhoto, pair.adminPhoto])
             .flatMap(photo => photoEntries(photo).map(entry => entry.url)));
@@ -273,16 +292,37 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    function updateUploadSelection() {
+        if (!adminForm) return;
+        let selected = 0;
+        let videos = 0;
+        adminForm.querySelectorAll('input[type="file"]').forEach(input => {
+            const hasPreview = !document.getElementById(input.dataset.preview).hidden;
+            input.closest(".inspection-upload-slot").dataset.selected = String(hasPreview);
+            if (input.files.length) {
+                if (input.dataset.media === "video") videos++;
+                else selected++;
+            }
+        });
+        const count = document.getElementById("adminPhotoCount");
+        count.textContent = `${selected} of 14 pictures · ${videos} of 1 video`;
+        count.dataset.selected = String(selected + videos > 0);
+    }
+
     function resetAdminForm() {
+        if (!adminForm) return;
         adminForm.reset();
         adminForm.hidden = true;
         adminMessage.hidden = true;
+        adminForm.querySelectorAll("video").forEach(video => video.pause());
         previewUrls.forEach(url => URL.revokeObjectURL(url));
         previewUrls.clear();
         adminForm.querySelectorAll(".inspection-upload-preview").forEach(image => {
             image.removeAttribute("src");
+            if (image.tagName === "VIDEO") image.load();
             image.hidden = true;
         });
+        updateUploadSelection();
     }
 
     function showUploadForm() {
@@ -302,30 +342,20 @@ document.addEventListener("DOMContentLoaded", () => {
     function showDetails(record, upload = false) {
         if (uploading) return;
         activeRecord = record;
-        openAdminForm.disabled = inspectorLocked(record);
+        if (openAdminForm) openAdminForm.disabled = inspectorLocked(record);
         const sealState = document.getElementById("inspectionSealState");
         sealState.hidden = record.approved !== true;
         sealState.textContent = `Approved by ${text(record.approvedByName)} · ${dateTime(record.approvedAt)}. Sealed for inspector uploads.`;
-        if (approveButton) {
-            approveButton.disabled = record.approved === true;
-            approveButton.textContent = record.approved === true ? "Approved" : "Approve";
-        }
         resetAdminForm();
         adminMessage.hidden = true;
         document.getElementById("inspectionDetailTitle").textContent = text(record.plateNumber);
         const details = document.getElementById("inspectionDetails");
         details.replaceChildren();
         const fields = [
-            ["Date", record.date], ["Period", record.period], ["Status", label(record.status)],
-            ["Plate number", record.plateNumber], ["Transport unit", record.transportUnit],
-            ["Vehicle key", record.vehicleKey], ["Driver name", record.driverName],
-            ["Driver phone", record.driverPhone], ["Driver ID", record.driverId],
-            ["Submitted at (PHT)", dateTime(record.submittedAt)],
-            ["Window start (PHT)", dateTime(record.windowStart)],
-            ["Window end (PHT)", dateTime(record.windowEnd)],
-            ["Trip ID", record.tripId], ["Source", record.source],
-            ["Admin submitted at (PHT)", dateTime(record.adminSubmittedAt)],
-            ["Admin submitted by", record.adminSubmittedByName], ["Admin user ID", record.adminSubmittedBy]
+            ["Unit name", vehicleName(record)],
+            ["Driver name", record.driverName],
+            ["Date and time (PHT)", dateTime(record.submittedAt)],
+            ["Period", record.period]
         ];
         fields.forEach(([name, value]) => {
             const item = element("div");
@@ -333,30 +363,93 @@ document.addEventListener("DOMContentLoaded", () => {
             details.append(item);
         });
         renderComparison(record);
-        document.getElementById("inspectionPhotoData").textContent = text({ driverPhotos: record.photos, adminPhotos: record.adminPhotos });
+        document.getElementById("inspectionPhotoData").textContent = text({ driverPhotos: record.photos, adminPhotos: record.adminPhotos, adminVideo: record.adminVideo });
         document.getElementById("inspectionPhotoMetadata").open = false;
         if (!dialog.open) dialog.showModal();
         if (upload) showUploadForm();
+    }
+
+    async function uploadInspectionVideo(file, recordUrl) {
+        const header = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
+        const textAt = (start, end) => String.fromCharCode(...header.slice(start, end));
+        let format;
+        if (header.length >= 12 && textAt(4, 8) === "ftyp") {
+            format = textAt(8, 12) === "qt  " ? "MOV" : "MP4";
+        } else if (header[0] === 0x1a && header[1] === 0x45 && header[2] === 0xdf && header[3] === 0xa3 && textAt(0, header.length).includes("webm")) {
+            format = "WEBM";
+        } else {
+            throw new Error("Use an MP4, MOV, or WebM inspection video.");
+        }
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+        async function send(url, options) {
+            const response = await fetch(url, options);
+            if (response.redirected || !response.headers.get("content-type")?.includes("application/json")) throw new Error("Your session may have expired. Please sign in again.");
+            const data = await response.json();
+            if (!response.ok) {
+                const error = new Error(data.error || "Unable to upload the inspection video.");
+                error.status = response.status;
+                throw error;
+            }
+            return data;
+        }
+        showUploadMessage("Uploading inspection video… 0%. Keep this page open.");
+        const started = await send(`${recordUrl}/video-upload`, {
+            method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRFToken": csrfToken },
+            body: JSON.stringify({ size: file.size, format })
+        });
+        let token = started.token;
+        const chunkSize = started.chunkSize;
+        if (!Number.isSafeInteger(chunkSize) || chunkSize <= 0) throw new Error("Unable to start video upload. Refresh and try again.");
+        for (let offset = 0; offset < file.size; offset += chunkSize) {
+            const end = Math.min(offset + chunkSize, file.size);
+            const chunk = file.slice(offset, end);
+            let result;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const payload = new FormData();
+                payload.append("token", token);
+                payload.append("chunk", chunk, file.name);
+                try {
+                    result = await send(`${recordUrl}/video-upload/chunk`, {
+                        method: "POST", headers: { Accept: "application/json", "X-CSRFToken": csrfToken }, body: payload
+                    });
+                    break;
+                } catch (error) {
+                    if (attempt === 2 || (error.status && error.status < 500)) throw error;
+                    showUploadMessage(`Retrying video upload… ${Math.floor(offset / file.size * 100)}%. Keep this page open.`);
+                    await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 1000));
+                }
+            }
+            showUploadMessage(`Uploading inspection video… ${Math.floor(end / file.size * 100)}%. Keep this page open.`);
+            if (end === file.size) {
+                if (!result.done || !result.videoToken) throw new Error("The video upload was incomplete. Please try again.");
+                return result.videoToken;
+            }
+            if (result.done || !result.token) throw new Error("The video upload was interrupted. Please try again.");
+            token = result.token;
+        }
     }
 
     async function submitAdminPictures(event) {
         event.preventDefault();
         if (uploading || !activeRecord || inspectorLocked(activeRecord)) return;
         const payload = new FormData();
-        let count = 0;
+        if (!adminForm.reportValidity()) return;
+        let videoFile;
         for (const input of adminForm.querySelectorAll('input[type="file"]')) {
             const file = input.files[0];
-            if (!file) continue;
-            if (!file.size || file.size > 10 * 1024 * 1024) {
-                showUploadMessage("Each picture must be between 1 byte and 10 MB.", true);
+            if (!file) {
+                showUploadMessage("All 14 pictures and the overall inspection video are required.", true);
+                input.focus();
                 return;
             }
-            payload.append(input.name, file);
-            count += 1;
-        }
-        if (!count) {
-            showUploadMessage("Choose at least one admin picture before submitting.", true);
-            return;
+            const isVideo = input.dataset.media === "video";
+            const limit = isVideo ? 1024 * 1024 * 1024 : 10 * 1024 * 1024;
+            if (!file.size || file.size > limit) {
+                showUploadMessage(isVideo ? "The inspection video must be between 1 byte and 1 GB." : "Each picture must be between 1 byte and 10 MB.", true);
+                return;
+            }
+            if (isVideo) videoFile = file;
+            else payload.append(input.name, file);
         }
         const parts = String(activeRecord.id).split("/");
         if (parts.length !== 4) {
@@ -368,9 +461,12 @@ document.addEventListener("DOMContentLoaded", () => {
         adminForm.querySelectorAll("input, button").forEach(control => { control.disabled = true; });
         closeDialogButton.disabled = true;
         openAdminForm.disabled = true;
-        saveAdminButton.textContent = "Uploading pictures…";
+        saveAdminButton.textContent = "Uploading files…";
         try {
-            const response = await fetch(`${inspectionApi}/${parts.map(encodeURIComponent).join("/")}/admin-photos`, {
+            const recordUrl = `${inspectionApi}/${parts.map(encodeURIComponent).join("/")}`;
+            if (videoFile) payload.append("overall_video_token", await uploadInspectionVideo(videoFile, recordUrl));
+            showUploadMessage("Saving inspection files…");
+            const response = await fetch(`${recordUrl}/admin-photos`, {
                 method: "POST", body: payload,
                 headers: { Accept: "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content }
             });
@@ -390,7 +486,7 @@ document.addEventListener("DOMContentLoaded", () => {
             uploading = false;
             render();
             showDetails(activeRecord);
-            showUploadMessage("Admin pictures saved. Driver and admin pictures are ready to compare below.");
+            showUploadMessage("Inspection files saved. View pictures and the overall inspection video below.");
             document.querySelector(".inspection-comparison-heading").scrollIntoView({ behavior: "smooth", block: "start" });
         } catch (error) {
             showUploadMessage(error.message || "Unable to save admin pictures. Please try again.", true);
@@ -404,13 +500,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function render() {
-        const query = searchInput.value.trim().toLowerCase();
         const filtered = inspections.filter(record =>
-            (!periodFilter.value || record.period === periodFilter.value) &&
-            (!statusFilter.value || String(record.status || "") === statusFilter.value) &&
-            (!query || [record.plateNumber, vehicleName(record), record.vehicleKey,
-                record.driverName, record.driverPhone, record.driverId, record.tripId]
-                .some(value => text(value).toLowerCase().includes(query)))
+            (!unitFilter.value || record.vehicleKey === unitFilter.value)
         );
         rows.replaceChildren();
         const summary = {
@@ -453,24 +544,21 @@ document.addEventListener("DOMContentLoaded", () => {
             const submitted = element("td", "", dateTime(record.submittedAt));
             const photos = element("td");
             photos.append(element("span", "inspection-primary", `Driver: ${photoEntries(record.photos).length}`),
-                element("span", "inspection-secondary", `Admin: ${photoEntries(record.adminPhotos).length}`));
+                element("span", "inspection-secondary", `Admin: ${photoEntries(record.adminPhotos).length}`),
+                element("span", "inspection-secondary", `Video: ${photoEntries(record.adminVideo).length ? 1 : 0}`));
             const action = element("td");
             const button = element("button", "inspection-view", "View details");
             button.type = "button";
             button.setAttribute("aria-label", `View inspection for ${text(record.plateNumber)}, ${record.period}, ${text(record.driverName)}`);
             button.addEventListener("click", () => showDetails(record));
             const actions = element("div", "inspection-row-actions");
-            const uploadButton = element("button", "inspection-view", "Submit Admin Pictures");
-            uploadButton.type = "button";
-            uploadButton.disabled = inspectorLocked(record);
-            uploadButton.addEventListener("click", () => showDetails(record, true));
-            actions.append(button, uploadButton);
-            if (approveButton) {
-                const approve = element("button", "inspection-view", record.approved ? "Approved" : "Approve");
-                approve.type = "button";
-                approve.disabled = record.approved === true;
-                approve.addEventListener("click", () => approveCase(record));
-                actions.append(approve);
+            actions.append(button);
+            if (inspectorPortal) {
+                const uploadButton = element("button", "inspection-view", "Submit Admin Pictures");
+                uploadButton.type = "button";
+                uploadButton.disabled = inspectorLocked(record);
+                uploadButton.addEventListener("click", () => showDetails(record, true));
+                actions.append(uploadButton);
             }
             action.append(actions);
             row.append(vehicle, driver, period, status, submitted, photos, action);
@@ -502,11 +590,12 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!Array.isArray(data.inspections)) throw new Error("The inspection response could not be read.");
             if (controller !== requestController) return;
             inspections = data.inspections.sort((a, b) => (timestamp(b.submittedAt) || 0) - (timestamp(a.submittedAt) || 0));
-            const previousStatus = statusFilter.value;
-            statusFilter.replaceChildren(new Option("All statuses", ""));
-            [...new Set(inspections.map(record => String(record.status || "")).filter(Boolean))].sort()
-                .forEach(status => statusFilter.add(new Option(label(status), status)));
-            statusFilter.value = [...statusFilter.options].some(option => option.value === previousStatus) ? previousStatus : "";
+            const previousUnit = unitFilter.value;
+            unitFilter.replaceChildren(new Option("All units", ""));
+            const units = new Map(inspections.map(record => [record.vehicleKey, `${text(record.plateNumber)} · ${vehicleName(record)}`]));
+            [...units.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+                .forEach(([key, name]) => unitFilter.add(new Option(name, key)));
+            unitFilter.value = units.has(previousUnit) ? previousUnit : "";
         } catch (error) {
             if (error.name === "AbortError" || controller !== requestController) return;
             loadFailed = true;
@@ -528,62 +617,37 @@ document.addEventListener("DOMContentLoaded", () => {
     dateInput.value = `${part("year")}-${part("month")}-${part("day")}`;
     dateInput.addEventListener("change", loadInspections);
     refreshButton.addEventListener("click", loadInspections);
-    periodFilter.addEventListener("change", render);
-    statusFilter.addEventListener("change", render);
-    searchInput.addEventListener("input", render);
+    unitFilter.addEventListener("change", render);
     closeDialogButton.addEventListener("click", () => { if (!uploading) dialog.close(); });
-    openAdminForm.addEventListener("click", showUploadForm);
-    async function approveCase(record) {
-        if (uploading || record.approved) return;
-        uploading = true;
-        // Keep popups inside an open native dialog so they remain interactive.
-        const popupOptions = () => ({ target: dialog.open ? dialog : document.body, heightAuto: false, confirmButtonColor: "#2f4156" });
-        try {
-            const confirmation = await Swal.fire({
-                ...popupOptions(), icon: "question", title: "Approve inspection?",
-                text: `Approve ${text(record.plateNumber)} for ${text(record.driverName)}? Inspectors will no longer be able to add or replace pictures for this case.`,
-                showCancelButton: true, confirmButtonText: "Approve and seal", cancelButtonText: "Cancel",
-                cancelButtonColor: "#64748b", focusCancel: true, reverseButtons: true
-            });
-            if (!confirmation.isConfirmed) return;
-            const response = await fetch(`/api/admin/vehicle-inspections/${record.id.split("/").map(encodeURIComponent).join("/")}/approve`, {
-                method: "POST", headers: { Accept: "application/json", "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content }
-            });
-            if (response.redirected || !response.headers.get("content-type")?.includes("application/json")) throw new Error("Please sign in again.");
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || "Unable to approve inspection.");
-            Object.assign(record, data.inspection);
-            uploading = false;
-            render();
-            showDetails(record);
-            await Swal.fire({ ...popupOptions(), icon: "success", title: "Inspection approved", text: "This case is now sealed for inspector photo submissions.", confirmButtonText: "Done" });
-        } catch (error) {
-            await Swal.fire({ ...popupOptions(), icon: "error", title: "Approval failed", text: error.message || "Unable to approve inspection.", confirmButtonText: "OK" });
-        } finally {
-            uploading = false;
-        }
-    }
-    approveButton?.addEventListener("click", () => { if (activeRecord) approveCase(activeRecord); });
-    document.getElementById("cancelAdminPhotos").addEventListener("click", resetAdminForm);
-    adminForm.addEventListener("submit", submitAdminPictures);
-    adminForm.querySelectorAll('input[type="file"]').forEach(input => {
+    openAdminForm?.addEventListener("click", showUploadForm);
+    document.getElementById("cancelAdminPhotos")?.addEventListener("click", resetAdminForm);
+    adminForm?.addEventListener("submit", submitAdminPictures);
+    adminForm?.querySelectorAll('input[type="file"]').forEach(input => {
         input.addEventListener("change", () => {
             adminMessage.hidden = true;
+            const preview = document.getElementById(input.dataset.preview);
+            if (preview.tagName === "VIDEO") preview.pause();
             if (previewUrls.has(input.name)) URL.revokeObjectURL(previewUrls.get(input.name));
             previewUrls.delete(input.name);
             const image = document.getElementById(input.dataset.preview);
             image.hidden = true;
             image.removeAttribute("src");
+            if (image.tagName === "VIDEO") image.load();
             const file = input.files[0];
-            if (file && file.size <= 10 * 1024 * 1024) {
+            const limit = input.dataset.media === "video" ? 1024 * 1024 * 1024 : 10 * 1024 * 1024;
+            if (file && file.size > 0 && file.size <= limit) {
                 const url = URL.createObjectURL(file);
                 previewUrls.set(input.name, url);
                 image.src = url;
                 image.hidden = false;
             }
+            updateUploadSelection();
         });
     });
-    dialog.addEventListener("close", resetAdminForm);
+    dialog.addEventListener("close", () => {
+        resetAdminForm();
+        document.querySelectorAll("#inspectionPhotos video").forEach(video => video.pause());
+    });
     dialog.addEventListener("cancel", event => { if (uploading || Swal.isVisible()) event.preventDefault(); });
     dialog.addEventListener("click", event => {
         const bounds = dialog.getBoundingClientRect();
