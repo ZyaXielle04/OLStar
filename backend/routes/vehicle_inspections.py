@@ -94,7 +94,7 @@ def flatten_inspections(snapshot, inspection_date, selected_period=None):
                     for field in (
                         "driverName", "driverPhone", "photos", "source", "status",
                         "submittedAt", "transportUnit", "tripId", "windowEnd", "windowStart",
-                        "adminPhotos", "adminVideo", "adminSubmittedAt", "adminSubmittedBy", "adminSubmittedByName",
+                        "adminPhotos", "adminVideo", "video", "adminSubmittedAt", "adminSubmittedBy", "adminSubmittedByName",
                         "approved", "approvedAt", "approvedBy", "approvedByName",
                     )
                 }

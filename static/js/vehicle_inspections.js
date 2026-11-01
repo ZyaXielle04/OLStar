@@ -261,24 +261,32 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         const videoSection = element("section", "inspection-comparison-side inspection-video-section");
         videoSection.append(element("h4", "", "Overall inspection video"));
-        const videoEntry = photoEntries(record.adminVideo)[0];
-        if (videoEntry) {
-            const video = element("video");
-            video.src = videoEntry.url;
-            video.controls = true;
-            video.playsInline = true;
-            video.preload = "metadata";
-            video.setAttribute("aria-label", "Overall inspection video");
-            videoSection.append(video);
-            const original = element("a", "inspection-video-link", "Open original video");
-            original.href = videoEntry.url;
-            original.target = "_blank";
-            original.rel = "noopener noreferrer";
-            videoSection.append(original);
-            if (record.adminVideo.uploadedAt) videoSection.append(element("p", "inspection-secondary", `Uploaded ${dateTime(record.adminVideo.uploadedAt)}`));
-        } else {
-            videoSection.append(element("p", "inspection-no-photos", "No overall inspection video submitted"));
-        }
+        const videoGrid = element("div", "inspection-video-grid");
+        [["Driver video", record.video], ["Admin video", record.adminVideo]].forEach(([owner, media]) => {
+            const card = element("div", "inspection-video-card");
+            card.append(element("h5", "", owner));
+            const videoEntry = photoEntries(media)[0];
+            if (videoEntry) {
+                const video = element("video");
+                video.src = videoEntry.url;
+                video.controls = true;
+                video.playsInline = true;
+                video.preload = "metadata";
+                video.setAttribute("aria-label", owner);
+                card.append(video);
+                const original = element("a", "inspection-video-link", "Open original video");
+                original.href = videoEntry.url;
+                original.target = "_blank";
+                original.rel = "noopener noreferrer";
+                card.append(original);
+                const timestampValue = media.capturedAt ?? media.uploadedAt;
+                if (timestampValue) card.append(element("p", "inspection-secondary", `${media.capturedAt ? "Captured" : "Uploaded"} ${dateTime(timestampValue)}`));
+            } else {
+                card.append(element("p", "inspection-no-photos", `No ${owner.toLowerCase()} submitted`));
+            }
+            videoGrid.append(card);
+        });
+        videoSection.append(videoGrid);
         gallery.append(videoSection);
         // Preserve the display of older submissions with photos outside side/slot groups.
         const pairedUrls = new Set(pairs.flatMap(pair => [pair.driverPhoto, pair.adminPhoto])
@@ -363,7 +371,7 @@ document.addEventListener("DOMContentLoaded", () => {
             details.append(item);
         });
         renderComparison(record);
-        document.getElementById("inspectionPhotoData").textContent = text({ driverPhotos: record.photos, adminPhotos: record.adminPhotos, adminVideo: record.adminVideo });
+        document.getElementById("inspectionPhotoData").textContent = text({ driverPhotos: record.photos, driverVideo: record.video, adminPhotos: record.adminPhotos, adminVideo: record.adminVideo });
         document.getElementById("inspectionPhotoMetadata").open = false;
         if (!dialog.open) dialog.showModal();
         if (upload) showUploadForm();
