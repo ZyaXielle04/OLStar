@@ -378,6 +378,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function uploadInspectionVideo(file, recordUrl) {
+        if (file.size > 95 * 1000 * 1000) {
+            file = await window.prepareInspectionVideo(file, showUploadMessage);
+        }
         const header = new Uint8Array(await file.slice(0, 4096).arrayBuffer());
         const textAt = (start, end) => String.fromCharCode(...header.slice(start, end));
         let format;

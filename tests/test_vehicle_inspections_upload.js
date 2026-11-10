@@ -8,10 +8,11 @@ const source = readFileSync(join(__dirname, "../static/js/vehicle_inspections.js
 const start = source.indexOf("    async function uploadInspectionVideo(");
 const end = source.indexOf("    async function submitAdminPictures(", start);
 
-function uploader(fetch) {
+function uploader(fetch, prepareInspectionVideo) {
     const messages = [];
     const context = vm.createContext({
         fetch, FormData, Uint8Array, setTimeout: callback => callback(),
+        window: { prepareInspectionVideo },
         document: { querySelector: () => ({ content: "csrf-token" }) },
         showUploadMessage: message => messages.push(message)
     });
@@ -26,6 +27,24 @@ function video() {
 function response(data, status = 200) {
     return { ok: status < 400, status, headers: { get: () => "application/json" }, json: async () => data };
 }
+
+test("large original is compressed before creating the upload session", async () => {
+    const original = video();
+    Object.defineProperty(original, "size", { value: 150000000 });
+    const compressed = video();
+    let prepared = false;
+    const { upload } = uploader(async url => {
+        assert.ok(prepared);
+        return url.endsWith("/video-upload")
+            ? response({ token: "first", chunkSize: 32 })
+            : response({ done: true, videoToken: "completed" });
+    }, async file => {
+        assert.equal(file, original);
+        prepared = true;
+        return compressed;
+    });
+    assert.equal(await upload(original, "/inspection"), "completed");
+});
 
 test("video is split into chunks and completion token is returned", async () => {
     const chunks = [];

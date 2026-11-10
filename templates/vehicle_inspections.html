@@ -149,7 +149,7 @@
               <video id="preview_overall_video" class="inspection-upload-preview" controls playsinline preload="metadata" aria-label="Selected overall inspection video" hidden></video>
             </div>
             <input type="file" id="admin_overall_video" name="overall_video" required accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" data-media="video" data-preview="preview_overall_video" aria-describedby="adminVideoHelp">
-            <p id="adminVideoHelp" class="inspection-upload-hint">MP4, MOV or WebM · Up to 1 GB</p>
+            <p id="adminVideoHelp" class="inspection-upload-hint">MP4, MOV or WebM · Up to 1 GB. Large videos are automatically compressed before uploading. Keep this tab visible until finished; preparation can take as long as the video.</p>
           </div>
         </fieldset>
       </div>
@@ -186,6 +186,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
   <script src="{{ url_for('static', filename='js/base.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/inspection_video.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vehicle_inspections.js') }}"></script>
 </body>
 </html>
